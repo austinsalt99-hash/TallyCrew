@@ -1,0 +1,153 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+interface BillableEntry { client: string; description: string; startTime: string; endTime: string; }
+interface NonBillableEntry { description: string; hours: string; }
+interface Submission {
+  id: string;
+  submitted_at: string;
+  employee_name: string;
+  date: string;
+  billable_entries: BillableEntry[];
+  non_billable_entries: NonBillableEntry[];
+  notes: string;
+  total_billable_hours: number;
+  total_non_billable_hours: number;
+}
+
+function formatTime(t: string) {
+  if (!t) return "—";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+export default function Dashboard() {
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [filterDate, setFilterDate] = useState("");
+  const [filterName, setFilterName] = useState("");
+
+  useEffect(() => {
+    const token = localStorage.getItem("cew-admin-token") ?? "";
+    fetch("/api/submissions", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((data) => { setSubmissions(Array.isArray(data) ? data : []); setLoading(false); });
+  }, []);
+
+  const filtered = submissions.filter((s) => {
+    if (filterDate && s.date !== filterDate) return false;
+    if (filterName && !s.employee_name.toLowerCase().includes(filterName.toLowerCase())) return false;
+    return true;
+  });
+
+  if (loading) return <p className="text-gray-500">Loading submissions...</p>;
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Hour Logs</h1>
+
+      <div className="flex gap-3 mb-6 flex-wrap">
+        <input
+          type="date"
+          value={filterDate}
+          onChange={(e) => setFilterDate(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+        <input
+          type="text"
+          placeholder="Filter by employee name"
+          value={filterName}
+          onChange={(e) => setFilterName(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-48"
+        />
+        {(filterDate || filterName) && (
+          <button onClick={() => { setFilterDate(""); setFilterName(""); }} className="text-sm text-blue-600 underline">
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-gray-400">No submissions found.</p>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((s) => (
+            <div key={s.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => setExpanded(expanded === s.id ? null : s.id)}
+                className="w-full text-left px-5 py-4 flex items-center justify-between hover:bg-gray-50"
+              >
+                <div>
+                  <span className="font-semibold text-gray-900">{s.employee_name}</span>
+                  <span className="text-gray-400 mx-2">·</span>
+                  <span className="text-gray-600">{s.date}</span>
+                </div>
+                <div className="flex items-center gap-4 text-sm text-gray-500">
+                  <span className="text-blue-600 font-medium">{s.total_billable_hours}h billable</span>
+                  {s.total_non_billable_hours > 0 && (
+                    <span className="text-orange-500">{s.total_non_billable_hours}h non-bill.</span>
+                  )}
+                  <span className="text-gray-400">{expanded === s.id ? "▲" : "▼"}</span>
+                </div>
+              </button>
+
+              {expanded === s.id && (
+                <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
+                  {s.billable_entries?.filter(e => e.client || e.description).length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Billable</h3>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-gray-400 text-xs">
+                            <th className="pb-1 pr-4">Client</th>
+                            <th className="pb-1 pr-4">Job</th>
+                            <th className="pb-1">Time</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {s.billable_entries.filter(e => e.client || e.description).map((e, i) => (
+                            <tr key={i} className="border-t border-gray-100">
+                              <td className="py-1.5 pr-4 text-gray-700">{e.client || "—"}</td>
+                              <td className="py-1.5 pr-4 text-gray-700">{e.description || "—"}</td>
+                              <td className="py-1.5 text-gray-500">{formatTime(e.startTime)} – {formatTime(e.endTime)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {s.non_billable_entries?.filter(e => e.description).length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-orange-500 uppercase tracking-wide mb-2">Non-Billable</h3>
+                      <table className="w-full text-sm">
+                        <tbody>
+                          {s.non_billable_entries.filter(e => e.description).map((e, i) => (
+                            <tr key={i} className="border-t border-gray-100">
+                              <td className="py-1.5 pr-4 text-gray-700">{e.description}</td>
+                              <td className="py-1.5 text-gray-500">{e.hours}h</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {s.notes && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Notes</h3>
+                      <p className="text-sm text-gray-700">{s.notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
