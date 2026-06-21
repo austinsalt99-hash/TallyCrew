@@ -31,7 +31,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-gray-100">
       <nav className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Image src="/logo.webp" alt="Cumberland Earthworks" width={140} height={39} className="brightness-0 invert" />
+          <Image src="/logo.webp" alt="Cumberland Earthworks" width={140} height={39} />
           <Link
             href="/admin/dashboard"
             className={`text-sm ${pathname === "/admin/dashboard" ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}

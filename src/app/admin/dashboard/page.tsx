@@ -16,6 +16,8 @@ interface Submission {
   submitted_at: string;
   employee_name: string;
   date: string;
+  day_start_time?: string;
+  day_end_time?: string;
   billable_entries: BillableEntry[];
   non_billable_entries: NonBillableEntry[];
   notes: string;
@@ -28,6 +30,23 @@ function formatTime(t: string) {
   const [h, m] = t.split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function calcWorkedHours(start?: string, end?: string): string | null {
+  if (!start || !end) return null;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  const mins = eh * 60 + em - (sh * 60 + sm);
+  if (mins <= 0) return null;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function formatDateLabel(dateStr: string): string {
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, mo - 1, d);
+  return date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 }
 
 export default function Dashboard() {
@@ -81,8 +100,20 @@ export default function Dashboard() {
         <p className="text-gray-400">No submissions found.</p>
       ) : (
         <div className="space-y-3">
-          {filtered.map((s) => (
-            <div key={s.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {filtered.map((s, i) => {
+            const prevDate = i > 0 ? filtered[i - 1].date : null;
+            const showSeparator = prevDate !== null && prevDate !== s.date;
+            const workedHours = calcWorkedHours(s.day_start_time, s.day_end_time);
+            return (
+            <div key={s.id}>
+              {showSeparator && (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="flex-1 border-t border-dashed border-gray-300" />
+                  <span className="text-xs font-semibold text-gray-400 whitespace-nowrap">{formatDateLabel(s.date)}</span>
+                  <div className="flex-1 border-t border-dashed border-gray-300" />
+                </div>
+              )}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <button
                 onClick={() => setExpanded(expanded === s.id ? null : s.id)}
                 className="w-full text-left px-5 py-4 flex items-center justify-between hover:bg-gray-50"
@@ -93,6 +124,9 @@ export default function Dashboard() {
                   <span className="text-gray-600">{s.date}</span>
                 </div>
                 <div className="flex items-center gap-4 text-sm text-gray-500">
+                  {workedHours && (
+                    <span className="text-gray-700 font-semibold">{workedHours} worked</span>
+                  )}
                   <span className="text-blue-600 font-medium">{s.total_billable_hours}h billable</span>
                   {s.total_non_billable_hours > 0 && (
                     <span className="text-orange-500">{s.total_non_billable_hours}h non-bill.</span>
@@ -103,6 +137,16 @@ export default function Dashboard() {
 
               {expanded === s.id && (
                 <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
+                  {s.day_start_time && s.day_end_time && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
+                      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Workday</span>
+                      <span className="mx-1 text-gray-300">|</span>
+                      <span>{formatTime(s.day_start_time)} – {formatTime(s.day_end_time)}</span>
+                      {calcWorkedHours(s.day_start_time, s.day_end_time) && (
+                        <span className="ml-auto font-semibold text-gray-700">{calcWorkedHours(s.day_start_time, s.day_end_time)}</span>
+                      )}
+                    </div>
+                  )}
                   {s.billable_entries?.filter(e => e.client || e.description || (e.entryType && e.entryType !== "standard")).length > 0 && (
                     <div>
                       <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Billable</h3>
@@ -167,7 +211,9 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-          ))}
+            </div>
+            );
+          })}
         </div>
       )}
     </div>

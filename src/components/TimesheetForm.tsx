@@ -44,6 +44,8 @@ type SubmitState = "idle" | "submitting" | "success" | "error";
 export default function TimesheetForm() {
   const [employeeName, setEmployeeName] = useState("");
   const [date, setDate] = useState(today());
+  const [dayStartTime, setDayStartTime] = useState("");
+  const [dayEndTime, setDayEndTime] = useState("");
   const [billable, setBillable] = useState<BillableEntryData[]>([newBillable()]);
   const [nonBillable, setNonBillable] = useState<NonBillableEntryData[]>([newNonBillable()]);
   const [notes, setNotes] = useState("");
@@ -69,6 +71,8 @@ export default function TimesheetForm() {
         const draft = JSON.parse(raw);
         if (draft.employeeName) setEmployeeName(draft.employeeName);
         if (draft.date) setDate(draft.date);
+        if (draft.dayStartTime) setDayStartTime(draft.dayStartTime);
+        if (draft.dayEndTime) setDayEndTime(draft.dayEndTime);
         if (draft.billable?.length) setBillable(draft.billable);
         if (draft.nonBillable?.length) setNonBillable(draft.nonBillable);
         if (draft.notes) setNotes(draft.notes);
@@ -81,6 +85,8 @@ export default function TimesheetForm() {
     (state: {
       employeeName: string;
       date: string;
+      dayStartTime: string;
+      dayEndTime: string;
       billable: BillableEntryData[];
       nonBillable: NonBillableEntryData[];
       notes: string;
@@ -96,12 +102,12 @@ export default function TimesheetForm() {
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      saveDraft({ employeeName, date, billable, nonBillable, notes });
+      saveDraft({ employeeName, date, dayStartTime, dayEndTime, billable, nonBillable, notes });
     }, 1000);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [loaded, employeeName, date, billable, nonBillable, notes, saveDraft]);
+  }, [loaded, employeeName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, saveDraft]);
 
   const addBillable = () => setBillable((prev) => [...prev, newBillable()]);
   const addNonBillable = () => setNonBillable((prev) => [...prev, newNonBillable()]);
@@ -133,6 +139,8 @@ export default function TimesheetForm() {
         body: JSON.stringify({
           employeeName: employeeName.trim(),
           date,
+          dayStartTime,
+          dayEndTime,
           billable,
           nonBillable,
           notes,
@@ -164,6 +172,8 @@ export default function TimesheetForm() {
         <button
           onClick={() => {
             setSubmitState("idle");
+            setDayStartTime("");
+            setDayEndTime("");
             setBillable([newBillable()]);
             setNonBillable([newNonBillable()]);
             setNotes("");
@@ -199,6 +209,31 @@ export default function TimesheetForm() {
             onChange={(e) => setDate(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
+        </div>
+      </div>
+
+      {/* Workday times */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Workday Hours</p>
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start time</label>
+            <input
+              type="time"
+              value={dayStartTime}
+              onChange={(e) => setDayStartTime(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">End time</label>
+            <input
+              type="time"
+              value={dayEndTime}
+              onChange={(e) => setDayEndTime(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
         </div>
       </div>
 

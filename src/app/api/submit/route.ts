@@ -48,6 +48,8 @@ export async function POST(request: Request) {
     const {
       employeeName,
       date,
+      dayStartTime,
+      dayEndTime,
       billable,
       nonBillable,
       notes,
@@ -56,6 +58,8 @@ export async function POST(request: Request) {
     } = body as {
       employeeName: string;
       date: string;
+      dayStartTime?: string;
+      dayEndTime?: string;
       billable: BillableEntryData[];
       nonBillable: NonBillableEntryData[];
       notes: string;
@@ -71,6 +75,8 @@ export async function POST(request: Request) {
     const { error: dbError } = await getSupabase().from("submissions").insert({
       employee_name: employeeName,
       date,
+      day_start_time: dayStartTime || null,
+      day_end_time: dayEndTime || null,
       billable_entries: billable,
       non_billable_entries: nonBillable,
       notes,
@@ -89,6 +95,8 @@ export async function POST(request: Request) {
     const html = buildEmailHtml({
       employeeName,
       date,
+      dayStartTime,
+      dayEndTime,
       billable,
       nonBillable,
       notes,

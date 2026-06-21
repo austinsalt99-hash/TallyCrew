@@ -24,6 +24,8 @@ function calcHours(start: string, end: string): string {
 export function buildEmailHtml(params: {
   employeeName: string;
   date: string;
+  dayStartTime?: string;
+  dayEndTime?: string;
   billable: BillableEntryData[];
   nonBillable: NonBillableEntryData[];
   notes: string;
@@ -31,7 +33,7 @@ export function buildEmailHtml(params: {
   totalNonBillableHours: number;
   entryTypes?: LogEntryType[];
 }): string {
-  const { employeeName, date, billable, nonBillable, notes, totalBillableHours, totalNonBillableHours, entryTypes = [] } = params;
+  const { employeeName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, totalBillableHours, totalNonBillableHours, entryTypes = [] } = params;
 
   const billableRows = billable
     .filter((e) => e.client || e.description || e.startTime || e.entryType)
@@ -93,6 +95,7 @@ export function buildEmailHtml(params: {
     <div style="background:#2563eb;color:#fff;padding:24px 28px;">
       <h1 style="margin:0;font-size:22px;">CEW Daily Hours</h1>
       <p style="margin:4px 0 0;opacity:0.85;font-size:15px;">${employeeName} &middot; ${date}</p>
+      ${dayStartTime && dayEndTime ? `<p style="margin:6px 0 0;opacity:0.75;font-size:14px;">Workday: ${formatTime(dayStartTime)} – ${formatTime(dayEndTime)} (${calcHours(dayStartTime, dayEndTime)})</p>` : ""}
     </div>
 
     <div style="padding:24px 28px;">
