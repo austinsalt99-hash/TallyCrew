@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "CEW Daily Hours",
-  description: "Daily hour log for CEW",
+  description: "Daily hour log for Cumberland Earthworks",
 };
 
 export default function RootLayout({
