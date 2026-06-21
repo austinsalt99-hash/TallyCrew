@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 
-interface BillableEntry { client: string; description: string; startTime: string; endTime: string; }
+interface BillableEntry {
+  client: string;
+  description: string;
+  startTime: string;
+  endTime: string;
+  entryType?: string;
+  customFields?: Record<string, string>;
+}
 interface NonBillableEntry { description: string; hours: string; }
 interface Submission {
   id: string;
@@ -96,25 +103,40 @@ export default function Dashboard() {
 
               {expanded === s.id && (
                 <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
-                  {s.billable_entries?.filter(e => e.client || e.description).length > 0 && (
+                  {s.billable_entries?.filter(e => e.client || e.description || (e.entryType && e.entryType !== "standard")).length > 0 && (
                     <div>
                       <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Billable</h3>
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left text-gray-400 text-xs">
-                            <th className="pb-1 pr-4">Client</th>
-                            <th className="pb-1 pr-4">Job</th>
+                            <th className="pb-1 pr-4">Type / Client</th>
+                            <th className="pb-1 pr-4">Job / Details</th>
                             <th className="pb-1">Time</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {s.billable_entries.filter(e => e.client || e.description).map((e, i) => (
-                            <tr key={i} className="border-t border-gray-100">
-                              <td className="py-1.5 pr-4 text-gray-700">{e.client || "—"}</td>
-                              <td className="py-1.5 pr-4 text-gray-700">{e.description || "—"}</td>
-                              <td className="py-1.5 text-gray-500">{formatTime(e.startTime)} – {formatTime(e.endTime)}</td>
-                            </tr>
-                          ))}
+                          {s.billable_entries.filter(e => e.client || e.description || (e.entryType && e.entryType !== "standard")).map((e, i) => {
+                            const isCustom = e.entryType && e.entryType !== "standard";
+                            return (
+                              <tr key={i} className="border-t border-gray-100">
+                                <td className="py-1.5 pr-4 text-gray-700 font-medium">
+                                  {isCustom ? (
+                                    <span className="text-indigo-600">{e.entryType}</span>
+                                  ) : (e.client || "—")}
+                                </td>
+                                <td className="py-1.5 pr-4 text-gray-700">
+                                  {isCustom && e.customFields
+                                    ? Object.entries(e.customFields).map(([k, v]) => (
+                                        <span key={k} className="block text-xs text-gray-600">
+                                          <span className="text-gray-400">{k.replace(/_/g, " ")}: </span>{v}
+                                        </span>
+                                      ))
+                                    : (e.description || "—")}
+                                </td>
+                                <td className="py-1.5 text-gray-500">{formatTime(e.startTime)} – {formatTime(e.endTime)}</td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

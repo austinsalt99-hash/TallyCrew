@@ -1,5 +1,6 @@
 import type { BillableEntryData } from "@/components/BillableEntry";
 import type { NonBillableEntryData } from "@/components/NonBillableEntry";
+import type { LogEntryType } from "@/types/logConfig";
 
 function formatTime(t: string): string {
   if (!t) return "—";
@@ -28,20 +29,47 @@ export function buildEmailHtml(params: {
   notes: string;
   totalBillableHours: number;
   totalNonBillableHours: number;
+  entryTypes?: LogEntryType[];
 }): string {
-  const { employeeName, date, billable, nonBillable, notes, totalBillableHours, totalNonBillableHours } = params;
+  const { employeeName, date, billable, nonBillable, notes, totalBillableHours, totalNonBillableHours, entryTypes = [] } = params;
 
   const billableRows = billable
-    .filter((e) => e.client || e.description || e.startTime)
-    .map(
-      (e) => `
+    .filter((e) => e.client || e.description || e.startTime || e.entryType)
+    .map((e) => {
+      const isCustom = e.entryType && e.entryType !== "standard";
+      if (isCustom && e.customFields) {
+        const typeConfig = entryTypes.find((t) => t.slug === e.entryType);
+        const typeName = typeConfig?.name ?? e.entryType;
+        const fieldLines = typeConfig
+          ? typeConfig.fields
+              .slice()
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((f) => {
+                const val = e.customFields?.[f.field_key];
+                return val ? `${f.label}: ${val}` : null;
+              })
+              .filter(Boolean)
+              .join("<br>")
+          : Object.entries(e.customFields)
+              .map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`)
+              .join("<br>");
+
+        return `
+        <tr>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#4f46e5;">${typeName}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#374151;">${fieldLines || "—"}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${formatTime(e.startTime)} – ${formatTime(e.endTime)}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;">${calcHours(e.startTime, e.endTime)}</td>
+        </tr>`;
+      }
+      return `
       <tr>
         <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${e.client || "—"}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${e.description || "—"}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${formatTime(e.startTime)} – ${formatTime(e.endTime)}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;">${calcHours(e.startTime, e.endTime)}</td>
-      </tr>`
-    )
+      </tr>`;
+    })
     .join("");
 
   const nonBillableRows = nonBillable
@@ -75,8 +103,8 @@ export function buildEmailHtml(params: {
           ? `<table style="width:100%;border-collapse:collapse;font-size:14px;">
               <thead>
                 <tr style="background:#eff6ff;">
-                  <th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Client</th>
-                  <th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Job</th>
+                  <th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Type / Client</th>
+                  <th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Job / Details</th>
                   <th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Time</th>
                   <th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Hours</th>
                 </tr>

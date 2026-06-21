@@ -44,6 +44,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           >
             Calendar
           </Link>
+          <Link
+            href="/admin/log-config"
+            className={`text-sm ${pathname === "/admin/log-config" ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}
+          >
+            Log Types
+          </Link>
         </div>
         <div className="flex items-center gap-4">
           <Link href="/" className="text-gray-400 hover:text-white text-sm">

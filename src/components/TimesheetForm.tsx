@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import BillableEntry, { BillableEntryData } from "./BillableEntry";
 import NonBillableEntry, { NonBillableEntryData } from "./NonBillableEntry";
+import type { LogEntryType } from "@/types/logConfig";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -50,7 +51,15 @@ export default function TimesheetForm() {
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [entryTypes, setEntryTypes] = useState<LogEntryType[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    fetch("/api/log-config")
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setEntryTypes(data); })
+      .catch(() => {});
+  }, []);
 
   // Load draft on mount
   useEffect(() => {
@@ -204,6 +213,7 @@ export default function TimesheetForm() {
               onChange={updateBillable}
               onRemove={() => removeBillable(entry.id)}
               showRemove={billable.length > 1}
+              entryTypes={entryTypes}
             />
           ))}
         </div>

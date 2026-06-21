@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import BottomNav from "@/components/BottomNav";
 
 interface JobEvent {
   id: string;
@@ -81,18 +82,13 @@ export default function SchedulePage() {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <Image src="/logo.webp" alt="Cumberland Earthworks" width={160} height={45} priority />
-          <div className="flex items-center gap-4">
-            <Link href="/" className="text-sm font-semibold text-gray-500 hover:text-gray-900">
-              ← Log Hours
-            </Link>
-            <Link href="/admin" className="text-sm font-semibold text-gray-400 hover:text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5">
-              Admin
-            </Link>
-          </div>
+          <Link href="/admin" className="text-sm font-semibold text-gray-400 hover:text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5">
+            Admin
+          </Link>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 py-6">
+      <div className="max-w-6xl mx-auto px-4 py-6 pb-24">
         {/* Week navigation */}
         <div className="flex items-center gap-3 mb-5">
           <button
@@ -213,6 +209,7 @@ export default function SchedulePage() {
 
         {loading && <p className="text-center text-sm text-gray-400 mt-4">Loading schedule...</p>}
       </div>
+      <BottomNav />
     </div>
   );
 }

@@ -4,6 +4,42 @@ import { getSupabase } from "@/lib/supabase";
 import { buildEmailHtml } from "@/lib/emailTemplate";
 import type { BillableEntryData } from "@/components/BillableEntry";
 import type { NonBillableEntryData } from "@/components/NonBillableEntry";
+import type { LogEntryType, LogEntryField, LogEntryFieldOption } from "@/types/logConfig";
+
+async function fetchEntryTypes(): Promise<LogEntryType[]> {
+  const sb = getSupabase();
+  const { data: types } = await sb
+    .from("log_entry_types")
+    .select("*")
+    .eq("is_active", true)
+    .order("sort_order");
+  if (!types?.length) return [];
+
+  const typeIds = types.map((t) => t.id);
+  const { data: fields } = await sb
+    .from("log_entry_fields")
+    .select("*")
+    .in("type_id", typeIds)
+    .order("sort_order");
+
+  const fieldIds = (fields ?? []).map((f) => f.id);
+  let options: LogEntryFieldOption[] = [];
+  if (fieldIds.length) {
+    const { data } = await sb
+      .from("log_entry_field_options")
+      .select("*")
+      .in("field_id", fieldIds)
+      .order("sort_order");
+    options = data ?? [];
+  }
+
+  return types.map((t) => ({
+    ...t,
+    fields: (fields ?? [])
+      .filter((f) => f.type_id === t.id)
+      .map((f): LogEntryField => ({ ...f, options: options.filter((o) => o.field_id === f.id) })),
+  }));
+}
 
 export async function POST(request: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY);
@@ -47,7 +83,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to save record" }, { status: 500 });
     }
 
-    // Send email
+    // Fetch type config to produce readable field labels in the email
+    const entryTypes = await fetchEntryTypes();
+
     const html = buildEmailHtml({
       employeeName,
       date,
@@ -56,6 +94,7 @@ export async function POST(request: Request) {
       notes,
       totalBillableHours,
       totalNonBillableHours,
+      entryTypes,
     });
 
     const { error: emailError } = await resend.emails.send({
@@ -67,7 +106,6 @@ export async function POST(request: Request) {
 
     if (emailError) {
       console.error("Resend error:", emailError);
-      // Record saved but email failed — still return success, log the issue
       return NextResponse.json({ ok: true, emailWarning: "Saved but email failed to send" });
     }
 
