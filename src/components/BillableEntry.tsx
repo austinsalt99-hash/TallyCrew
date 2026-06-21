@@ -167,7 +167,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
 
       {showTime && (
         <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <label className="block text-xs text-gray-500 mb-1">Start time</label>
             <input
               type="time"
@@ -176,7 +176,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
               className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <label className="block text-xs text-gray-500 mb-1">End time</label>
             <input
               type="time"

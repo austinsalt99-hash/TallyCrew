@@ -252,7 +252,7 @@ export default function TimesheetForm() {
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Workday Hours</p>
         <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <label className="block text-sm font-medium text-gray-700 mb-1">Start time</label>
             <input
               type="time"
@@ -261,7 +261,7 @@ export default function TimesheetForm() {
               className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <label className="block text-sm font-medium text-gray-700 mb-1">End time</label>
             <input
               type="time"

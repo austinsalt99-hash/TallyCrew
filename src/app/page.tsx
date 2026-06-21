@@ -6,7 +6,7 @@ import BottomNav from "@/components/BottomNav";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <Image src="/logo.webp" alt="Cumberland Earthworks" width={140} height={39} priority />

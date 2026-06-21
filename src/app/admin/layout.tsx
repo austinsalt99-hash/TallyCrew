@@ -29,44 +29,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <nav className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <Image src="/logo.webp" alt="Cumberland Earthworks" width={140} height={39} />
-          <Link
-            href="/admin/dashboard"
-            className={`text-sm ${pathname === "/admin/dashboard" ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}
-          >
-            Hour Logs
-          </Link>
-          <Link
-            href="/admin/calendar"
-            className={`text-sm ${pathname === "/admin/calendar" ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}
-          >
-            Calendar
-          </Link>
-          <Link
-            href="/admin/log-config"
-            className={`text-sm ${pathname === "/admin/log-config" ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}
-          >
-            Log Types
-          </Link>
-          <Link
-            href="/admin/invoices"
-            className={`text-sm ${pathname.startsWith("/admin/invoices") ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}
-          >
-            Invoices
-          </Link>
+      <nav className="bg-gray-900 text-white px-4 py-3">
+        {/* Desktop layout */}
+        <div className="hidden sm:flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <Image src="/logo.webp" alt="Cumberland Earthworks" width={140} height={39} />
+            <Link href="/admin/dashboard" className={`text-sm ${pathname === "/admin/dashboard" ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}>Hour Logs</Link>
+            <Link href="/admin/calendar" className={`text-sm ${pathname === "/admin/calendar" ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}>Calendar</Link>
+            <Link href="/admin/log-config" className={`text-sm ${pathname === "/admin/log-config" ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}>Log Types</Link>
+            <Link href="/admin/invoices" className={`text-sm ${pathname.startsWith("/admin/invoices") ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}>Invoices</Link>
+          </div>
+          <div className="flex items-center gap-4">
+            <Link href="/" className="text-gray-400 hover:text-white text-sm">Employee Site</Link>
+            <button onClick={() => { clearToken(); router.push("/admin"); }} className="text-gray-400 hover:text-white text-sm">Sign Out</button>
+          </div>
         </div>
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-gray-400 hover:text-white text-sm">
-            Employee Site
-          </Link>
-          <button
-            onClick={() => { clearToken(); router.push("/admin"); }}
-            className="text-gray-400 hover:text-white text-sm"
-          >
-            Sign Out
-          </button>
+        {/* Mobile layout — horizontally scrollable strip, no logo */}
+        <div className="flex sm:hidden items-center gap-5 overflow-x-auto">
+          <Link href="/admin/dashboard" className={`flex-shrink-0 text-sm ${pathname === "/admin/dashboard" ? "text-white font-semibold" : "text-gray-400"}`}>Hour Logs</Link>
+          <Link href="/admin/calendar" className={`flex-shrink-0 text-sm ${pathname === "/admin/calendar" ? "text-white font-semibold" : "text-gray-400"}`}>Calendar</Link>
+          <Link href="/admin/log-config" className={`flex-shrink-0 text-sm ${pathname === "/admin/log-config" ? "text-white font-semibold" : "text-gray-400"}`}>Log Types</Link>
+          <Link href="/admin/invoices" className={`flex-shrink-0 text-sm ${pathname.startsWith("/admin/invoices") ? "text-white font-semibold" : "text-gray-400"}`}>Invoices</Link>
+          <div className="flex-shrink-0 w-px h-4 bg-gray-700" />
+          <Link href="/" className="flex-shrink-0 text-sm text-gray-400">Employee Site</Link>
+          <button onClick={() => { clearToken(); router.push("/admin"); }} className="flex-shrink-0 text-sm text-gray-400">Sign Out</button>
         </div>
       </nav>
       <main className="max-w-5xl mx-auto px-4 py-8">{children}</main>
