@@ -55,6 +55,7 @@ export default function Dashboard() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filterDate, setFilterDate] = useState("");
   const [filterName, setFilterName] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("cew-admin-token") ?? "";
@@ -208,6 +209,40 @@ export default function Dashboard() {
                       <p className="text-sm text-gray-700">{s.notes}</p>
                     </div>
                   )}
+
+                  <div className="pt-2 border-t border-gray-100">
+                    {confirmDelete === s.id ? (
+                      <div className="flex items-center gap-3 text-sm">
+                        <span className="text-gray-600">Delete this log? This can&apos;t be undone.</span>
+                        <button
+                          onClick={async () => {
+                            const token = localStorage.getItem("cew-admin-token") ?? "";
+                            await fetch("/api/submissions", {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                              body: JSON.stringify({ id: s.id }),
+                            });
+                            setSubmissions((prev) => prev.filter((x) => x.id !== s.id));
+                            setConfirmDelete(null);
+                            setExpanded(null);
+                          }}
+                          className="text-red-600 font-semibold hover:text-red-700"
+                        >
+                          Yes, delete
+                        </button>
+                        <button onClick={() => setConfirmDelete(null)} className="text-gray-400 hover:text-gray-600">
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDelete(s.id)}
+                        className="text-sm text-red-500 hover:text-red-700"
+                      >
+                        Delete this log
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

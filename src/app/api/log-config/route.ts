@@ -76,14 +76,12 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id, ...updates } = await request.json();
-  const { data, error } = await getSupabase()
+  const { error } = await getSupabase()
     .from("log_entry_types")
     .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
+    .eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  return NextResponse.json({ ok: true });
 }
 
 // DELETE /api/log-config — delete a log entry type (cascades to fields and options)

@@ -50,6 +50,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           >
             Log Types
           </Link>
+          <Link
+            href="/admin/invoices"
+            className={`text-sm ${pathname.startsWith("/admin/invoices") ? "text-white font-semibold" : "text-gray-400 hover:text-white"}`}
+          >
+            Invoices
+          </Link>
         </div>
         <div className="flex items-center gap-4">
           <Link href="/" className="text-gray-400 hover:text-white text-sm">

@@ -51,6 +51,8 @@ export default function TimesheetForm() {
   const [notes, setNotes] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
+  const [submittedId, setSubmittedId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [entryTypes, setEntryTypes] = useState<LogEntryType[]>([]);
@@ -133,26 +135,31 @@ export default function TimesheetForm() {
     setSubmitState("submitting");
     setErrorMsg("");
     try {
+      const payload = {
+        employeeName: employeeName.trim(),
+        date,
+        dayStartTime,
+        dayEndTime,
+        billable,
+        nonBillable,
+        notes,
+        totalBillableHours: calcTotalBillable(billable),
+        totalNonBillableHours: calcTotalNonBillable(nonBillable),
+        ...(isEditing && submittedId ? { id: submittedId } : {}),
+      };
       const res = await fetch("/api/submit", {
-        method: "POST",
+        method: isEditing && submittedId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          employeeName: employeeName.trim(),
-          date,
-          dayStartTime,
-          dayEndTime,
-          billable,
-          nonBillable,
-          notes,
-          totalBillableHours: calcTotalBillable(billable),
-          totalNonBillableHours: calcTotalNonBillable(nonBillable),
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || "Submission failed");
       }
+      const result = await res.json();
+      if (result.id) setSubmittedId(result.id);
       localStorage.removeItem(storageKey(today()));
+      setIsEditing(false);
       setSubmitState("success");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Something went wrong. Try again.");
@@ -169,26 +176,55 @@ export default function TimesheetForm() {
         <div className="text-5xl mb-4">✓</div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Hours submitted!</h2>
         <p className="text-gray-500 mb-6">Your timesheet for {date} has been sent.</p>
-        <button
-          onClick={() => {
-            setSubmitState("idle");
-            setDayStartTime("");
-            setDayEndTime("");
-            setBillable([newBillable()]);
-            setNonBillable([newNonBillable()]);
-            setNotes("");
-            setDate(today());
-          }}
-          className="text-blue-600 underline text-sm"
-        >
-          Start a new entry
-        </button>
+        <div className="flex flex-col items-center gap-3">
+          {submittedId && (
+            <button
+              onClick={() => {
+                setIsEditing(true);
+                setSubmitState("idle");
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm"
+            >
+              Edit this submission
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setSubmitState("idle");
+              setSubmittedId(null);
+              setIsEditing(false);
+              setDayStartTime("");
+              setDayEndTime("");
+              setBillable([newBillable()]);
+              setNonBillable([newNonBillable()]);
+              setNotes("");
+              setDate(today());
+            }}
+            className="text-blue-600 underline text-sm"
+          >
+            Start a new entry
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Edit mode banner */}
+      {isEditing && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 flex items-center justify-between">
+          <span>You&apos;re editing a submitted timesheet. Changes will replace your previous submission.</span>
+          <button
+            type="button"
+            onClick={() => { setIsEditing(false); setSubmitState("success"); }}
+            className="ml-3 text-amber-600 underline whitespace-nowrap"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       {/* Header fields */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200 space-y-4">
         <div>
@@ -324,7 +360,9 @@ export default function TimesheetForm() {
         disabled={submitState === "submitting"}
         className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-lg py-4 rounded-2xl transition-colors shadow-sm"
       >
-        {submitState === "submitting" ? "Submitting..." : "Submit for the Day"}
+        {submitState === "submitting"
+          ? (isEditing ? "Updating..." : "Submitting...")
+          : (isEditing ? "Update Submission" : "Submit for the Day")}
       </button>
     </form>
   );
