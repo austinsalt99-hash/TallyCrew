@@ -172,7 +172,7 @@ export default function TimesheetForm() {
 
   if (submitState === "success") {
     return (
-      <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-200">
+      <div className="bg-white rounded-2xl p-6 sm:p-10 text-center shadow-sm border border-gray-200">
         <div className="text-5xl mb-4">✓</div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Hours submitted!</h2>
         <p className="text-gray-500 mb-6">Your timesheet for {date} has been sent.</p>
@@ -213,12 +213,12 @@ export default function TimesheetForm() {
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Edit mode banner */}
       {isEditing && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 flex items-center justify-between">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 flex flex-col sm:flex-row sm:items-center gap-2">
           <span>You&apos;re editing a submitted timesheet. Changes will replace your previous submission.</span>
           <button
             type="button"
             onClick={() => { setIsEditing(false); setSubmitState("success"); }}
-            className="ml-3 text-amber-600 underline whitespace-nowrap"
+            className="text-amber-600 underline self-start sm:ml-3 sm:self-auto"
           >
             Cancel
           </button>
@@ -251,7 +251,7 @@ export default function TimesheetForm() {
       {/* Workday times */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Workday Hours</p>
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">Start time</label>
             <input

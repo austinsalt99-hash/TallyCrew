@@ -166,7 +166,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
       )}
 
       {showTime && (
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <label className="block text-xs text-gray-500 mb-1">Start time</label>
             <input

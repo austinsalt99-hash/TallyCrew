@@ -32,7 +32,7 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-gray-200 flex">
+    <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-gray-200 flex pb-safe">
       {tabs.map((tab) => {
         const active = pathname === tab.href;
         return (
