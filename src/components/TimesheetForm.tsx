@@ -56,6 +56,8 @@ export default function TimesheetForm() {
   const [errorMsg, setErrorMsg] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [entryTypes, setEntryTypes] = useState<LogEntryType[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyMsg, setHistoryMsg] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -110,6 +112,37 @@ export default function TimesheetForm() {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
   }, [loaded, employeeName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, saveDraft]);
+
+  async function loadPastLog() {
+    if (!employeeName.trim()) {
+      setHistoryMsg("Enter your name first.");
+      return;
+    }
+    setHistoryLoading(true);
+    setHistoryMsg("");
+    try {
+      const res = await fetch(`/api/submissions/employee?name=${encodeURIComponent(employeeName.trim())}&date=${date}`);
+      const data = await res.json();
+      if (!data || !data.id) {
+        setHistoryMsg(`No log found for ${date}.`);
+        return;
+      }
+      if (data.employee_name) setEmployeeName(data.employee_name);
+      if (data.date) setDate(data.date);
+      setDayStartTime(data.day_start_time ?? "");
+      setDayEndTime(data.day_end_time ?? "");
+      if (data.billable_entries?.length) setBillable(data.billable_entries.map((e: BillableEntryData) => ({ ...e, id: e.id ?? crypto.randomUUID() })));
+      if (data.non_billable_entries?.length) setNonBillable(data.non_billable_entries.map((e: NonBillableEntryData) => ({ ...e, id: e.id ?? crypto.randomUUID() })));
+      setNotes(data.notes ?? "");
+      setSubmittedId(data.id);
+      setIsEditing(true);
+      setHistoryMsg("");
+    } catch {
+      setHistoryMsg("Failed to load log. Try again.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   const addBillable = () => setBillable((prev) => [...prev, newBillable()]);
   const addNonBillable = () => setNonBillable((prev) => [...prev, newNonBillable()]);
@@ -239,12 +272,31 @@ export default function TimesheetForm() {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => { setDate(e.target.value); setHistoryMsg(""); }}
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            <button
+              type="button"
+              onClick={loadPastLog}
+              disabled={historyLoading}
+              title="Load your log for this date"
+              className="px-3 py-3 border border-gray-300 rounded-lg text-gray-400 hover:text-blue-600 hover:border-blue-400 transition-colors disabled:opacity-50"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 15 15" />
+              </svg>
+            </button>
+          </div>
+          {historyMsg && (
+            <p className={`text-xs mt-1.5 ${historyMsg.startsWith("No log") ? "text-gray-400" : "text-red-500"}`}>
+              {historyMsg}
+            </p>
+          )}
         </div>
       </div>
 
@@ -275,7 +327,7 @@ export default function TimesheetForm() {
 
       {/* Billable entries */}
       <section>
-        <h2 className="text-base font-semibold text-gray-800 mb-3">Billable Hours</h2>
+        <h2 className="text-base font-semibold text-gray-800 mb-3">Jobs</h2>
         <div className="space-y-3">
           {billable.map((entry) => (
             <BillableEntry
@@ -293,11 +345,11 @@ export default function TimesheetForm() {
           onClick={addBillable}
           className="mt-3 w-full py-3 border-2 border-dashed border-blue-300 rounded-xl text-blue-600 font-medium text-sm hover:bg-blue-50 transition-colors"
         >
-          + Add another billable entry
+          + Add another job
         </button>
         {totalBillable > 0 && (
           <p className="mt-2 text-right text-sm text-gray-500">
-            Total billable: <span className="font-semibold text-gray-800">{totalBillable}h</span>
+            Total job hours: <span className="font-semibold text-gray-800">{totalBillable}h</span>
           </p>
         )}
       </section>

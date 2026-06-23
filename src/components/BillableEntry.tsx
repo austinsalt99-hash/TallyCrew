@@ -1,6 +1,14 @@
 "use client";
 
+import { useRef, useState } from "react";
+import { getSupabase } from "@/lib/supabase";
 import type { LogEntryType } from "@/types/logConfig";
+
+interface TypeSnapshot {
+  client?: string;
+  description?: string;
+  customFields?: Record<string, string>;
+}
 
 export interface BillableEntryData {
   id: string;
@@ -10,6 +18,8 @@ export interface BillableEntryData {
   endTime: string;
   entryType?: string;
   customFields?: Record<string, string>;
+  _typeData?: Record<string, TypeSnapshot>;
+  photos?: string[];
 }
 
 function calcHours(start: string, end: string): string {
@@ -32,14 +42,56 @@ interface Props {
 }
 
 export default function BillableEntry({ entry, onChange, onRemove, showRemove, entryTypes }: Props) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
   const update = (field: keyof BillableEntryData, value: string) =>
     onChange({ ...entry, [field]: value });
 
   const updateCustomField = (key: string, value: string) =>
     onChange({ ...entry, customFields: { ...(entry.customFields ?? {}), [key]: value } });
 
-  const selectType = (slug: string) =>
-    onChange({ ...entry, entryType: slug, client: "", description: "", customFields: {} });
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const urls: string[] = [];
+      for (const file of files) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `${entry.id}/${Date.now()}-${safeName}`;
+        const { error } = await getSupabase().storage.from("job-photos").upload(path, file);
+        if (error) throw error;
+        const { data } = getSupabase().storage.from("job-photos").getPublicUrl(path);
+        urls.push(data.publicUrl);
+      }
+      onChange({ ...entry, photos: [...(entry.photos ?? []), ...urls] });
+    } catch (err) {
+      console.error("Photo upload failed:", err);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removePhoto = (url: string) =>
+    onChange({ ...entry, photos: (entry.photos ?? []).filter((p) => p !== url) });
+
+  const selectType = (slug: string) => {
+    const currentSlug = entry.entryType ?? "standard";
+    const saved = entry._typeData?.[slug] ?? {};
+    onChange({
+      ...entry,
+      entryType: slug,
+      client: saved.client ?? "",
+      description: saved.description ?? "",
+      customFields: saved.customFields ?? {},
+      _typeData: {
+        ...(entry._typeData ?? {}),
+        [currentSlug]: { client: entry.client, description: entry.description, customFields: entry.customFields ?? {} },
+      },
+    });
+  };
 
   const hours = calcHours(entry.startTime, entry.endTime);
   const activeSlug = entry.entryType ?? "standard";
@@ -51,7 +103,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Billable</span>
+        <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Job</span>
         <div className="flex items-center gap-2">
           {hours !== "—" && (
             <span className="text-sm font-semibold text-gray-700 bg-blue-50 px-2 py-0.5 rounded-full">
@@ -187,6 +239,44 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
           </div>
         </div>
       )}
+
+      {/* Photos */}
+      <div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <div className="flex flex-wrap gap-2 items-center">
+          {(entry.photos ?? []).map((url) => (
+            <div key={url} className="relative shrink-0">
+              <img src={url} alt="" className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+              <button
+                type="button"
+                onClick={() => removePhoto(url)}
+                className="absolute -top-1.5 -right-1.5 bg-white border border-gray-200 rounded-full w-5 h-5 flex items-center justify-center text-xs text-gray-400 hover:text-red-500 leading-none shadow-sm"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-1.5 px-3 py-2 border border-dashed border-gray-300 rounded-lg text-xs text-gray-400 hover:text-blue-500 hover:border-blue-400 transition-colors disabled:opacity-50"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            {uploading ? "Uploading…" : "Add photo"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
 const tabs = [
   {
@@ -30,27 +31,64 @@ const tabs = [
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-gray-200 flex pb-safe">
-      {tabs.map((tab) => {
-        const active = pathname === tab.href;
-        return (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            className="flex-1 flex flex-col items-center justify-center py-3 gap-1"
-          >
-            {tab.icon(active)}
-            <span className={`text-xs font-semibold ${active ? "text-blue-600" : "text-gray-400"}`}>
-              {tab.label}
-            </span>
-            {active && (
-              <span className="absolute bottom-0 w-12 h-0.5 bg-blue-600 rounded-full" />
-            )}
-          </Link>
-        );
-      })}
-    </nav>
+    <>
+      {/* Invisible backdrop to catch outside taps */}
+      {moreOpen && (
+        <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
+      )}
+
+      {/* Right-side strip */}
+      <div
+        className="fixed right-0 z-40 bg-white border-l border-t border-gray-200 rounded-tl-2xl shadow-xl transition-transform duration-300 ease-out"
+        style={{ bottom: "65px", transform: moreOpen ? "translateY(0)" : "translateY(calc(100% + 65px))" }}
+      >
+        <Link
+          href="/admin"
+          onClick={() => setMoreOpen(false)}
+          className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 active:bg-gray-100 rounded-tl-2xl"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          <span className="text-gray-800 font-medium text-sm whitespace-nowrap">Admin</span>
+        </Link>
+      </div>
+
+      {/* Nav bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-gray-200 flex pb-safe">
+        {tabs.map((tab) => {
+          const active = pathname === tab.href;
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              className="flex-1 flex flex-col items-center justify-center py-3 gap-1"
+            >
+              {tab.icon(active)}
+              <span className={`text-xs font-semibold ${active ? "text-blue-600" : "text-gray-400"}`}>
+                {tab.label}
+              </span>
+              {active && (
+                <span className="absolute bottom-0 w-12 h-0.5 bg-blue-600 rounded-full" />
+              )}
+            </Link>
+          );
+        })}
+        <button
+          onClick={() => setMoreOpen((o) => !o)}
+          className="flex-1 flex flex-col items-center justify-center py-3 gap-1"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill={moreOpen ? "#2563eb" : "#9ca3af"} stroke="none">
+            <circle cx="5" cy="12" r="2" />
+            <circle cx="12" cy="12" r="2" />
+            <circle cx="19" cy="12" r="2" />
+          </svg>
+          <span className={`text-xs font-semibold ${moreOpen ? "text-blue-600" : "text-gray-400"}`}>More</span>
+        </button>
+      </nav>
+    </>
   );
 }
