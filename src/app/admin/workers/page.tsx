@@ -151,7 +151,7 @@ export default function WorkersPage() {
           {loadingCodes ? (
             <p className="text-sm text-gray-400">Loading…</p>
           ) : activeCodes.length === 0 && usedCodes.length === 0 ? (
-            <p className="text-sm text-gray-400">No codes yet. Click "Generate code" to create one.</p>
+            <p className="text-sm text-gray-400">No codes yet. Click &ldquo;Generate code&rdquo; to create one.</p>
           ) : (
             <div className="space-y-4">
               {activeCodes.length > 0 && (
