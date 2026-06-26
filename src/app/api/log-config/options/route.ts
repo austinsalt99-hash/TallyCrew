@@ -1,18 +1,20 @@
 import { NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
-import { verifyToken } from "@/lib/auth";
+import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 
-function authCheck(request: Request) {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  return token && verifyToken(token);
+async function adminCheck() {
+  const supabase = await createSupabaseServer();
+  const { user, profile } = await getSessionUser(supabase);
+  if (!user || !profile) return { supabase, profile: null, err: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  if (profile.role !== "admin") return { supabase, profile: null, err: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  return { supabase, profile, err: null };
 }
 
 export async function POST(request: Request) {
-  if (!authCheck(request))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { supabase, profile, err } = await adminCheck();
+  if (err || !profile) return err!;
 
   const body = await request.json();
-  const { data, error } = await getSupabase()
+  const { data, error } = await supabase
     .from("log_entry_field_options")
     .insert({ field_id: body.field_id, label: body.label, sort_order: body.sort_order ?? 0 })
     .select()
@@ -22,11 +24,11 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  if (!authCheck(request))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { supabase, profile, err } = await adminCheck();
+  if (err || !profile) return err!;
 
   const { id, ...updates } = await request.json();
-  const { data, error } = await getSupabase()
+  const { data, error } = await supabase
     .from("log_entry_field_options")
     .update(updates)
     .eq("id", id)
@@ -37,11 +39,11 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  if (!authCheck(request))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { supabase, profile, err } = await adminCheck();
+  if (err || !profile) return err!;
 
   const { id } = await request.json();
-  const { error } = await getSupabase().from("log_entry_field_options").delete().eq("id", id);
+  const { error } = await supabase.from("log_entry_field_options").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

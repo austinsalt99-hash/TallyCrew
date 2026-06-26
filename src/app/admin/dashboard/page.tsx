@@ -106,8 +106,7 @@ export default function Dashboard() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("cew-admin-token") ?? "";
-    fetch("/api/submissions", { headers: { Authorization: `Bearer ${token}` } })
+    fetch("/api/submissions", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => { setSubmissions(Array.isArray(data) ? data : []); setLoading(false); });
   }, []);
@@ -317,10 +316,10 @@ export default function Dashboard() {
                             <span className="text-gray-600">Delete this log? This can&apos;t be undone.</span>
                             <button
                               onClick={async () => {
-                                const token = localStorage.getItem("cew-admin-token") ?? "";
                                 await fetch("/api/submissions", {
                                   method: "DELETE",
-                                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                                  headers: { "Content-Type": "application/json" },
+                                  credentials: "include",
                                   body: JSON.stringify({ id: s.id }),
                                 });
                                 setSubmissions((prev) => prev.filter((x) => x.id !== s.id));

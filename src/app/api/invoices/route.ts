@@ -1,29 +1,32 @@
 import { NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
-import { verifyToken } from "@/lib/auth";
-
-function authCheck(request: Request) {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  return token && verifyToken(token);
-}
+import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 
 export async function GET() {
-  const { data, error } = await getSupabase()
+  const supabase = await createSupabaseServer();
+  const { user, profile } = await getSessionUser(supabase);
+  if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const { data, error } = await supabase
     .from("invoices")
     .select("*")
+    .eq("company_id", profile.company_id)
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
 }
 
 export async function POST(request: Request) {
-  if (!authCheck(request))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServer();
+  const { user, profile } = await getSessionUser(supabase);
+  if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await request.json();
-  const { data, error } = await getSupabase()
+  const { data, error } = await supabase
     .from("invoices")
     .insert({
+      company_id: profile.company_id,
       invoice_number: body.invoice_number,
       client_name: body.client_name,
       date_from: body.date_from,

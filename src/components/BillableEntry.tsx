@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { getSupabase } from "@/lib/supabase";
+import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import type { LogEntryType } from "@/types/logConfig";
 
 interface TypeSnapshot {
@@ -63,9 +63,9 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
       for (const file of files) {
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
         const path = `${entry.id}/${Date.now()}-${safeName}`;
-        const { error } = await getSupabase().storage.from("job-photos").upload(path, file);
+        const { error } = await createSupabaseBrowser().storage.from("job-photos").upload(path, file);
         if (error) throw error;
-        const { data } = getSupabase().storage.from("job-photos").getPublicUrl(path);
+        const { data } = createSupabaseBrowser().storage.from("job-photos").getPublicUrl(path);
         urls.push(data.publicUrl);
       }
       onChange({ ...entry, photos: [...(entry.photos ?? []), ...urls] });

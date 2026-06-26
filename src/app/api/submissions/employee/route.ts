@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
+import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 
 export async function GET(request: Request) {
+  const supabase = await createSupabaseServer();
+  const { user, profile } = await getSessionUser(supabase);
+  if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { searchParams } = new URL(request.url);
-  const name = searchParams.get("name")?.trim();
   const date = searchParams.get("date");
 
-  if (!name || !date) {
-    return NextResponse.json({ error: "name and date required" }, { status: 400 });
+  if (!date) {
+    return NextResponse.json({ error: "date required" }, { status: 400 });
   }
 
-  const { data, error } = await getSupabase()
+  const { data, error } = await supabase
     .from("submissions")
     .select("*")
-    .ilike("employee_name", name)
+    .eq("user_id", user.id)
     .eq("date", date)
     .order("submitted_at", { ascending: false })
     .limit(1);

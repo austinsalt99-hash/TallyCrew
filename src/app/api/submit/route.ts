@@ -1,22 +1,25 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { getSupabase } from "@/lib/supabase";
+import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 import { buildEmailHtml } from "@/lib/emailTemplate";
 import type { BillableEntryData } from "@/components/BillableEntry";
 import type { NonBillableEntryData } from "@/components/NonBillableEntry";
 import type { LogEntryType, LogEntryField, LogEntryFieldOption } from "@/types/logConfig";
 
-async function fetchEntryTypes(): Promise<LogEntryType[]> {
-  const sb = getSupabase();
-  const { data: types } = await sb
+async function fetchEntryTypesForCompany(
+  supabase: Awaited<ReturnType<typeof createSupabaseServer>>,
+  companyId: string
+): Promise<LogEntryType[]> {
+  const { data: types } = await supabase
     .from("log_entry_types")
     .select("*")
+    .eq("company_id", companyId)
     .eq("is_active", true)
     .order("sort_order");
   if (!types?.length) return [];
 
   const typeIds = types.map((t) => t.id);
-  const { data: fields } = await sb
+  const { data: fields } = await supabase
     .from("log_entry_fields")
     .select("*")
     .in("type_id", typeIds)
@@ -25,7 +28,7 @@ async function fetchEntryTypes(): Promise<LogEntryType[]> {
   const fieldIds = (fields ?? []).map((f) => f.id);
   let options: LogEntryFieldOption[] = [];
   if (fieldIds.length) {
-    const { data } = await sb
+    const { data } = await supabase
       .from("log_entry_field_options")
       .select("*")
       .in("field_id", fieldIds)
@@ -44,9 +47,12 @@ async function fetchEntryTypes(): Promise<LogEntryType[]> {
 export async function POST(request: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   try {
+    const supabase = await createSupabaseServer();
+    const { user, profile } = await getSessionUser(supabase);
+    if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const body = await request.json();
     const {
-      employeeName,
       date,
       dayStartTime,
       dayEndTime,
@@ -57,7 +63,6 @@ export async function POST(request: Request) {
       totalBillableHours,
       totalNonBillableHours,
     } = body as {
-      employeeName: string;
       date: string;
       dayStartTime?: string;
       dayEndTime?: string;
@@ -69,14 +74,17 @@ export async function POST(request: Request) {
       totalNonBillableHours: number;
     };
 
-    if (!employeeName || !date) {
+    const employeeName = profile.full_name;
+
+    if (!date) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // Save to Supabase
-    const { data: inserted, error: dbError } = await getSupabase()
+    const { data: inserted, error: dbError } = await supabase
       .from("submissions")
       .insert({
+        company_id: profile.company_id,
+        user_id: user.id,
         employee_name: employeeName,
         date,
         day_start_time: dayStartTime || null,
@@ -97,9 +105,7 @@ export async function POST(request: Request) {
     }
     const submissionId = inserted?.id as string;
 
-    // Fetch type config to produce readable field labels in the email
-    const entryTypes = await fetchEntryTypes();
-
+    const entryTypes = await fetchEntryTypesForCompany(supabase, profile.company_id);
     const html = buildEmailHtml({
       employeeName,
       date,
@@ -135,10 +141,13 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   try {
+    const supabase = await createSupabaseServer();
+    const { user, profile } = await getSessionUser(supabase);
+    if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const body = await request.json();
     const {
       id,
-      employeeName,
       date,
       dayStartTime,
       dayEndTime,
@@ -150,7 +159,6 @@ export async function PUT(request: Request) {
       totalNonBillableHours,
     } = body as {
       id: string;
-      employeeName: string;
       date: string;
       dayStartTime?: string;
       dayEndTime?: string;
@@ -162,11 +170,13 @@ export async function PUT(request: Request) {
       totalNonBillableHours: number;
     };
 
-    if (!id || !employeeName || !date) {
+    const employeeName = profile.full_name;
+
+    if (!id || !date) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const { error: dbError } = await getSupabase()
+    const { error: dbError } = await supabase
       .from("submissions")
       .update({
         day_start_time: dayStartTime || null,
@@ -178,15 +188,15 @@ export async function PUT(request: Request) {
         total_billable_hours: totalBillableHours,
         total_non_billable_hours: totalNonBillableHours,
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("user_id", user.id);
 
     if (dbError) {
       console.error("Supabase update error:", dbError);
       return NextResponse.json({ error: "Failed to update record" }, { status: 500 });
     }
 
-    const entryTypes = await fetchEntryTypes();
-
+    const entryTypes = await fetchEntryTypesForCompany(supabase, profile.company_id);
     const html = buildEmailHtml({
       employeeName,
       date,

@@ -1,39 +1,39 @@
 import { NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
-import { verifyToken } from "@/lib/auth";
+import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 import type { LogEntryType, LogEntryField, LogEntryFieldOption } from "@/types/logConfig";
 
-// GET /api/log-config — public, returns all active types with their fields and options
-export async function GET() {
-  const sb = getSupabase();
-
-  const { data: types, error: typesErr } = await sb
+async function fetchTypesForCompany(
+  supabase: Awaited<ReturnType<typeof createSupabaseServer>>,
+  companyId: string,
+  activeOnly: boolean
+) {
+  let typeQuery = supabase
     .from("log_entry_types")
     .select("*")
-    .eq("is_active", true)
+    .eq("company_id", companyId)
     .order("sort_order");
-  if (typesErr) return NextResponse.json({ error: typesErr.message }, { status: 500 });
-  if (!types?.length) return NextResponse.json([]);
+  if (activeOnly) typeQuery = typeQuery.eq("is_active", true);
+
+  const { data: types, error: typesErr } = await typeQuery;
+  if (typesErr || !types?.length) return { types: types ?? [], error: typesErr };
 
   const typeIds = types.map((t) => t.id);
-
-  const { data: fields, error: fieldsErr } = await sb
+  const { data: fields, error: fieldsErr } = await supabase
     .from("log_entry_fields")
     .select("*")
     .in("type_id", typeIds)
     .order("sort_order");
-  if (fieldsErr) return NextResponse.json({ error: fieldsErr.message }, { status: 500 });
+  if (fieldsErr) return { types: [], error: fieldsErr };
 
   const fieldIds = (fields ?? []).map((f) => f.id);
-
   let options: LogEntryFieldOption[] = [];
   if (fieldIds.length) {
-    const { data, error: optErr } = await sb
+    const { data, error: optErr } = await supabase
       .from("log_entry_field_options")
       .select("*")
       .in("field_id", fieldIds)
       .order("sort_order");
-    if (optErr) return NextResponse.json({ error: optErr.message }, { status: 500 });
+    if (optErr) return { types: [], error: optErr };
     options = data ?? [];
   }
 
@@ -42,30 +42,33 @@ export async function GET() {
     time_mode: t.time_mode ?? (t.is_timed ? "job" : "none"),
     fields: (fields ?? [])
       .filter((f) => f.type_id === t.id)
-      .map((f): LogEntryField => ({
-        ...f,
-        options: options.filter((o) => o.field_id === f.id),
-      })),
+      .map((f): LogEntryField => ({ ...f, options: options.filter((o) => o.field_id === f.id) })),
   }));
-
-  return NextResponse.json(result);
+  return { types: result, error: null };
 }
 
-function authCheck(request: Request) {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  return token && verifyToken(token);
+export async function GET() {
+  const supabase = await createSupabaseServer();
+  const { user, profile } = await getSessionUser(supabase);
+  if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { types, error } = await fetchTypesForCompany(supabase, profile.company_id, true);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(types);
 }
 
-// POST /api/log-config — create a new log entry type
 export async function POST(request: Request) {
-  if (!authCheck(request))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServer();
+  const { user, profile } = await getSessionUser(supabase);
+  if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await request.json();
   const timeMode: string = body.time_mode ?? "job";
-  const { data, error } = await getSupabase()
+  const { data, error } = await supabase
     .from("log_entry_types")
     .insert({
+      company_id: profile.company_id,
       name: body.name,
       slug: body.slug,
       sort_order: body.sort_order ?? 0,
@@ -78,27 +81,34 @@ export async function POST(request: Request) {
   return NextResponse.json(data);
 }
 
-// PUT /api/log-config — update a log entry type
 export async function PUT(request: Request) {
-  if (!authCheck(request))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServer();
+  const { user, profile } = await getSessionUser(supabase);
+  if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id, ...updates } = await request.json();
-  const { error } = await getSupabase()
+  const { error } = await supabase
     .from("log_entry_types")
     .update(updates)
-    .eq("id", id);
+    .eq("id", id)
+    .eq("company_id", profile.company_id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
 
-// DELETE /api/log-config — delete a log entry type (cascades to fields and options)
 export async function DELETE(request: Request) {
-  if (!authCheck(request))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServer();
+  const { user, profile } = await getSessionUser(supabase);
+  if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await request.json();
-  const { error } = await getSupabase().from("log_entry_types").delete().eq("id", id);
+  const { error } = await supabase
+    .from("log_entry_types")
+    .delete()
+    .eq("id", id)
+    .eq("company_id", profile.company_id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

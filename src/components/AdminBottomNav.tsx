@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { clearToken } from "@/lib/auth";
+import { createSupabaseBrowser } from "@/lib/supabase-browser";
 
 const tabs = [
   {
@@ -46,6 +46,18 @@ const moreItems = [
     ),
   },
   {
+    href: "/admin/workers",
+    label: "Workers",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/invoices",
     label: "Invoices",
     icon: (
@@ -74,9 +86,11 @@ export default function AdminBottomNav() {
   const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  function signOut() {
-    clearToken();
-    router.push("/admin");
+  async function signOut() {
+    const supabase = createSupabaseBrowser();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
   }
 
   return (

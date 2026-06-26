@@ -1,19 +1,17 @@
 import { NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
-import { verifyToken } from "@/lib/auth";
+import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 
-function authCheck(request: Request) {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  return token && verifyToken(token);
-}
+export async function GET() {
+  const supabase = await createSupabaseServer();
+  const { user, profile } = await getSessionUser(supabase);
 
-export async function GET(request: Request) {
-  if (!authCheck(request))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { data, error } = await getSupabase()
+  const { data, error } = await supabase
     .from("submissions")
     .select("*")
+    .eq("company_id", profile.company_id)
     .order("date", { ascending: false })
     .order("submitted_at", { ascending: false });
 
@@ -22,11 +20,19 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  if (!authCheck(request))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServer();
+  const { user, profile } = await getSessionUser(supabase);
+
+  if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await request.json();
-  const { error } = await getSupabase().from("submissions").delete().eq("id", id);
+  const { error } = await supabase
+    .from("submissions")
+    .delete()
+    .eq("id", id)
+    .eq("company_id", profile.company_id);
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

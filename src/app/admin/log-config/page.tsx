@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getToken } from "@/lib/auth";
 import BillableEntry, { BillableEntryData } from "@/components/BillableEntry";
 import TimesheetForm from "@/components/TimesheetForm";
 import type { LogEntryType, LogEntryField, LogEntryFieldOption } from "@/types/logConfig";
 
 function authHeader() {
-  return { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" };
+  return { "Content-Type": "application/json" };
 }
 
 function toSlug(name: string): string {
@@ -56,7 +55,7 @@ export default function LogConfigPage() {
 
   async function reload() {
     // Fetch all types (including inactive) for the admin view
-    const sb_res = await fetch("/api/log-config/all", { headers: authHeader() });
+    const sb_res = await fetch("/api/log-config/all", { headers: authHeader(), credentials: "include" });
     if (sb_res.ok) {
       const data = await sb_res.json();
       if (Array.isArray(data)) { setTypes(data); setLoading(false); return; }
@@ -76,7 +75,7 @@ export default function LogConfigPage() {
     const slug = toSlug(newTypeName);
     await fetch("/api/log-config", {
       method: "POST",
-      headers: authHeader(),
+      headers: authHeader(), credentials: "include",
       body: JSON.stringify({
         name: newTypeName.trim(),
         slug,
@@ -95,7 +94,7 @@ export default function LogConfigPage() {
     if (!confirm("Delete this log type and all its fields? This cannot be undone.")) return;
     await fetch("/api/log-config", {
       method: "DELETE",
-      headers: authHeader(),
+      headers: authHeader(), credentials: "include",
       body: JSON.stringify({ id }),
     });
     if (expandedType === id) setExpandedType(null);
@@ -105,7 +104,7 @@ export default function LogConfigPage() {
   async function handleToggleActive(type: LogEntryType) {
     await fetch("/api/log-config", {
       method: "PUT",
-      headers: authHeader(),
+      headers: authHeader(), credentials: "include",
       body: JSON.stringify({ id: type.id, is_active: !type.is_active }),
     });
     await reload();
@@ -118,7 +117,7 @@ export default function LogConfigPage() {
     );
     await fetch("/api/log-config", {
       method: "PUT",
-      headers: authHeader(),
+      headers: authHeader(), credentials: "include",
       body: JSON.stringify({ id: type.id, time_mode: mode, is_timed: mode === "job" }),
     });
     await reload();
@@ -132,7 +131,7 @@ export default function LogConfigPage() {
     const sortOrder = type ? type.fields.length : 0;
     await fetch("/api/log-config/fields", {
       method: "POST",
-      headers: authHeader(),
+      headers: authHeader(), credentials: "include",
       body: JSON.stringify({
         type_id: typeId,
         label,
@@ -150,7 +149,7 @@ export default function LogConfigPage() {
     if (!confirm("Delete this field and all its options?")) return;
     await fetch("/api/log-config/fields", {
       method: "DELETE",
-      headers: authHeader(),
+      headers: authHeader(), credentials: "include",
       body: JSON.stringify({ id }),
     });
     if (expandedField === id) setExpandedField(null);
@@ -164,7 +163,7 @@ export default function LogConfigPage() {
     const sortOrder = field ? field.options.length : 0;
     await fetch("/api/log-config/options", {
       method: "POST",
-      headers: authHeader(),
+      headers: authHeader(), credentials: "include",
       body: JSON.stringify({ field_id: fieldId, label, sort_order: sortOrder }),
     });
     setNewOptionLabel((prev) => ({ ...prev, [fieldId]: "" }));
@@ -174,7 +173,7 @@ export default function LogConfigPage() {
   async function handleDeleteOption(id: string) {
     await fetch("/api/log-config/options", {
       method: "DELETE",
-      headers: authHeader(),
+      headers: authHeader(), credentials: "include",
       body: JSON.stringify({ id }),
     });
     await reload();
@@ -184,7 +183,7 @@ export default function LogConfigPage() {
     if (!editingOption) return;
     await fetch("/api/log-config/options", {
       method: "PUT",
-      headers: authHeader(),
+      headers: authHeader(), credentials: "include",
       body: JSON.stringify({ id: editingOption.id, label: editingOption.label }),
     });
     setEditingOption(null);

@@ -79,8 +79,6 @@ export default function AdminCalendar() {
   const todayStr = fmt(new Date());
   const totalHeight = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
 
-  const token = typeof window !== "undefined" ? localStorage.getItem("cew-admin-token") ?? "" : "";
-
   useEffect(() => {
     fetch(`/api/events?from=${from}&to=${to}`)
       .then((r) => r.json())
@@ -126,7 +124,8 @@ export default function AdminCalendar() {
     const body = editId ? { id: editId, ...form } : form;
     await fetch("/api/events", {
       method,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(body),
     });
     const res = await fetch(`/api/events?from=${from}&to=${to}`);
@@ -139,7 +138,8 @@ export default function AdminCalendar() {
     if (!confirm("Delete this job?")) return;
     await fetch("/api/events", {
       method: "DELETE",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id }),
     });
     setEvents((prev) => prev.filter((e) => e.id !== id));

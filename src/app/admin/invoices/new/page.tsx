@@ -82,8 +82,7 @@ export default function NewInvoicePage() {
     if (!dateFrom) { setLoadError("Enter a start date."); return; }
     setLoadError("");
 
-    const token = localStorage.getItem("cew-admin-token") ?? "";
-    fetch("/api/submissions", { headers: { Authorization: `Bearer ${token}` } })
+    fetch("/api/submissions", { credentials: "include" })
       .then((r) => r.json())
       .then((data: Submission[]) => {
         if (!Array.isArray(data)) return;
@@ -125,10 +124,10 @@ export default function NewInvoicePage() {
     if (!clientName.trim()) { setLoadError("Client name is required."); return; }
     if (!dateFrom || !dateTo) { setLoadError("Date range is required."); return; }
     setSaving(true);
-    const token = localStorage.getItem("cew-admin-token") ?? "";
     const res = await fetch("/api/invoices", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         invoice_number: invoiceNumber,
         client_name: clientName,

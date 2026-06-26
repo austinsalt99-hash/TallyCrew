@@ -53,20 +53,19 @@ export default function InvoiceDetailPage() {
   }, [id]);
 
   async function setStatus(status: "draft" | "sent" | "paid") {
-    const token = localStorage.getItem("cew-admin-token") ?? "";
     await fetch(`/api/invoices/${id}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ status }),
     });
     setInvoice((prev) => prev ? { ...prev, status } : prev);
   }
 
   async function deleteInvoice() {
-    const token = localStorage.getItem("cew-admin-token") ?? "";
     await fetch(`/api/invoices/${id}`, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
     });
     router.push("/admin/invoices");
   }

@@ -25,8 +25,8 @@ function newNonBillable(): NonBillableEntryData {
   return { id: crypto.randomUUID(), description: "", hours: "" };
 }
 
-function storageKey(date: string): string {
-  return `cew-draft-${date}`;
+function storageKey(userId: string, date: string): string {
+  return `cew-draft-${userId}-${date}`;
 }
 
 function calcTotalBillable(entries: BillableEntryData[]): number {
@@ -49,8 +49,13 @@ function calcTotalNonBillable(entries: NonBillableEntryData[]): number {
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
-export default function TimesheetForm({ previewMode = false }: { previewMode?: boolean }) {
-  const [employeeName, setEmployeeName] = useState("");
+interface TimesheetFormProps {
+  previewMode?: boolean;
+  userName?: string;
+  userId?: string;
+}
+
+export default function TimesheetForm({ previewMode = false, userName = "", userId = "preview" }: TimesheetFormProps) {
   const [date, setDate] = useState(today());
   const [dayStartTime, setDayStartTime] = useState("");
   const [dayEndTime, setDayEndTime] = useState("");
@@ -103,11 +108,10 @@ export default function TimesheetForm({ previewMode = false }: { previewMode?: b
 
   // Load draft on mount
   useEffect(() => {
-    const raw = localStorage.getItem(storageKey(today()));
+    const raw = localStorage.getItem(storageKey(userId, today()));
     if (raw) {
       try {
         const draft = JSON.parse(raw);
-        if (draft.employeeName) setEmployeeName(draft.employeeName);
         if (draft.date) setDate(draft.date);
         if (draft.dayStartTime) setDayStartTime(draft.dayStartTime);
         if (draft.dayEndTime) setDayEndTime(draft.dayEndTime);
@@ -117,7 +121,7 @@ export default function TimesheetForm({ previewMode = false }: { previewMode?: b
       } catch {}
     }
     setLoaded(true);
-  }, []);
+  }, [userId]);
 
   const saveDraft = useCallback(
     (state: {
@@ -129,10 +133,10 @@ export default function TimesheetForm({ previewMode = false }: { previewMode?: b
       nonBillable: NonBillableEntryData[];
       notes: string;
     }) => {
-      localStorage.setItem(storageKey(today()), JSON.stringify(state));
+      localStorage.setItem(storageKey(userId, today()), JSON.stringify(state));
       setSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
     },
-    []
+    [userId]
   );
 
   // Auto-save with 1s debounce after initial load
@@ -140,28 +144,23 @@ export default function TimesheetForm({ previewMode = false }: { previewMode?: b
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      saveDraft({ employeeName, date, dayStartTime, dayEndTime, billable, nonBillable, notes });
+      saveDraft({ employeeName: userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes });
     }, 1000);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [loaded, employeeName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, saveDraft]);
+  }, [loaded, userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, saveDraft]);
 
   async function loadPastLog() {
-    if (!employeeName.trim()) {
-      setHistoryMsg("Enter your name first.");
-      return;
-    }
     setHistoryLoading(true);
     setHistoryMsg("");
     try {
-      const res = await fetch(`/api/submissions/employee?name=${encodeURIComponent(employeeName.trim())}&date=${date}`);
+      const res = await fetch(`/api/submissions/employee?date=${date}`, { credentials: "include" });
       const data = await res.json();
       if (!data || !data.id) {
         setHistoryMsg(`No log found for ${date}.`);
         return;
       }
-      if (data.employee_name) setEmployeeName(data.employee_name);
       if (data.date) setDate(data.date);
       setDayStartTime(data.day_start_time ?? "");
       setDayEndTime(data.day_end_time ?? "");
@@ -197,15 +196,10 @@ export default function TimesheetForm({ previewMode = false }: { previewMode?: b
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (previewMode) return;
-    if (!employeeName.trim()) {
-      setErrorMsg("Please enter your name before submitting.");
-      return;
-    }
     setSubmitState("submitting");
     setErrorMsg("");
     try {
       const payload = {
-        employeeName: employeeName.trim(),
         date,
         dayStartTime,
         dayEndTime,
@@ -220,6 +214,7 @@ export default function TimesheetForm({ previewMode = false }: { previewMode?: b
       const res = await fetch("/api/submit", {
         method: isEditing && submittedId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
@@ -228,7 +223,7 @@ export default function TimesheetForm({ previewMode = false }: { previewMode?: b
       }
       const result = await res.json();
       if (result.id) setSubmittedId(result.id);
-      localStorage.removeItem(storageKey(today()));
+      localStorage.removeItem(storageKey(userId, today()));
       setIsEditing(false);
       setSubmitState("success");
     } catch (err) {
@@ -306,14 +301,8 @@ export default function TimesheetForm({ previewMode = false }: { previewMode?: b
       {/* Header fields */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200 space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Your name</label>
-          <input
-            type="text"
-            placeholder="First and last name"
-            value={employeeName}
-            onChange={(e) => setEmployeeName(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Submitting as</p>
+          <p className="text-base font-semibold text-gray-900">{previewMode ? "Preview User" : userName}</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
