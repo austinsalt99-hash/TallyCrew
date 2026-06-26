@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getToken } from "@/lib/auth";
+import BillableEntry, { BillableEntryData } from "@/components/BillableEntry";
+import TimesheetForm from "@/components/TimesheetForm";
 import type { LogEntryType, LogEntryField, LogEntryFieldOption } from "@/types/logConfig";
 
 function authHeader() {
@@ -12,15 +14,22 @@ function toSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
 }
 
+type TimeMode = "job" | "day" | "none";
+const TIME_MODE_LABELS: Record<TimeMode, string> = { job: "Per job", day: "General", none: "No time" };
+
 export default function LogConfigPage() {
   const [types, setTypes] = useState<LogEntryType[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedType, setExpandedType] = useState<string | null>(null);
   const [expandedField, setExpandedField] = useState<string | null>(null);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [previewType, setPreviewType] = useState<LogEntryType | null>(null);
+  const [showFormPreview, setShowFormPreview] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // New type form
   const [newTypeName, setNewTypeName] = useState("");
-  const [newTypeIsTimed, setNewTypeIsTimed] = useState(true);
+  const [newTypeTimeMode, setNewTypeTimeMode] = useState<TimeMode>("job");
   const [addingType, setAddingType] = useState(false);
 
   // New field forms keyed by type id
@@ -33,7 +42,26 @@ export default function LogConfigPage() {
   // Edit-in-place for option labels
   const [editingOption, setEditingOption] = useState<{ id: string; label: string } | null>(null);
 
+  // Close menu when clicking outside the open menu
+  useEffect(() => {
+    if (!openMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openMenu]);
+
   async function reload() {
+    // Fetch all types (including inactive) for the admin view
+    const sb_res = await fetch("/api/log-config/all", { headers: authHeader() });
+    if (sb_res.ok) {
+      const data = await sb_res.json();
+      if (Array.isArray(data)) { setTypes(data); setLoading(false); return; }
+    }
+    // Fallback to public endpoint
     const res = await fetch("/api/log-config");
     const data = await res.json();
     if (Array.isArray(data)) setTypes(data);
@@ -49,10 +77,16 @@ export default function LogConfigPage() {
     await fetch("/api/log-config", {
       method: "POST",
       headers: authHeader(),
-      body: JSON.stringify({ name: newTypeName.trim(), slug, sort_order: types.length, is_timed: newTypeIsTimed }),
+      body: JSON.stringify({
+        name: newTypeName.trim(),
+        slug,
+        sort_order: types.length,
+        time_mode: newTypeTimeMode,
+        is_timed: newTypeTimeMode === "job",
+      }),
     });
     setNewTypeName("");
-    setNewTypeIsTimed(true);
+    setNewTypeTimeMode("job");
     setAddingType(false);
     await reload();
   }
@@ -77,11 +111,15 @@ export default function LogConfigPage() {
     await reload();
   }
 
-  async function handleToggleTimed(type: LogEntryType) {
+  async function handleSetTimeMode(type: LogEntryType, mode: TimeMode) {
+    // Optimistic update so the radio dot changes immediately
+    setTypes((prev) =>
+      prev.map((t) => t.id === type.id ? { ...t, time_mode: mode, is_timed: mode === "job" } : t)
+    );
     await fetch("/api/log-config", {
       method: "PUT",
       headers: authHeader(),
-      body: JSON.stringify({ id: type.id, is_timed: !type.is_timed }),
+      body: JSON.stringify({ id: type.id, time_mode: mode, is_timed: mode === "job" }),
     });
     await reload();
   }
@@ -159,11 +197,19 @@ export default function LogConfigPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Log Entry Types</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Define custom entry types that employees can choose when logging billable hours.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Log Entry Types</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Define custom entry types that employees can choose when logging billable hours.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowFormPreview(true)}
+          className="shrink-0 text-sm font-semibold text-blue-600 border border-blue-300 hover:bg-blue-50 rounded-lg px-3 py-1.5 transition-colors"
+        >
+          Preview Form
+        </button>
       </div>
 
       {types.length === 0 && (
@@ -173,53 +219,57 @@ export default function LogConfigPage() {
       )}
 
       {types.map((type) => (
-        <div key={type.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div key={type.id} className="bg-white rounded-xl border border-gray-200 relative">
           {/* Type header */}
-          <div className="flex items-center justify-between px-5 py-4">
+          <div className="flex items-center px-5 py-4 gap-2">
             <button
               type="button"
               className="flex items-center gap-3 text-left flex-1 min-w-0"
               onClick={() => setExpandedType(expandedType === type.id ? null : type.id)}
             >
-              <span className="font-semibold text-gray-900">{type.name}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${type.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+              <span className="font-semibold text-gray-900 truncate">{type.name}</span>
+              <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${type.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                 {type.is_active ? "Active" : "Hidden"}
               </span>
-              <span className="text-xs text-gray-400 ml-auto pr-2">
+              <span className="text-xs text-gray-400 ml-auto pr-2 shrink-0">
                 {type.fields.length} field{type.fields.length !== 1 ? "s" : ""}
               </span>
-              <span className="text-gray-400 text-sm">{expandedType === type.id ? "▲" : "▼"}</span>
+              <span className="text-gray-400 text-sm shrink-0">{expandedType === type.id ? "▲" : "▼"}</span>
             </button>
-            <div className="flex items-center gap-2 ml-4 shrink-0">
+
+            {/* Kebab menu */}
+            <div ref={openMenu === type.id ? menuRef : undefined} className="relative shrink-0">
               <button
                 type="button"
-                onClick={() => handleToggleTimed(type)}
-                className={`text-xs border rounded-lg px-3 py-1.5 ${type.is_timed ? "text-blue-600 border-blue-200 hover:border-blue-400" : "text-gray-500 border-gray-300 hover:text-gray-700"}`}
-                title={type.is_timed ? "Currently tracks start/end time — click to disable" : "Currently no time tracking — click to enable"}
+                onClick={() => setOpenMenu(openMenu === type.id ? null : type.id)}
+                className="w-8 h-8 flex items-center justify-center text-xl font-bold text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
               >
-                {type.is_timed ? "Timed" : "Not timed"}
+                ⋮
               </button>
-              <button
-                type="button"
-                onClick={() => handleToggleActive(type)}
-                className="text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded-lg px-3 py-1.5"
-              >
-                {type.is_active ? "Hide" : "Show"}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDeleteType(type.id)}
-                className="text-xs text-red-500 hover:text-red-700 border border-red-200 rounded-lg px-3 py-1.5"
-              >
-                Delete
-              </button>
+              {openMenu === type.id && (
+                <TypeActionsMenu
+                  type={type}
+                  onSetTimeMode={(mode) => handleSetTimeMode(type, mode)}
+                  onToggleActive={() => { setOpenMenu(null); handleToggleActive(type); }}
+                  onDelete={() => { setOpenMenu(null); handleDeleteType(type.id); }}
+                />
+              )}
             </div>
           </div>
 
           {/* Expanded: fields */}
           {expandedType === type.id && (
-            <div className="border-t border-gray-100 px-5 py-4 space-y-3 bg-gray-50">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Fields</p>
+            <div className="border-t border-gray-100 px-5 py-4 space-y-3 bg-gray-50 rounded-b-xl overflow-hidden">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Fields</p>
+                <button
+                  type="button"
+                  onClick={() => setPreviewType(type)}
+                  className="text-xs border border-blue-300 text-blue-600 rounded-lg px-3 py-1 hover:bg-blue-50 transition-colors"
+                >
+                  Preview
+                </button>
+              </div>
 
               {type.fields.length === 0 && (
                 <p className="text-sm text-gray-400">No fields yet. Add one below.</p>
@@ -310,19 +360,163 @@ export default function LogConfigPage() {
             {addingType ? "Saving…" : "Add Type"}
           </button>
         </div>
-        <label className="flex items-center gap-2 mt-2 cursor-pointer w-fit">
-          <input
-            type="checkbox"
-            checked={newTypeIsTimed}
-            onChange={(e) => setNewTypeIsTimed(e.target.checked)}
-            className="w-4 h-4 rounded"
+        <div className="mt-3">
+          <p className="text-xs text-gray-500 mb-2">Time tracking</p>
+          <div className="flex gap-2">
+            {(["job", "day", "none"] as TimeMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setNewTypeTimeMode(mode)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  newTypeTimeMode === mode
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-gray-500 border-gray-300 hover:border-blue-400"
+                }`}
+              >
+                {TIME_MODE_LABELS[mode]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {previewType && (
+        <PreviewModal type={previewType} allTypes={types} onClose={() => setPreviewType(null)} />
+      )}
+
+      {showFormPreview && (
+        <div className="fixed inset-x-0 bottom-0 top-[63px] z-50 bg-black/60 flex flex-col">
+          <div className="flex items-center justify-between bg-white border-b border-gray-200 px-5 py-4 shrink-0">
+            <span className="font-semibold text-gray-900">Employee Form Preview</span>
+            <button
+              onClick={() => setShowFormPreview(false)}
+              className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1"
+            >
+              ×
+            </button>
+          </div>
+          <div className="text-xs text-gray-400 italic bg-gray-50 px-5 py-2 border-b border-gray-100 shrink-0">
+            This is exactly what employees see. No data will be submitted.
+          </div>
+          <div className="flex-1 overflow-y-auto bg-gray-100 px-4 py-6">
+            <div className="max-w-lg mx-auto">
+              <TimesheetForm previewMode />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── TypeActionsMenu ─────────────────────────────────────────────────────────
+
+interface TypeActionsMenuProps {
+  type: LogEntryType;
+  onSetTimeMode: (mode: TimeMode) => void;
+  onToggleActive: () => void;
+  onDelete: () => void;
+}
+
+function TypeActionsMenu({ type, onSetTimeMode, onToggleActive, onDelete }: TypeActionsMenuProps) {
+  const currentMode: TimeMode = (type.time_mode as TimeMode) ?? (type.is_timed ? "job" : "none");
+
+  return (
+    <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg w-52 py-1 overflow-hidden">
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-3 pt-2 pb-1">
+        Time tracking
+      </p>
+      {(["job", "day", "none"] as TimeMode[]).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          onClick={() => onSetTimeMode(mode)}
+          className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          <span className={`w-3 h-3 rounded-full border shrink-0 ${currentMode === mode ? "bg-blue-600 border-blue-600" : "border-gray-300 bg-white"}`} />
+          {TIME_MODE_LABELS[mode]}
+        </button>
+      ))}
+      <div className="border-t border-gray-100 my-1" />
+      <button
+        type="button"
+        onClick={onToggleActive}
+        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+      >
+        {type.is_active ? "Hide type" : "Show type"}
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+      >
+        Delete type
+      </button>
+    </div>
+  );
+}
+
+// ─── PreviewModal ─────────────────────────────────────────────────────────────
+
+interface PreviewModalProps {
+  type: LogEntryType;
+  allTypes: LogEntryType[];
+  onClose: () => void;
+}
+
+function PreviewModal({ type, allTypes, onClose }: PreviewModalProps) {
+  const [entry, setEntry] = useState<BillableEntryData>({
+    id: "preview",
+    client: "",
+    description: "",
+    startTime: "",
+    endTime: "",
+    entryType: type.slug,
+    customFields: {},
+    _typeData: {},
+    photos: [],
+  });
+
+  const jobTypes = allTypes.filter((t) => t.time_mode !== "day");
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <span className="font-semibold text-gray-900">Employee preview</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+        <div className="text-xs text-gray-400 italic bg-gray-50 px-5 py-2 border-b border-gray-100">
+          Showing how a job entry appears to employees. Changes are not saved.
+        </div>
+        <div className="px-5 py-4 overflow-y-auto max-h-[70vh]">
+          <BillableEntry
+            entry={entry}
+            onChange={setEntry}
+            onRemove={() => {}}
+            showRemove={false}
+            entryTypes={jobTypes}
           />
-          <span className="text-sm text-gray-600">Track start/end time for this entry type</span>
-        </label>
+        </div>
       </div>
     </div>
   );
 }
+
+// ─── FieldRow ─────────────────────────────────────────────────────────────────
 
 interface FieldRowProps {
   field: LogEntryField;

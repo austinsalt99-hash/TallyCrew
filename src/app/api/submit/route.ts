@@ -52,6 +52,7 @@ export async function POST(request: Request) {
       dayEndTime,
       billable,
       nonBillable,
+      dailyEntries,
       notes,
       totalBillableHours,
       totalNonBillableHours,
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
       dayEndTime?: string;
       billable: BillableEntryData[];
       nonBillable: NonBillableEntryData[];
+      dailyEntries?: object[];
       notes: string;
       totalBillableHours: number;
       totalNonBillableHours: number;
@@ -81,6 +83,7 @@ export async function POST(request: Request) {
         day_end_time: dayEndTime || null,
         billable_entries: billable,
         non_billable_entries: nonBillable,
+        daily_entries: dailyEntries ?? [],
         notes,
         total_billable_hours: totalBillableHours,
         total_non_billable_hours: totalNonBillableHours,
@@ -141,6 +144,7 @@ export async function PUT(request: Request) {
       dayEndTime,
       billable,
       nonBillable,
+      dailyEntries,
       notes,
       totalBillableHours,
       totalNonBillableHours,
@@ -152,6 +156,7 @@ export async function PUT(request: Request) {
       dayEndTime?: string;
       billable: BillableEntryData[];
       nonBillable: NonBillableEntryData[];
+      dailyEntries?: object[];
       notes: string;
       totalBillableHours: number;
       totalNonBillableHours: number;
@@ -168,6 +173,7 @@ export async function PUT(request: Request) {
         day_end_time: dayEndTime || null,
         billable_entries: billable,
         non_billable_entries: nonBillable,
+        daily_entries: dailyEntries ?? [],
         notes,
         total_billable_hours: totalBillableHours,
         total_non_billable_hours: totalNonBillableHours,

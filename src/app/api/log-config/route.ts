@@ -39,6 +39,7 @@ export async function GET() {
 
   const result: LogEntryType[] = types.map((t) => ({
     ...t,
+    time_mode: t.time_mode ?? (t.is_timed ? "job" : "none"),
     fields: (fields ?? [])
       .filter((f) => f.type_id === t.id)
       .map((f): LogEntryField => ({
@@ -61,9 +62,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
+  const timeMode: string = body.time_mode ?? "job";
   const { data, error } = await getSupabase()
     .from("log_entry_types")
-    .insert({ name: body.name, slug: body.slug, sort_order: body.sort_order ?? 0 })
+    .insert({
+      name: body.name,
+      slug: body.slug,
+      sort_order: body.sort_order ?? 0,
+      time_mode: timeMode,
+      is_timed: timeMode === "job",
+    })
     .select()
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -19,6 +19,7 @@ interface BillableEntry {
   photos?: string[];
 }
 interface NonBillableEntry { description: string; hours: string; }
+interface DailyEntry { typeSlug: string; typeName: string; customFields: Record<string, string>; }
 interface Submission {
   id: string;
   submitted_at: string;
@@ -28,6 +29,7 @@ interface Submission {
   day_end_time?: string;
   billable_entries: BillableEntry[];
   non_billable_entries: NonBillableEntry[];
+  daily_entries?: DailyEntry[];
   notes: string;
   total_billable_hours: number;
   total_non_billable_hours: number;
@@ -87,6 +89,12 @@ function formatDateLabel(dateStr: string): string {
   const [y, mo, d] = dateStr.split("-").map(Number);
   const date = new Date(y, mo - 1, d);
   return date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+}
+
+function formatShortDate(dateStr: string): string {
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, mo - 1, d);
+  return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
 export default function Dashboard() {
@@ -157,22 +165,19 @@ export default function Dashboard() {
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   <button
                     onClick={() => setExpanded(expanded === s.id ? null : s.id)}
-                    className="w-full text-left px-5 py-4 flex items-center justify-between hover:bg-gray-50"
+                    className="w-full text-left px-5 py-4 hover:bg-gray-50 flex items-center justify-between gap-3"
                   >
-                    <div>
-                      <span className="font-semibold text-gray-900">{s.employee_name}</span>
-                      <span className="text-gray-400 mx-2">·</span>
-                      <span className="text-gray-600">{s.date}</span>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-gray-900 truncate">{s.employee_name}</div>
+                      <div className="text-sm text-gray-500 mt-0.5">{formatShortDate(s.date)}</div>
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-500">
-                      {workedHours && (
-                        <span className="text-gray-700 font-semibold">{workedHours} worked</span>
-                      )}
-                      <span className="text-blue-600 font-medium">{s.total_billable_hours}h billable</span>
-                      {s.total_non_billable_hours > 0 && (
-                        <span className="text-orange-500">{s.total_non_billable_hours}h non-bill.</span>
-                      )}
-                      <span className="text-gray-400">{expanded === s.id ? "▲" : "▼"}</span>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right text-sm">
+                        {workedHours && <div className="text-gray-700 font-semibold">{workedHours} worked</div>}
+                        <div className="text-blue-600 font-medium">{s.total_billable_hours}h billable</div>
+                        {s.total_non_billable_hours > 0 && <div className="text-orange-500">{s.total_non_billable_hours}h non-bill.</div>}
+                      </div>
+                      <span className="text-gray-400 text-sm">{expanded === s.id ? "▲" : "▼"}</span>
                     </div>
                   </button>
 
@@ -198,13 +203,25 @@ export default function Dashboard() {
                               const workItems = getWorkItems(entry);
                               if (!workItems.length) return null;
                               const jobHours = calcWorkedHours(entry.startTime, entry.endTime);
+                              const hasTimes = !!(entry.startTime && entry.endTime);
+                              const isDayLevel = !hasTimes && !!(entry.entryType && entry.entryType !== "standard");
                               return (
-                                <div key={ji} className="bg-gray-50 rounded-lg p-3">
-                                  <div className="text-xs text-gray-400 font-medium mb-2">
-                                    {formatTime(entry.startTime)} – {formatTime(entry.endTime)}
-                                    {jobHours && <span className="ml-2 text-gray-500 font-semibold">{jobHours}</span>}
+                                <div key={ji} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                                  {/* Job header */}
+                                  <div className="flex items-center gap-2 text-sm bg-blue-50 px-3 py-2">
+                                    <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Job {ji + 1}</span>
+                                    {hasTimes ? (
+                                      <>
+                                        <span className="mx-1 text-gray-300">|</span>
+                                        <span className="text-gray-600">{formatTime(entry.startTime)} – {formatTime(entry.endTime)}</span>
+                                        {jobHours && <span className="ml-auto font-semibold text-gray-700">{jobHours}</span>}
+                                      </>
+                                    ) : isDayLevel ? (
+                                      <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">General</span>
+                                    ) : null}
                                   </div>
-                                  <div className="space-y-2">
+                                  {/* Work items */}
+                                  <div className="px-3 py-2 space-y-2">
                                     {workItems.map((item, wi) => (
                                       <div key={wi} className="flex gap-2 items-start">
                                         <span className={`mt-0.5 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${
@@ -234,8 +251,9 @@ export default function Dashboard() {
                                       </div>
                                     ))}
                                   </div>
+                                  {/* Photos */}
                                   {entry.photos && entry.photos.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-gray-200">
+                                    <div className="flex flex-wrap gap-2 px-3 pb-2 pt-1 border-t border-gray-100">
                                       {entry.photos.map((url) => (
                                         <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="shrink-0">
                                           <img src={url} alt="" className="w-16 h-16 object-cover rounded-lg border border-gray-200 hover:opacity-80 transition-opacity" />
@@ -246,6 +264,26 @@ export default function Dashboard() {
                                 </div>
                               );
                             })}
+                          </div>
+                        </div>
+                      )}
+
+                      {s.daily_entries && s.daily_entries.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">General</h3>
+                          <div className="space-y-2">
+                            {s.daily_entries.map((de, di) => (
+                              <div key={di} className="bg-gray-50 rounded-lg px-3 py-2">
+                                <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">{de.typeName}</span>
+                                <div className="mt-1 space-y-0.5">
+                                  {Object.entries(de.customFields ?? {}).filter(([, v]) => v).map(([k, v]) => (
+                                    <div key={k} className="text-xs text-gray-600">
+                                      <span className="text-gray-400">{k.replace(/_/g, " ")}: </span>{v}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       )}

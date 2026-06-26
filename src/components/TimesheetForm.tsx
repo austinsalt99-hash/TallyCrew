@@ -3,7 +3,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import BillableEntry, { BillableEntryData } from "./BillableEntry";
 import NonBillableEntry, { NonBillableEntryData } from "./NonBillableEntry";
+import JobEventPicker, { JobEvent } from "./JobEventPicker";
 import type { LogEntryType } from "@/types/logConfig";
+
+interface DayEntry {
+  id: string;
+  typeSlug: string;
+  typeName: string;
+  customFields: Record<string, string>;
+}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -41,7 +49,7 @@ function calcTotalNonBillable(entries: NonBillableEntryData[]): number {
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
-export default function TimesheetForm() {
+export default function TimesheetForm({ previewMode = false }: { previewMode?: boolean }) {
   const [employeeName, setEmployeeName] = useState("");
   const [date, setDate] = useState(today());
   const [dayStartTime, setDayStartTime] = useState("");
@@ -56,16 +64,42 @@ export default function TimesheetForm() {
   const [errorMsg, setErrorMsg] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [entryTypes, setEntryTypes] = useState<LogEntryType[]>([]);
+  const [dayEntries, setDayEntries] = useState<DayEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyMsg, setHistoryMsg] = useState("");
+  const [linkingEntryId, setLinkingEntryId] = useState<string | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<JobEvent[]>([]);
+  const [calendarWeekOffset, setCalendarWeekOffset] = useState(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fetch("/api/log-config")
       .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setEntryTypes(data); })
+      .then((data: LogEntryType[]) => {
+        if (!Array.isArray(data)) return;
+        setEntryTypes(data);
+        const dayTypes = data.filter((t) => t.time_mode === "day");
+        setDayEntries(dayTypes.map((t) => ({ id: t.id, typeSlug: t.slug, typeName: t.name, customFields: {} })));
+      })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!linkingEntryId) return;
+    const [y, mo, d] = date.split("-").map(Number);
+    const base = new Date(y, mo - 1, d);
+    const day = base.getDay();
+    const monday = new Date(base);
+    monday.setDate(base.getDate() - ((day + 6) % 7) + calendarWeekOffset * 7);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const fmt = (dt: Date) =>
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    fetch(`/api/events?from=${fmt(monday)}&to=${fmt(sunday)}`)
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setCalendarEvents(data); })
+      .catch(() => {});
+  }, [linkingEntryId, calendarWeekOffset, date]);
 
   // Load draft on mount
   useEffect(() => {
@@ -133,6 +167,7 @@ export default function TimesheetForm() {
       setDayEndTime(data.day_end_time ?? "");
       if (data.billable_entries?.length) setBillable(data.billable_entries.map((e: BillableEntryData) => ({ ...e, id: e.id ?? crypto.randomUUID() })));
       if (data.non_billable_entries?.length) setNonBillable(data.non_billable_entries.map((e: NonBillableEntryData) => ({ ...e, id: e.id ?? crypto.randomUUID() })));
+      if (data.daily_entries?.length) setDayEntries(data.daily_entries as DayEntry[]);
       setNotes(data.notes ?? "");
       setSubmittedId(data.id);
       setIsEditing(true);
@@ -161,6 +196,7 @@ export default function TimesheetForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (previewMode) return;
     if (!employeeName.trim()) {
       setErrorMsg("Please enter your name before submitting.");
       return;
@@ -175,6 +211,7 @@ export default function TimesheetForm() {
         dayEndTime,
         billable,
         nonBillable,
+        dailyEntries: dayEntries,
         notes,
         totalBillableHours: calcTotalBillable(billable),
         totalNonBillableHours: calcTotalNonBillable(nonBillable),
@@ -243,9 +280,17 @@ export default function TimesheetForm() {
   }
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Preview mode banner */}
+      {previewMode && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
+          Preview — this is exactly what employees see. No data will be submitted.
+        </div>
+      )}
+
       {/* Edit mode banner */}
-      {isEditing && (
+      {!previewMode && isEditing && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 flex flex-col sm:flex-row sm:items-center gap-2">
           <span>You&apos;re editing a submitted timesheet. Changes will replace your previous submission.</span>
           <button
@@ -337,6 +382,7 @@ export default function TimesheetForm() {
               onRemove={() => removeBillable(entry.id)}
               showRemove={billable.length > 1}
               entryTypes={entryTypes}
+              onLinkJob={() => { setLinkingEntryId(entry.id); setCalendarWeekOffset(0); }}
             />
           ))}
         </div>
@@ -353,6 +399,88 @@ export default function TimesheetForm() {
           </p>
         )}
       </section>
+
+      {/* Daily Activities (day-level log types) */}
+      {dayEntries.length > 0 && (
+        <section>
+          <h2 className="text-base font-semibold text-gray-800 mb-3">General</h2>
+          <div className="space-y-3">
+            {dayEntries.map((dayEntry) => {
+              const type = entryTypes.find((t) => t.slug === dayEntry.typeSlug);
+              if (!type) return null;
+              return (
+                <div key={dayEntry.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+                  <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">{dayEntry.typeName}</span>
+                  {type.fields
+                    .slice()
+                    .sort((a, b) => a.sort_order - b.sort_order)
+                    .map((field) => (
+                      <div key={field.id}>
+                        <label className="block text-xs text-gray-500 mb-1">{field.label}</label>
+                        {field.field_type === "dropdown" ? (
+                          <select
+                            value={dayEntry.customFields[field.field_key] ?? ""}
+                            onChange={(e) =>
+                              setDayEntries((prev) =>
+                                prev.map((de) =>
+                                  de.id === dayEntry.id
+                                    ? { ...de, customFields: { ...de.customFields, [field.field_key]: e.target.value } }
+                                    : de
+                                )
+                              )
+                            }
+                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                          >
+                            <option value="">Select {field.label.toLowerCase()}…</option>
+                            {field.options
+                              .slice()
+                              .sort((a, b) => a.sort_order - b.sort_order)
+                              .map((opt) => (
+                                <option key={opt.id} value={opt.label}>{opt.label}</option>
+                              ))}
+                          </select>
+                        ) : field.field_type === "number" ? (
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="0"
+                            value={dayEntry.customFields[field.field_key] ?? ""}
+                            onChange={(e) =>
+                              setDayEntries((prev) =>
+                                prev.map((de) =>
+                                  de.id === dayEntry.id
+                                    ? { ...de, customFields: { ...de.customFields, [field.field_key]: e.target.value } }
+                                    : de
+                                )
+                              )
+                            }
+                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={dayEntry.customFields[field.field_key] ?? ""}
+                            onChange={(e) =>
+                              setDayEntries((prev) =>
+                                prev.map((de) =>
+                                  de.id === dayEntry.id
+                                    ? { ...de, customFields: { ...de.customFields, [field.field_key]: e.target.value } }
+                                    : de
+                                )
+                              )
+                            }
+                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          />
+                        )}
+                      </div>
+                    ))}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Non-billable entries */}
       <section>
@@ -407,15 +535,44 @@ export default function TimesheetForm() {
       )}
 
       {/* Submit */}
-      <button
-        type="submit"
-        disabled={submitState === "submitting"}
-        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-lg py-4 rounded-2xl transition-colors shadow-sm"
-      >
-        {submitState === "submitting"
-          ? (isEditing ? "Updating..." : "Submitting...")
-          : (isEditing ? "Update Submission" : "Submit for the Day")}
-      </button>
+      {previewMode ? (
+        <div className="w-full bg-gray-100 border border-gray-200 text-gray-400 font-bold text-lg py-4 rounded-2xl text-center">
+          Submit for the Day
+        </div>
+      ) : (
+        <button
+          type="submit"
+          disabled={submitState === "submitting"}
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-lg py-4 rounded-2xl transition-colors shadow-sm"
+        >
+          {submitState === "submitting"
+            ? (isEditing ? "Updating..." : "Submitting...")
+            : (isEditing ? "Update Submission" : "Submit for the Day")}
+        </button>
+      )}
     </form>
+
+    {linkingEntryId && (
+      <JobEventPicker
+        events={calendarEvents}
+        baseDate={date}
+        weekOffset={calendarWeekOffset}
+        onPrev={() => setCalendarWeekOffset((o) => o - 1)}
+        onNext={() => setCalendarWeekOffset((o) => o + 1)}
+        onSelect={(event) => {
+          const entry = billable.find((e) => e.id === linkingEntryId);
+          if (entry) {
+            updateBillable({
+              ...entry,
+              linkedEventId: event.id,
+              linkedEventTitle: `${event.title}${event.client ? ` – ${event.client}` : ""}`,
+            });
+          }
+          setLinkingEntryId(null);
+        }}
+        onClose={() => setLinkingEntryId(null)}
+      />
+    )}
+    </>
   );
 }

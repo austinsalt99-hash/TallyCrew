@@ -20,6 +20,8 @@ export interface BillableEntryData {
   customFields?: Record<string, string>;
   _typeData?: Record<string, TypeSnapshot>;
   photos?: string[];
+  linkedEventId?: string;
+  linkedEventTitle?: string;
 }
 
 function calcHours(start: string, end: string): string {
@@ -39,9 +41,10 @@ interface Props {
   onRemove: () => void;
   showRemove: boolean;
   entryTypes: LogEntryType[];
+  onLinkJob?: () => void;
 }
 
-export default function BillableEntry({ entry, onChange, onRemove, showRemove, entryTypes }: Props) {
+export default function BillableEntry({ entry, onChange, onRemove, showRemove, entryTypes, onLinkJob }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -98,7 +101,8 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
   const customType = entryTypes.find((t) => t.slug === activeSlug);
   const isCustom = activeSlug !== "standard" && !!customType;
   const hasCustomTypes = entryTypes.length > 0;
-  const showTime = !isCustom || (customType?.is_timed !== false);
+  const effectiveTimeMode = customType?.time_mode ?? (customType?.is_timed !== false ? "job" : "none");
+  const showTime = !isCustom || effectiveTimeMode === "job";
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
@@ -109,6 +113,15 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
             <span className="text-sm font-semibold text-gray-700 bg-blue-50 px-2 py-0.5 rounded-full">
               {hours}
             </span>
+          )}
+          {onLinkJob && (
+            <button
+              type="button"
+              onClick={onLinkJob}
+              className="text-xs text-blue-500 border border-blue-200 rounded-lg px-2 py-0.5 hover:bg-blue-50 transition-colors"
+            >
+              📅 Link to schedule
+            </button>
           )}
           {showRemove && (
             <button
@@ -122,6 +135,22 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
           )}
         </div>
       </div>
+
+      {entry.linkedEventId && (
+        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
+          <span className="text-xs text-green-700 font-medium flex-1 min-w-0 truncate">
+            📅 {entry.linkedEventTitle ?? "Linked event"}
+          </span>
+          <button
+            type="button"
+            onClick={() => onChange({ ...entry, linkedEventId: undefined, linkedEventTitle: undefined })}
+            className="text-green-400 hover:text-green-600 text-base leading-none font-bold shrink-0"
+            aria-label="Unlink event"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {hasCustomTypes && (
         <div className="flex gap-2 flex-wrap">

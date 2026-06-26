@@ -23,5 +23,6 @@ export interface LogEntryType {
   sort_order: number;
   is_active: boolean;
   is_timed: boolean;
+  time_mode: "job" | "day" | "none";
   fields: LogEntryField[];
 }
