@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
@@ -71,6 +72,9 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
+          <div className="flex justify-center mb-5">
+            <Image src="/tally-wordmark.png" alt="TallyCrew" width={180} height={50} priority />
+          </div>
           <h1 className="text-2xl font-bold text-gray-900">Create your company account</h1>
           <p className="text-sm text-gray-500 mt-1">
             Already have an account?{" "}
