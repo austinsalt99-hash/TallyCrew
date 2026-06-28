@@ -93,7 +93,7 @@ export function buildEmailHtml(params: {
   <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
 
     <div style="background:#2563eb;color:#fff;padding:24px 28px;">
-      <h1 style="margin:0;font-size:22px;">CEW Daily Hours</h1>
+      <h1 style="margin:0;font-size:22px;">TallyCrew Daily Hours</h1>
       <p style="margin:4px 0 0;opacity:0.85;font-size:15px;">${employeeName} &middot; ${date}</p>
       ${dayStartTime && dayEndTime ? `<p style="margin:6px 0 0;opacity:0.75;font-size:14px;">Workday: ${formatTime(dayStartTime)} – ${formatTime(dayEndTime)} (${calcHours(dayStartTime, dayEndTime)})</p>` : ""}
     </div>
@@ -144,7 +144,7 @@ export function buildEmailHtml(params: {
     </div>
 
     <div style="background:#f9fafb;padding:14px 28px;border-top:1px solid #e5e7eb;">
-      <p style="margin:0;font-size:12px;color:#9ca3af;">Submitted via CEW Daily Hours &middot; ${new Date().toLocaleString()}</p>
+      <p style="margin:0;font-size:12px;color:#9ca3af;">Submitted via TallyCrew Daily Hours &middot; ${new Date().toLocaleString()}</p>
     </div>
   </div>
 </body>

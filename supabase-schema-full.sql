@@ -1,5 +1,5 @@
 -- =============================================================
--- CEW Hour Log — Full Supabase Schema
+-- TallyCrew Hour Log — Full Supabase Schema
 -- Run this entire file in Supabase → SQL Editor to set up or
 -- rebuild the database from scratch.
 -- =============================================================

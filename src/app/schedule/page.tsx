@@ -81,7 +81,7 @@ export default function SchedulePage() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Image src="/logo.webp" alt="Cumberland Earthworks" width={160} height={45} priority />
+          <Image src="/logo.webp" alt="TallyCrew" width={160} height={45} priority />
           <Link href="/admin" className="text-sm font-semibold text-gray-400 hover:text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5">
             Admin
           </Link>

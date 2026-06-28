@@ -26,7 +26,7 @@ function newNonBillable(): NonBillableEntryData {
 }
 
 function storageKey(userId: string, date: string): string {
-  return `cew-draft-${userId}-${date}`;
+  return `tallycrew-draft-${userId}-${date}`;
 }
 
 function calcTotalBillable(entries: BillableEntryData[]): number {

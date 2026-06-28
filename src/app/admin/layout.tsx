@@ -18,7 +18,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-gray-900 px-4 py-3 flex items-center justify-between">
-        <Image src="/logo.webp" alt="Cumberland Earthworks" width={140} height={39} />
+        <Image src="/logo.webp" alt="TallyCrew" width={140} height={39} />
         <button
           onClick={handleSignOut}
           className="text-xs text-gray-400 hover:text-white transition-colors"

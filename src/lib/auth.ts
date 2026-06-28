@@ -1,5 +1,5 @@
 const SECRET = process.env.JWT_SECRET ?? "fallback-secret";
-const TOKEN_KEY = "cew-admin-token";
+const TOKEN_KEY = "tallycrew-admin-token";
 const VALID_HOURS = 12;
 
 function base64url(str: string): string {

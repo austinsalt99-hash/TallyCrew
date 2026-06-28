@@ -27,7 +27,7 @@ npm run dev
 Employee submits form → `POST /api/submit` → inserts row into Supabase `submissions` table → fetches log type config from Supabase to resolve field labels → sends HTML email via Resend.
 
 ### Auth system (`src/lib/auth.ts`)
-Homegrown JWT (no library). The token is a base64url-encoded `header.payload.signature` string, signed with `JWT_SECRET`. It expires after 12 hours and is stored in `localStorage` as `cew-admin-token`. All admin API routes verify the Bearer token using `verifyToken()` before writing. The admin login page posts to `POST /api/admin/login`, which compares the submitted password against `ADMIN_PASSWORD` env var.
+Homegrown JWT (no library). The token is a base64url-encoded `header.payload.signature` string, signed with `JWT_SECRET`. It expires after 12 hours and is stored in `localStorage` as `tallycrew-admin-token`. All admin API routes verify the Bearer token using `verifyToken()` before writing. The admin login page posts to `POST /api/admin/login`, which compares the submitted password against `ADMIN_PASSWORD` env var.
 
 ### Supabase usage
 - Client is a lazy singleton in `src/lib/supabase.ts` — always call `getSupabase()`, never instantiate directly.

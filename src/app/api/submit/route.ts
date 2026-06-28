@@ -120,7 +120,7 @@ export async function POST(request: Request) {
     });
 
     const { error: emailError } = await resend.emails.send({
-      from: "CEW Hours <onboarding@resend.dev>",
+      from: "TallyCrew Hours <onboarding@resend.dev>",
       to: process.env.RECIPIENT_EMAIL!,
       subject: `Hours submitted: ${employeeName} – ${date}`,
       html,
@@ -211,7 +211,7 @@ export async function PUT(request: Request) {
     });
 
     await resend.emails.send({
-      from: "CEW Hours <onboarding@resend.dev>",
+      from: "TallyCrew Hours <onboarding@resend.dev>",
       to: process.env.RECIPIENT_EMAIL!,
       subject: `Hours updated: ${employeeName} – ${date}`,
       html,

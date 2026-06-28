@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
   // 1. Create a dedicated dev/test company
   const { data: company, error: companyError } = await admin
     .from("companies")
-    .insert({ name: "CEW Dev & Testing" })
+    .insert({ name: "TallyCrew Dev & Testing" })
     .select("id")
     .single();
 

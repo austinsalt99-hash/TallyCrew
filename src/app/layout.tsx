@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CEW Daily Hours",
-  description: "Daily hour log for Cumberland Earthworks",
+  title: "TallyCrew Daily Hours",
+  description: "Daily hour log for TallyCrew",
 };
 
 export const viewport: Viewport = {
