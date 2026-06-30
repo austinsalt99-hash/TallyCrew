@@ -46,9 +46,32 @@ export default function BottomNav() {
         style={{ bottom: "65px", transform: moreOpen ? "translateY(0)" : "translateY(calc(100% + 65px))" }}
       >
         <Link
-          href="/admin"
+          href="/profile"
           onClick={() => setMoreOpen(false)}
           className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 active:bg-gray-100 rounded-tl-2xl"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+          </svg>
+          <span className="text-gray-800 font-medium text-sm whitespace-nowrap">Profile</span>
+        </Link>
+        <Link
+          href="/settings"
+          onClick={() => setMoreOpen(false)}
+          className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 active:bg-gray-100"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span className="text-gray-800 font-medium text-sm whitespace-nowrap">Settings</span>
+        </Link>
+        <div className="mx-5 border-t border-gray-100" />
+        <Link
+          href="/admin"
+          onClick={() => setMoreOpen(false)}
+          className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 active:bg-gray-100"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />

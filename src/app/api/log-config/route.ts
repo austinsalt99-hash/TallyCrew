@@ -87,10 +87,19 @@ export async function PUT(request: Request) {
   if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { id, ...updates } = await request.json();
+  const body = await request.json();
+  const { id } = body;
+  const safeUpdates = {
+    name:       body.name,
+    slug:       body.slug,
+    sort_order: body.sort_order,
+    is_active:  body.is_active,
+    time_mode:  body.time_mode,
+    is_timed:   body.is_timed,
+  };
   const { error } = await supabase
     .from("log_entry_types")
-    .update(updates)
+    .update(safeUpdates)
     .eq("id", id)
     .eq("company_id", profile.company_id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

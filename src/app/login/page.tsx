@@ -45,9 +45,9 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
           {/* Branded header */}
-          <div className="bg-gray-900 px-6 py-6 flex flex-col items-center gap-1">
-            <Image src="/tally-wordmark-white.png" alt="TallyCrew" width={220} height={76} priority />
-            <p className="text-gray-400 text-sm mt-1">Sign in to your account</p>
+          <div className="bg-white border-b border-gray-100 px-6 py-6 flex flex-col items-center gap-1">
+            <Image src="/tally-wordmark.png" alt="TallyCrew" width={200} height={52} priority />
+            <p className="text-gray-400 text-sm mt-2">Sign in to your account</p>
           </div>
 
           {/* Form */}

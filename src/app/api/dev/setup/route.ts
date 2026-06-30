@@ -13,6 +13,10 @@ function getAdminClient() {
 // Protected by DEV_SETUP_SECRET — call it once then leave it.
 // GET /api/dev/setup?secret=<DEV_SETUP_SECRET>
 export async function GET(req: NextRequest) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const secret = req.nextUrl.searchParams.get("secret");
   if (!secret || secret !== process.env.DEV_SETUP_SECRET) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
-import { createToken } from "@/lib/auth";
 
-export async function POST(request: Request) {
-  const { password } = await request.json();
-  if (password === process.env.ADMIN_PASSWORD) {
-    return NextResponse.json({ token: createToken() });
-  }
-  return NextResponse.json({ error: "Incorrect password" }, { status: 401 });
+// This endpoint is from the old homegrown-JWT admin auth system.
+// Auth is now handled entirely by Supabase. This route is disabled.
+export async function POST() {
+  return NextResponse.json({ error: "Not found" }, { status: 404 });
 }

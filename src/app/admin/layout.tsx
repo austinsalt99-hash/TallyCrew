@@ -17,11 +17,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-gray-900 px-4 py-3 flex items-center justify-between">
-        <Image src="/tally-wordmark-white.png" alt="TallyCrew" width={160} height={55} />
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm px-4 py-3 flex items-center justify-between">
+        <Image src="/tally-wordmark.png" alt="TallyCrew" width={160} height={38} />
         <button
           onClick={handleSignOut}
-          className="text-xs text-gray-400 hover:text-white transition-colors"
+          className="text-xs text-gray-500 hover:text-gray-900 transition-colors"
         >
           Sign out
         </button>

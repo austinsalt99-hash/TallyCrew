@@ -59,6 +59,13 @@ function formatTime(t: string) {
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
+function formatDate(d: string) {
+  if (!d) return "";
+  const [year, month, day] = d.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+}
+
 function toDecimalHour(t: string): number {
   if (!t) return 0;
   const [h, m] = t.split(":").map(Number);
@@ -72,6 +79,7 @@ export default function AdminCalendar() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<JobEvent | null>(null);
 
   const weekDates = getWeekDates(weekOffset);
   const from = fmt(weekDates[0]);
@@ -143,6 +151,7 @@ export default function AdminCalendar() {
       body: JSON.stringify({ id }),
     });
     setEvents((prev) => prev.filter((e) => e.id !== id));
+    setSelectedEvent(null);
   }
 
   const monthLabel = `${MONTHS[weekDates[0].getMonth()]} ${weekDates[0].getFullYear()}`;
@@ -175,112 +184,190 @@ export default function AdminCalendar() {
         </button>
       </div>
 
-      {/* Calendar card */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <div style={{ minWidth: 640 }}>
+      {/* Calendar + Details split layout */}
+      <div className={`flex flex-col ${selectedEvent ? "md:flex-row md:gap-4 md:items-start" : ""}`}>
 
-            {/* Day header row */}
-            <div className="flex border-b border-gray-200" style={{ paddingLeft: 56 }}>
-              {weekDates.map((date, i) => {
-                const dateStr = fmt(date);
-                const isToday = dateStr === todayStr;
-                return (
-                  <div key={dateStr} className={`flex-1 py-3 text-center border-l border-gray-100 ${isToday ? "bg-blue-50" : ""}`}>
-                    <div className={`text-xs font-semibold uppercase tracking-wider ${isToday ? "text-blue-500" : "text-gray-400"}`}>
-                      {DAY_NAMES[i]}
-                    </div>
-                    <div className={`text-2xl font-extrabold leading-tight mt-0.5 ${isToday ? "text-blue-600" : "text-gray-800"}`}>
-                      {date.getDate()}
-                    </div>
-                    <div className={`text-xs mt-0.5 ${isToday ? "text-blue-400" : "text-gray-400"}`}>
-                      {MONTHS[date.getMonth()]}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+        {/* Calendar card */}
+        <div className={selectedEvent ? "md:w-1/2" : ""}>
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <div style={{ minWidth: 640 }}>
 
-            {/* Time grid */}
-            <div className="overflow-y-auto" style={{ maxHeight: 520 }}>
-              <div className="flex" style={{ height: totalHeight }}>
-
-                {/* Hour label column */}
-                <div className="relative flex-shrink-0" style={{ width: 56 }}>
-                  {HOUR_LABELS.map((label, i) => (
-                    <div
-                      key={i}
-                      className="absolute right-0 pr-2 flex items-start"
-                      style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}
-                    >
-                      <span className="text-xs text-gray-400 mt-1 leading-none">{label}</span>
-                    </div>
-                  ))}
+                {/* Day header row */}
+                <div className="flex border-b border-gray-200" style={{ paddingLeft: 56 }}>
+                  {weekDates.map((date, i) => {
+                    const dateStr = fmt(date);
+                    const isToday = dateStr === todayStr;
+                    return (
+                      <div key={dateStr} className={`flex-1 py-3 text-center border-l border-gray-100 ${isToday ? "bg-blue-50" : ""}`}>
+                        <div className={`text-xs font-semibold uppercase tracking-wider ${isToday ? "text-blue-500" : "text-gray-400"}`}>
+                          {DAY_NAMES[i]}
+                        </div>
+                        <div className={`text-2xl font-extrabold leading-tight mt-0.5 ${isToday ? "text-blue-600" : "text-gray-800"}`}>
+                          {date.getDate()}
+                        </div>
+                        <div className={`text-xs mt-0.5 ${isToday ? "text-blue-400" : "text-gray-400"}`}>
+                          {MONTHS[date.getMonth()]}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {/* Day columns */}
-                {weekDates.map((date) => {
-                  const dateStr = fmt(date);
-                  const dayEvents = events.filter((e) => e.date === dateStr && e.start_time);
-                  const isToday = dateStr === todayStr;
-                  return (
-                    <div
-                      key={dateStr}
-                      className={`flex-1 relative border-l border-gray-100 cursor-crosshair ${isToday ? "bg-blue-50/20" : ""}`}
-                      style={{ height: totalHeight }}
-                      onClick={(e) => handleGridClick(dateStr, e)}
-                    >
-                      {/* Hour grid lines */}
-                      {HOUR_LABELS.map((_, i) => (
+                {/* Time grid — compresses on mobile when panel is open */}
+                <div className={`overflow-y-auto ${selectedEvent ? "max-h-60 md:max-h-[520px]" : "max-h-[520px]"}`}>
+                  <div className="flex" style={{ height: totalHeight }}>
+
+                    {/* Hour label column */}
+                    <div className="relative flex-shrink-0" style={{ width: 56 }}>
+                      {HOUR_LABELS.map((label, i) => (
                         <div
                           key={i}
-                          className="absolute left-0 right-0 border-t border-gray-100"
-                          style={{ top: i * HOUR_HEIGHT }}
-                        />
+                          className="absolute right-0 pr-2 flex items-start"
+                          style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}
+                        >
+                          <span className="text-xs text-gray-400 mt-1 leading-none">{label}</span>
+                        </div>
                       ))}
-
-                      {/* Job event blocks */}
-                      {dayEvents.map((ev) => {
-                        const startH = toDecimalHour(ev.start_time);
-                        const endH = ev.end_time ? toDecimalHour(ev.end_time) : startH + 1;
-                        const clampedStart = Math.max(startH, START_HOUR);
-                        const clampedEnd = Math.min(endH, END_HOUR);
-                        if (clampedEnd <= clampedStart) return null;
-                        const top = (clampedStart - START_HOUR) * HOUR_HEIGHT;
-                        const height = Math.max((clampedEnd - clampedStart) * HOUR_HEIGHT - 4, 22);
-                        return (
-                          <div
-                            key={ev.id}
-                            className="absolute left-1 right-1 rounded-xl px-2 py-1.5 overflow-hidden z-10 group cursor-pointer hover:brightness-90"
-                            style={{ top: top + 2, height, backgroundColor: "#3b82f6" }}
-                            onClick={(e) => { e.stopPropagation(); openEdit(ev); }}
-                          >
-                            <div className="flex items-start justify-between gap-1">
-                              <p className="text-white text-xs font-bold leading-tight truncate">{ev.title}</p>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDelete(ev.id); }}
-                                className="text-white/60 hover:text-white text-base leading-none opacity-0 group-hover:opacity-100 flex-shrink-0 font-bold"
-                              >×</button>
-                            </div>
-                            {ev.client && height > 38 && (
-                              <p className="text-white/80 text-xs truncate">{ev.client}</p>
-                            )}
-                            {height > 54 && ev.start_time && (
-                              <p className="text-white/70 text-xs">
-                                {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
                     </div>
-                  );
-                })}
+
+                    {/* Day columns */}
+                    {weekDates.map((date) => {
+                      const dateStr = fmt(date);
+                      const dayEvents = events.filter((e) => e.date === dateStr && e.start_time);
+                      const isToday = dateStr === todayStr;
+                      return (
+                        <div
+                          key={dateStr}
+                          className={`flex-1 relative border-l border-gray-100 cursor-crosshair ${isToday ? "bg-blue-50/20" : ""}`}
+                          style={{ height: totalHeight }}
+                          onClick={(e) => handleGridClick(dateStr, e)}
+                        >
+                          {/* Hour grid lines */}
+                          {HOUR_LABELS.map((_, i) => (
+                            <div
+                              key={i}
+                              className="absolute left-0 right-0 border-t border-gray-100"
+                              style={{ top: i * HOUR_HEIGHT }}
+                            />
+                          ))}
+
+                          {/* Job event blocks */}
+                          {dayEvents.map((ev) => {
+                            const startH = toDecimalHour(ev.start_time);
+                            const endH = ev.end_time ? toDecimalHour(ev.end_time) : startH + 1;
+                            const clampedStart = Math.max(startH, START_HOUR);
+                            const clampedEnd = Math.min(endH, END_HOUR);
+                            if (clampedEnd <= clampedStart) return null;
+                            const top = (clampedStart - START_HOUR) * HOUR_HEIGHT;
+                            const height = Math.max((clampedEnd - clampedStart) * HOUR_HEIGHT - 4, 22);
+                            const isSelected = selectedEvent?.id === ev.id;
+                            return (
+                              <div
+                                key={ev.id}
+                                className={`absolute left-1 right-1 rounded-xl px-2 py-1.5 overflow-hidden z-10 cursor-pointer transition-all ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-90"}`}
+                                style={{ top: top + 2, height, backgroundColor: "#3b82f6" }}
+                                onClick={(e) => { e.stopPropagation(); setSelectedEvent(ev); }}
+                              >
+                                <p className="text-white text-xs font-bold leading-tight truncate">{ev.title}</p>
+                                {ev.client && height > 38 && (
+                                  <p className="text-white/80 text-xs truncate">{ev.client}</p>
+                                )}
+                                {height > 54 && ev.start_time && (
+                                  <p className="text-white/70 text-xs">
+                                    {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
               </div>
             </div>
-
           </div>
         </div>
+
+        {/* Details panel */}
+        {selectedEvent && (
+          <div className="mt-4 md:mt-0 md:w-1/2 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+
+            {/* Panel header */}
+            <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-0.5">Job Details</p>
+                <h2 className="text-lg font-bold text-gray-900 leading-snug">{selectedEvent.title}</h2>
+              </div>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 text-xl font-bold flex-shrink-0 mt-0.5"
+              >×</button>
+            </div>
+
+            {/* Panel body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {selectedEvent.date && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Date</p>
+                  <p className="text-sm text-gray-800">{formatDate(selectedEvent.date)}</p>
+                </div>
+              )}
+              {(selectedEvent.start_time || selectedEvent.end_time) && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Time</p>
+                  <p className="text-sm text-gray-800">
+                    {formatTime(selectedEvent.start_time)}{selectedEvent.end_time ? ` – ${formatTime(selectedEvent.end_time)}` : ""}
+                  </p>
+                </div>
+              )}
+              {selectedEvent.client && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Client</p>
+                  <p className="text-sm text-gray-800">{selectedEvent.client}</p>
+                </div>
+              )}
+              {selectedEvent.location && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Location</p>
+                  <p className="text-sm text-gray-800">{selectedEvent.location}</p>
+                </div>
+              )}
+              {selectedEvent.assigned_to && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Assigned to</p>
+                  <p className="text-sm text-gray-800">{selectedEvent.assigned_to}</p>
+                </div>
+              )}
+              {selectedEvent.description && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Notes</p>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{selectedEvent.description}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Admin action buttons */}
+            <div className="flex gap-2 px-5 py-4 border-t border-gray-100">
+              <button
+                onClick={() => { openEdit(selectedEvent); setSelectedEvent(null); }}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => handleDelete(selectedEvent.id)}
+                className="px-5 border border-red-200 text-red-500 hover:bg-red-50 rounded-xl py-2.5 text-sm font-semibold transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Add / Edit modal */}

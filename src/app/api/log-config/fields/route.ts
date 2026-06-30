@@ -34,10 +34,18 @@ export async function PUT(request: Request) {
   const { supabase, profile, err } = await adminCheck();
   if (err || !profile) return err!;
 
-  const { id, ...updates } = await request.json();
+  const body = await request.json();
+  const { id } = body;
+  const safeUpdates = {
+    label:       body.label,
+    field_key:   body.field_key,
+    field_type:  body.field_type,
+    sort_order:  body.sort_order,
+    is_required: body.is_required,
+  };
   const { data, error } = await supabase
     .from("log_entry_fields")
-    .update(updates)
+    .update(safeUpdates)
     .eq("id", id)
     .select()
     .single();

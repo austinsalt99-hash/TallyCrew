@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       notes,
       totalBillableHours,
       totalNonBillableHours,
+      breakMinutes,
     } = body as {
       date: string;
       dayStartTime?: string;
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
       notes: string;
       totalBillableHours: number;
       totalNonBillableHours: number;
+      breakMinutes?: number;
     };
 
     const employeeName = profile.full_name;
@@ -95,6 +97,7 @@ export async function POST(request: Request) {
         notes,
         total_billable_hours: totalBillableHours,
         total_non_billable_hours: totalNonBillableHours,
+        break_minutes: breakMinutes ?? 0,
       })
       .select("id")
       .single();
@@ -157,6 +160,7 @@ export async function PUT(request: Request) {
       notes,
       totalBillableHours,
       totalNonBillableHours,
+      breakMinutes,
     } = body as {
       id: string;
       date: string;
@@ -168,6 +172,7 @@ export async function PUT(request: Request) {
       notes: string;
       totalBillableHours: number;
       totalNonBillableHours: number;
+      breakMinutes?: number;
     };
 
     const employeeName = profile.full_name;
@@ -187,6 +192,7 @@ export async function PUT(request: Request) {
         notes,
         total_billable_hours: totalBillableHours,
         total_non_billable_hours: totalNonBillableHours,
+        break_minutes: breakMinutes ?? 0,
       })
       .eq("id", id)
       .eq("user_id", user.id);

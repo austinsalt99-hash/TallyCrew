@@ -2,6 +2,7 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import TimesheetForm from "@/components/TimesheetForm";
 import TodaySchedule from "@/components/TodaySchedule";
+import WeeklyHoursSummary from "@/components/WeeklyHoursSummary";
 import BottomNav from "@/components/BottomNav";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 
@@ -22,6 +23,7 @@ export default async function Home() {
 
       <main className="max-w-2xl mx-auto px-4 py-6 pb-24 space-y-6">
         <TodaySchedule />
+        <WeeklyHoursSummary />
         <div className="border-t border-gray-200 pt-6">
           <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">Log Today&apos;s Hours</p>
           <TimesheetForm userName={profile.full_name} userId={user.id} />

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import BillableEntry, { BillableEntryData } from "./BillableEntry";
 import NonBillableEntry, { NonBillableEntryData } from "./NonBillableEntry";
 import JobEventPicker, { JobEvent } from "./JobEventPicker";
+import LogHistoryPanel from "./LogHistoryPanel";
 import type { LogEntryType } from "@/types/logConfig";
 
 interface DayEntry {
@@ -27,6 +28,13 @@ function newNonBillable(): NonBillableEntryData {
 
 function storageKey(userId: string, date: string): string {
   return `tallycrew-draft-${userId}-${date}`;
+}
+
+function fmt12h(t: string): string {
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
 function calcTotalBillable(entries: BillableEntryData[]): number {
@@ -75,7 +83,42 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   const [linkingEntryId, setLinkingEntryId] = useState<string | null>(null);
   const [calendarEvents, setCalendarEvents] = useState<JobEvent[]>([]);
   const [calendarWeekOffset, setCalendarWeekOffset] = useState(0);
+  const [clockElapsed, setClockElapsed] = useState("");
+  const [clockInTimestamp, setClockInTimestamp] = useState<number | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [breakMinutes, setBreakMinutes] = useState("");
+  const [breakStartTimestamp, setBreakStartTimestamp] = useState<number | null>(null);
+  const [breakElapsed, setBreakElapsed] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleClockIn() {
+    const now = new Date();
+    setClockInTimestamp(now.getTime());
+    setDayStartTime(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`);
+    setDayEndTime("");
+  }
+
+  function handleClockOut() {
+    if (breakStartTimestamp) {
+      const mins = Math.round((Date.now() - breakStartTimestamp) / 60000);
+      setBreakMinutes((prev) => String((parseFloat(prev) || 0) + mins));
+      setBreakStartTimestamp(null);
+    }
+    const now = new Date();
+    setDayEndTime(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`);
+    setClockInTimestamp(null);
+  }
+
+  function handleBreakStart() {
+    setBreakStartTimestamp(Date.now());
+  }
+
+  function handleBreakEnd() {
+    if (!breakStartTimestamp) return;
+    const mins = Math.round((Date.now() - breakStartTimestamp) / 60000);
+    setBreakMinutes((prev) => String((parseFloat(prev) || 0) + mins));
+    setBreakStartTimestamp(null);
+  }
 
   useEffect(() => {
     fetch("/api/log-config")
@@ -118,6 +161,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
         if (draft.billable?.length) setBillable(draft.billable);
         if (draft.nonBillable?.length) setNonBillable(draft.nonBillable);
         if (draft.notes) setNotes(draft.notes);
+        if (draft.breakMinutes) setBreakMinutes(draft.breakMinutes);
       } catch {}
     }
     setLoaded(true);
@@ -132,6 +176,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       billable: BillableEntryData[];
       nonBillable: NonBillableEntryData[];
       notes: string;
+      breakMinutes: string;
     }) => {
       localStorage.setItem(storageKey(userId, today()), JSON.stringify(state));
       setSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
@@ -139,26 +184,53 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     [userId]
   );
 
+  // Live elapsed timer — only runs when user actively pressed Clock In this session
+  useEffect(() => {
+    if (!clockInTimestamp || dayEndTime) { setClockElapsed(""); return; }
+    const ts = clockInTimestamp;
+    function tick() {
+      const secs = Math.floor((Date.now() - ts) / 1000);
+      setClockElapsed(`${Math.floor(secs / 3600)}:${String(Math.floor((secs % 3600) / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`);
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [clockInTimestamp, dayEndTime]);
+
+  // Live break timer
+  useEffect(() => {
+    if (!breakStartTimestamp) { setBreakElapsed(""); return; }
+    const ts = breakStartTimestamp;
+    function tick() {
+      const secs = Math.floor((Date.now() - ts) / 1000);
+      setBreakElapsed(`${Math.floor(secs / 3600)}:${String(Math.floor((secs % 3600) / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`);
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [breakStartTimestamp]);
+
   // Auto-save with 1s debounce after initial load
   useEffect(() => {
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      saveDraft({ employeeName: userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes });
+      saveDraft({ employeeName: userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, breakMinutes });
     }, 1000);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [loaded, userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, saveDraft]);
+  }, [loaded, userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, breakMinutes, saveDraft]);
 
-  async function loadPastLog() {
+  async function loadPastLog(overrideDate?: string) {
+    const targetDate = overrideDate ?? date;
     setHistoryLoading(true);
     setHistoryMsg("");
     try {
-      const res = await fetch(`/api/submissions/employee?date=${date}`, { credentials: "include" });
+      const res = await fetch(`/api/submissions/employee?date=${targetDate}`, { credentials: "include" });
       const data = await res.json();
       if (!data || !data.id) {
-        setHistoryMsg(`No log found for ${date}.`);
+        setHistoryMsg(`No log found for ${targetDate}.`);
         return;
       }
       if (data.date) setDate(data.date);
@@ -209,6 +281,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
         notes,
         totalBillableHours: calcTotalBillable(billable),
         totalNonBillableHours: calcTotalNonBillable(nonBillable),
+        breakMinutes: parseFloat(breakMinutes) || 0,
         ...(isEditing && submittedId ? { id: submittedId } : {}),
       };
       const res = await fetch("/api/submit", {
@@ -276,6 +349,20 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
 
   return (
     <>
+    {/* History button */}
+    <div className="flex items-center justify-between mb-1">
+      <button
+        type="button"
+        onClick={() => setShowHistory(true)}
+        className="flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-blue-600 transition-colors"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 15 15"/>
+        </svg>
+        History
+      </button>
+    </div>
+
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Preview mode banner */}
       {previewMode && (
@@ -315,7 +402,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
             />
             <button
               type="button"
-              onClick={loadPastLog}
+              onClick={() => loadPastLog()}
               disabled={historyLoading}
               title="Load your log for this date"
               className="px-3 py-3 border border-gray-300 rounded-lg text-gray-400 hover:text-blue-600 hover:border-blue-400 transition-colors disabled:opacity-50"
@@ -334,28 +421,127 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
         </div>
       </div>
 
-      {/* Workday times */}
+      {/* Workday Hours */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Workday Hours</p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 min-w-0">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Start time</label>
-            <input
-              type="time"
-              value={dayStartTime}
-              onChange={(e) => setDayStartTime(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Workday Hours</p>
+
+        {/* Big clock button */}
+        {!dayStartTime ? (
+          <button
+            type="button"
+            onClick={handleClockIn}
+            className="w-full bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold text-xl py-6 rounded-2xl transition-colors flex items-center justify-center gap-3 shadow-sm mb-4"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 15 15"/>
+            </svg>
+            Clock In
+          </button>
+        ) : !dayEndTime ? (
+          <div className="space-y-4 mb-4">
+            {clockInTimestamp && (
+              <div className="text-center py-1">
+                <p className="text-sm text-gray-400">
+                  Clocked in at <span className="font-semibold text-gray-700">{fmt12h(dayStartTime)}</span>
+                </p>
+                <p className="text-4xl font-bold text-gray-900 tabular-nums mt-2 tracking-tight">{clockElapsed}</p>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={handleClockOut}
+              className="w-full bg-green-500 hover:bg-green-600 active:bg-green-700 text-white font-bold text-xl py-6 rounded-2xl transition-colors flex items-center justify-center gap-3 shadow-sm"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="4" y="4" width="16" height="16" rx="3"/>
+              </svg>
+              Clock Out
+            </button>
           </div>
-          <div className="flex-1 min-w-0">
-            <label className="block text-sm font-medium text-gray-700 mb-1">End time</label>
-            <input
-              type="time"
-              value={dayEndTime}
-              onChange={(e) => setDayEndTime(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
+        ) : (
+          <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 mb-4">
+            <div className="flex-1 text-center">
+              <p className="text-xs text-gray-400 mb-0.5">Clock in</p>
+              <p className="font-semibold text-gray-900">{fmt12h(dayStartTime)}</p>
+            </div>
+            <div className="text-gray-300 text-lg">→</div>
+            <div className="flex-1 text-center">
+              <p className="text-xs text-gray-400 mb-0.5">Clock out</p>
+              <p className="font-semibold text-gray-900">{fmt12h(dayEndTime)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setDayStartTime(""); setDayEndTime(""); setClockInTimestamp(null); }}
+              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+            >
+              Reset
+            </button>
           </div>
+        )}
+
+        {/* Manual time inputs — always visible */}
+        <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-gray-100">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Start time</label>
+            <input type="time" value={dayStartTime} onChange={(e) => setDayStartTime(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">End time</label>
+            <input type="time" value={dayEndTime} onChange={(e) => setDayEndTime(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Break */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Break</p>
+
+        {dayStartTime && !dayEndTime && (
+          !breakStartTimestamp ? (
+            <button
+              type="button"
+              onClick={handleBreakStart}
+              className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xl py-6 rounded-2xl transition-colors flex items-center justify-center gap-3 shadow-sm mb-4"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="4" width="4" height="16" rx="1.5"/>
+                <rect x="14" y="4" width="4" height="16" rx="1.5"/>
+              </svg>
+              Take Break
+            </button>
+          ) : (
+            <div className="space-y-4 mb-4">
+              <div className="text-center py-1">
+                <p className="text-sm text-gray-400">On break</p>
+                <p className="text-4xl font-bold text-amber-500 tabular-nums mt-2 tracking-tight">{breakElapsed}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleBreakEnd}
+                className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xl py-6 rounded-2xl transition-colors flex items-center justify-center gap-3 shadow-sm"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                End Break
+              </button>
+            </div>
+          )
+        )}
+
+        <div className={dayStartTime && !dayEndTime ? "pt-4 border-t border-gray-100" : ""}>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Total break (minutes)</label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={breakMinutes}
+            onChange={(e) => setBreakMinutes(e.target.value)}
+            placeholder="0"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-400"
+          />
         </div>
       </div>
 
@@ -540,6 +726,16 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
         </button>
       )}
     </form>
+
+    {showHistory && (
+      <LogHistoryPanel
+        onLoadDate={(selectedDate) => {
+          setDate(selectedDate);
+          loadPastLog(selectedDate);
+        }}
+        onClose={() => setShowHistory(false)}
+      />
+    )}
 
     {linkingEntryId && (
       <JobEventPicker
