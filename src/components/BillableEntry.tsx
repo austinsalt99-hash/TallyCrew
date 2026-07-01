@@ -247,14 +247,14 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
       )}
 
       {showTime && (
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex gap-3">
           <div className="flex-1 min-w-0">
             <label className="block text-xs text-gray-500 mb-1">Start time</label>
             <input
               type="time"
               value={entry.startTime}
               onChange={(e) => update("startTime", e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 appearance-none"
             />
           </div>
           <div className="flex-1 min-w-0">
@@ -263,7 +263,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
               type="time"
               value={entry.endTime}
               onChange={(e) => update("endTime", e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 appearance-none"
             />
           </div>
         </div>

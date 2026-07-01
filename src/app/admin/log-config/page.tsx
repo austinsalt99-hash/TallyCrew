@@ -301,7 +301,7 @@ export default function LogConfigPage() {
                 ))}
 
               {/* Add field form */}
-              <div className="flex gap-2 pt-1">
+              <div className="flex flex-col gap-2 pt-1">
                 <input
                   type="text"
                   placeholder="Field name (e.g. From Location)"
@@ -310,26 +310,28 @@ export default function LogConfigPage() {
                     setNewFieldName((prev) => ({ ...prev, [type.id]: e.target.value }))
                   }
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddField(type.id); } }}
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
-                <select
-                  value={newFieldType[type.id] ?? "text"}
-                  onChange={(e) =>
-                    setNewFieldType((prev) => ({ ...prev, [type.id]: e.target.value }))
-                  }
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
-                >
-                  <option value="dropdown">Dropdown</option>
-                  <option value="number">Number</option>
-                  <option value="text">Text</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={() => handleAddField(type.id)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg"
-                >
-                  Add Field
-                </button>
+                <div className="flex gap-2">
+                  <select
+                    value={newFieldType[type.id] ?? "text"}
+                    onChange={(e) =>
+                      setNewFieldType((prev) => ({ ...prev, [type.id]: e.target.value }))
+                    }
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                  >
+                    <option value="dropdown">Dropdown</option>
+                    <option value="number">Number</option>
+                    <option value="text">Text</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => handleAddField(type.id)}
+                    className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+                  >
+                    Add Field
+                  </button>
+                </div>
               </div>
             </div>
           )}
