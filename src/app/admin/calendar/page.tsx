@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface JobEvent {
   id: string;
@@ -12,6 +12,7 @@ interface JobEvent {
   start_time: string;
   end_time: string;
   assigned_to: string;
+  is_verified: boolean;
 }
 
 const EMPTY_FORM = {
@@ -23,6 +24,7 @@ const EMPTY_FORM = {
   start_time: "",
   end_time: "",
   assigned_to: "",
+  is_verified: true as boolean,
 };
 
 const START_HOUR = 6;
@@ -49,7 +51,41 @@ function getWeekDates(offset = 0): Date[] {
 }
 
 function fmt(d: Date) {
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function layoutEvents(evs: JobEvent[]): { ev: JobEvent; col: number; totalCols: number }[] {
+  const sorted = [...evs].sort((a, b) => toDecimalHour(a.start_time) - toDecimalHour(b.start_time));
+  const cols = new Array(sorted.length).fill(0);
+
+  for (let i = 0; i < sorted.length; i++) {
+    const s = toDecimalHour(sorted[i].start_time);
+    const e = sorted[i].end_time ? toDecimalHour(sorted[i].end_time) : s + 1;
+    const taken = new Set<number>();
+    for (let j = 0; j < i; j++) {
+      const sj = toDecimalHour(sorted[j].start_time);
+      const ej = sorted[j].end_time ? toDecimalHour(sorted[j].end_time) : sj + 1;
+      if (s < ej && e > sj) taken.add(cols[j]);
+    }
+    let c = 0;
+    while (taken.has(c)) c++;
+    cols[i] = c;
+  }
+
+  return sorted.map((ev, i) => {
+    const s = toDecimalHour(ev.start_time);
+    const e = ev.end_time ? toDecimalHour(ev.end_time) : s + 1;
+    let maxCol = cols[i];
+    for (let j = 0; j < sorted.length; j++) {
+      const sj = toDecimalHour(sorted[j].start_time);
+      const ej = sorted[j].end_time ? toDecimalHour(sorted[j].end_time) : sj + 1;
+      if (s < ej && e > sj) maxCol = Math.max(maxCol, cols[j]);
+    }
+    return { ev, col: cols[i], totalCols: maxCol + 1 };
+  });
 }
 
 function formatTime(t: string) {
@@ -80,6 +116,11 @@ export default function AdminCalendar() {
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<JobEvent | null>(null);
+  const [listening, setListening] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [parsing, setParsing] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
 
   const weekDates = getWeekDates(weekOffset);
   const from = fmt(weekDates[0]);
@@ -94,7 +135,7 @@ export default function AdminCalendar() {
   }, [from, to]);
 
   function openNew(date = "", startTime = "") {
-    setForm({ ...EMPTY_FORM, date, start_time: startTime });
+    setForm({ ...EMPTY_FORM, date, start_time: startTime, is_verified: true });
     setEditId(null);
     setShowForm(true);
   }
@@ -109,6 +150,7 @@ export default function AdminCalendar() {
       start_time: ev.start_time ?? "",
       end_time: ev.end_time ?? "",
       assigned_to: ev.assigned_to ?? "",
+      is_verified: ev.is_verified !== false,
     });
     setEditId(ev.id);
     setShowForm(true);
@@ -154,12 +196,117 @@ export default function AdminCalendar() {
     setSelectedEvent(null);
   }
 
+  async function handleVerify(id: string) {
+    await fetch("/api/events", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id, is_verified: true }),
+    });
+    setEvents((prev) => prev.map((e) => e.id === id ? { ...e, is_verified: true } : e));
+    setSelectedEvent((prev) => prev?.id === id ? { ...prev, is_verified: true } : prev);
+  }
+
+  function handleVoiceToggle() {
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionClass) {
+      alert("Voice input is not supported in this browser. Please use Chrome or Safari.");
+      return;
+    }
+
+    const recognition = new SpeechRecognitionClass();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognitionRef.current = recognition;
+
+    let finalTranscript = "";
+    setTranscript("");
+    setListening(true);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      finalTranscript = Array.from(event.results as any[])
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((r: any) => r[0].transcript)
+        .join("");
+      setTranscript(finalTranscript);
+    };
+
+    recognition.onend = async () => {
+      setListening(false);
+      if (!finalTranscript.trim()) {
+        setTranscript("");
+        return;
+      }
+      setParsing(true);
+      try {
+        const res = await fetch("/api/admin/parse-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ text: finalTranscript }),
+        });
+        const parsed = await res.json();
+        if (parsed.error) throw new Error(parsed.error);
+        setForm({
+          date: parsed.date ?? "",
+          title: parsed.title ?? "",
+          client: parsed.client ?? "",
+          location: parsed.location ?? "",
+          description: parsed.description ?? "",
+          start_time: parsed.start_time ?? "",
+          end_time: parsed.end_time ?? "",
+          assigned_to: parsed.assigned_to ?? "",
+          is_verified: false,
+        });
+        setEditId(null);
+        setShowForm(true);
+      } catch (err) {
+        alert(`Failed to parse voice input: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setParsing(false);
+        setTranscript("");
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      setListening(false);
+      setParsing(false);
+      setTranscript("");
+      const err = event.error;
+      if (err === "not-allowed") {
+        alert("Microphone access was denied. Click the lock/camera icon in your browser's address bar and allow microphone access, then try again.");
+      } else if (err === "no-speech") {
+        alert("No speech was detected. Please try again and speak clearly.");
+      } else if (err === "audio-capture") {
+        alert("No microphone found. Please connect a microphone and try again.");
+      } else {
+        alert(`Voice error: ${err}. Please try again.`);
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      setListening(false);
+      alert(`Could not start voice input: ${e}`);
+    }
+  }
+
   const monthLabel = `${MONTHS[weekDates[0].getMonth()]} ${weekDates[0].getFullYear()}`;
 
   return (
     <div>
       {/* Top bar */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setWeekOffset((o) => o - 1)}
@@ -176,13 +323,44 @@ export default function AdminCalendar() {
             </button>
           )}
         </div>
-        <button
-          onClick={() => openNew()}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-xl text-sm"
-        >
-          + Add Job
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleVoiceToggle}
+            disabled={parsing}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+              listening
+                ? "bg-red-500 hover:bg-red-600 text-white"
+                : parsing
+                ? "border border-gray-200 text-gray-400 cursor-not-allowed"
+                : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+            {listening ? "Stop" : parsing ? "Parsing…" : "Voice"}
+          </button>
+          <button
+            onClick={() => openNew()}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-xl text-sm"
+          >
+            + Add Job
+          </button>
+        </div>
       </div>
+
+      {/* Voice status bar */}
+      {(listening || parsing) && (
+        <div className="mb-4 px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 flex items-center gap-3">
+          <div className={`w-2 h-2 rounded-full shrink-0 ${listening ? "bg-red-500 animate-pulse" : "bg-blue-500 animate-pulse"}`} />
+          <p className="text-sm text-gray-600 flex-1 italic truncate">
+            {parsing ? "Parsing with AI…" : transcript ? `"${transcript}"` : "Listening… speak now"}
+          </p>
+        </div>
+      )}
 
       {/* Calendar + Details split layout */}
       <div className={`flex flex-col ${selectedEvent ? "md:flex-row md:gap-4 md:items-start" : ""}`}>
@@ -214,7 +392,7 @@ export default function AdminCalendar() {
                   })}
                 </div>
 
-                {/* Time grid — compresses on mobile when panel is open */}
+                {/* Time grid */}
                 <div className={`overflow-y-auto ${selectedEvent ? "max-h-60 md:max-h-[520px]" : "max-h-[520px]"}`}>
                   <div className="flex" style={{ height: totalHeight }}>
 
@@ -243,7 +421,6 @@ export default function AdminCalendar() {
                           style={{ height: totalHeight }}
                           onClick={(e) => handleGridClick(dateStr, e)}
                         >
-                          {/* Hour grid lines */}
                           {HOUR_LABELS.map((_, i) => (
                             <div
                               key={i}
@@ -252,8 +429,7 @@ export default function AdminCalendar() {
                             />
                           ))}
 
-                          {/* Job event blocks */}
-                          {dayEvents.map((ev) => {
+                          {layoutEvents(dayEvents).map(({ ev, col, totalCols }) => {
                             const startH = toDecimalHour(ev.start_time);
                             const endH = ev.end_time ? toDecimalHour(ev.end_time) : startH + 1;
                             const clampedStart = Math.max(startH, START_HOUR);
@@ -262,11 +438,20 @@ export default function AdminCalendar() {
                             const top = (clampedStart - START_HOUR) * HOUR_HEIGHT;
                             const height = Math.max((clampedEnd - clampedStart) * HOUR_HEIGHT - 4, 22);
                             const isSelected = selectedEvent?.id === ev.id;
+                            const isUnverified = ev.is_verified === false;
+                            const leftPct = (col / totalCols) * 100;
+                            const widthPct = (1 / totalCols) * 100;
                             return (
                               <div
                                 key={ev.id}
-                                className={`absolute left-1 right-1 rounded-xl px-2 py-1.5 overflow-hidden z-10 cursor-pointer transition-all ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-90"}`}
-                                style={{ top: top + 2, height, backgroundColor: "#3b82f6" }}
+                                className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 cursor-pointer transition-all ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-90"}`}
+                                style={{
+                                  top: top + 2,
+                                  height,
+                                  left: `calc(${leftPct}% + 2px)`,
+                                  width: `calc(${widthPct}% - 4px)`,
+                                  backgroundColor: isUnverified ? "#9ca3af" : "#3b82f6",
+                                }}
                                 onClick={(e) => { e.stopPropagation(); setSelectedEvent(ev); }}
                               >
                                 <p className="text-white text-xs font-bold leading-tight truncate">{ev.title}</p>
@@ -277,6 +462,9 @@ export default function AdminCalendar() {
                                   <p className="text-white/70 text-xs">
                                     {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
                                   </p>
+                                )}
+                                {isUnverified && height > 30 && (
+                                  <p className="text-white/70 text-[10px] font-medium mt-0.5">Unverified</p>
                                 )}
                               </div>
                             );
@@ -295,6 +483,18 @@ export default function AdminCalendar() {
         {/* Details panel */}
         {selectedEvent && (
           <div className="mt-4 md:mt-0 md:w-1/2 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+
+            {/* Unverified banner */}
+            {selectedEvent.is_verified === false && (
+              <div className="px-5 py-3 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <p className="text-xs font-semibold text-amber-700">Unverified AI draft — review details before confirming</p>
+              </div>
+            )}
 
             {/* Panel header */}
             <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
@@ -350,20 +550,45 @@ export default function AdminCalendar() {
               )}
             </div>
 
-            {/* Admin action buttons */}
+            {/* Action buttons */}
             <div className="flex gap-2 px-5 py-4 border-t border-gray-100">
-              <button
-                onClick={() => { openEdit(selectedEvent); setSelectedEvent(null); }}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => handleDelete(selectedEvent.id)}
-                className="px-5 border border-red-200 text-red-500 hover:bg-red-50 rounded-xl py-2.5 text-sm font-semibold transition-colors"
-              >
-                Delete
-              </button>
+              {selectedEvent.is_verified === false ? (
+                <>
+                  <button
+                    onClick={() => handleVerify(selectedEvent.id)}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors"
+                  >
+                    Verify
+                  </button>
+                  <button
+                    onClick={() => { openEdit(selectedEvent); setSelectedEvent(null); }}
+                    className="flex-1 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-xl py-2.5 text-sm font-semibold transition-colors"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(selectedEvent.id)}
+                    className="px-4 border border-red-200 text-red-500 hover:bg-red-50 rounded-xl py-2.5 text-sm font-semibold transition-colors"
+                  >
+                    Delete
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { openEdit(selectedEvent); setSelectedEvent(null); }}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(selectedEvent.id)}
+                    className="px-5 border border-red-200 text-red-500 hover:bg-red-50 rounded-xl py-2.5 text-sm font-semibold transition-colors"
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -375,6 +600,17 @@ export default function AdminCalendar() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
             <h2 className="text-lg font-bold text-gray-900">{editId ? "Edit Job" : "Add Job"}</h2>
+
+            {!form.is_verified && (
+              <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <p className="text-xs font-semibold text-amber-700">AI draft — review all fields before saving</p>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
@@ -425,7 +661,7 @@ export default function AdminCalendar() {
               </button>
               <button onClick={handleSave} disabled={saving || !form.title || !form.date}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl py-2.5 text-sm font-bold">
-                {saving ? "Saving..." : "Save"}
+                {saving ? "Saving…" : form.is_verified ? "Save" : "Save as Draft"}
               </button>
             </div>
           </div>
