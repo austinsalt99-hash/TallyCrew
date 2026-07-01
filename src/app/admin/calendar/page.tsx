@@ -119,7 +119,6 @@ export default function AdminCalendar() {
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [parsing, setParsing] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
   const weekDates = getWeekDates(weekOffset);
@@ -213,7 +212,6 @@ export default function AdminCalendar() {
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognitionClass) {
       alert("Voice input is not supported in this browser. Please use Chrome or Safari.");
@@ -230,11 +228,8 @@ export default function AdminCalendar() {
     setTranscript("");
     setListening(true);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       finalTranscript = Array.from(event.results as any[])
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((r: any) => r[0].transcript)
         .join("");
       setTranscript(finalTranscript);
