@@ -5,14 +5,28 @@ import { useEffect, useState } from "react";
 interface SubmissionSummary {
   total_billable_hours: number;
   total_non_billable_hours: number;
+  day_start_time?: string;
+  day_end_time?: string;
+  break_minutes?: number;
 }
 
 interface WeekSummary {
+  totalWorked: number;
   totalBillable: number;
   totalNonBillable: number;
   daysLogged: number;
   from: Date;
   to: Date;
+}
+
+function calcWorked(s: SubmissionSummary): number {
+  if (s.day_start_time && s.day_end_time) {
+    const [sh, sm] = s.day_start_time.split(":").map(Number);
+    const [eh, em] = s.day_end_time.split(":").map(Number);
+    const mins = (eh * 60 + em) - (sh * 60 + sm) - (s.break_minutes ?? 0);
+    return Math.max(mins / 60, 0);
+  }
+  return (s.total_billable_hours || 0) + (s.total_non_billable_hours || 0);
 }
 
 function getWeekRange(): { from: string; to: string; fromDate: Date; toDate: Date } {
@@ -42,6 +56,7 @@ export default function WeeklyHoursSummary() {
       .then((data: SubmissionSummary[]) => {
         if (!Array.isArray(data)) return;
         setSummary({
+          totalWorked: Math.round(data.reduce((s, d) => s + calcWorked(d), 0) * 100) / 100,
           totalBillable: Math.round(data.reduce((s, d) => s + (d.total_billable_hours || 0), 0) * 100) / 100,
           totalNonBillable: Math.round(data.reduce((s, d) => s + (d.total_non_billable_hours || 0), 0) * 100) / 100,
           daysLogged: data.length,
@@ -54,8 +69,6 @@ export default function WeeklyHoursSummary() {
 
   if (!summary) return null;
 
-  const total = Math.round((summary.totalBillable + summary.totalNonBillable) * 100) / 100;
-
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-5 py-4">
       <div className="flex items-center justify-between mb-3">
@@ -64,7 +77,7 @@ export default function WeeklyHoursSummary() {
       </div>
       <div className="flex items-center gap-5">
         <div>
-          <p className="text-2xl font-bold text-gray-900 leading-none">{total}h</p>
+          <p className="text-2xl font-bold text-gray-900 leading-none">{summary.totalWorked}h</p>
           <p className="text-xs text-gray-400 mt-1">total</p>
         </div>
         <div className="h-8 w-px bg-gray-100 shrink-0" />

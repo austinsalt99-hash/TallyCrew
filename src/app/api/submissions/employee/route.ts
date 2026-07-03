@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   if (from && to) {
     const { data, error } = await supabase
       .from("submissions")
-      .select("id, date, total_billable_hours, total_non_billable_hours, break_minutes, submitted_at")
+      .select("id, date, total_billable_hours, total_non_billable_hours, break_minutes, day_start_time, day_end_time, submitted_at")
       .eq("user_id", user.id)
       .gte("date", from)
       .lte("date", to)

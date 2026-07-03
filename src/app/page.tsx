@@ -20,7 +20,6 @@ export default async function Home() {
           <span className="text-sm text-gray-500 font-medium">{profile.full_name}</span>
         </div>
       </header>
-
       <main className="max-w-2xl mx-auto px-4 py-6 pb-24 space-y-6">
         <TodaySchedule />
         <WeeklyHoursSummary />

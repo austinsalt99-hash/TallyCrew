@@ -54,13 +54,31 @@ export default function LogConfigPage() {
   }, [openMenu]);
 
   async function reload() {
-    // Fetch all types (including inactive) for the admin view
     const sb_res = await fetch("/api/log-config/all", { headers: authHeader(), credentials: "include" });
     if (sb_res.ok) {
       const data = await sb_res.json();
-      if (Array.isArray(data)) { setTypes(data); setLoading(false); return; }
+      if (Array.isArray(data)) {
+        // Auto-create the General (standard) type if it doesn't exist yet
+        if (!data.find((t: LogEntryType) => t.slug === "standard")) {
+          await fetch("/api/log-config", {
+            method: "POST",
+            headers: authHeader(), credentials: "include",
+            body: JSON.stringify({ name: "General", slug: "standard", sort_order: -1, time_mode: "job", is_timed: true }),
+          });
+          await reload();
+          return;
+        }
+        // Pin General at top, then sort rest by sort_order
+        const sorted = data.slice().sort((a: LogEntryType, b: LogEntryType) => {
+          if (a.slug === "standard") return -1;
+          if (b.slug === "standard") return 1;
+          return a.sort_order - b.sort_order;
+        });
+        setTypes(sorted);
+        setLoading(false);
+        return;
+      }
     }
-    // Fallback to public endpoint
     const res = await fetch("/api/log-config");
     const data = await res.json();
     if (Array.isArray(data)) setTypes(data);
@@ -217,8 +235,10 @@ export default function LogConfigPage() {
         </div>
       )}
 
-      {types.map((type) => (
-        <div key={type.id} className="bg-white rounded-xl border border-gray-200 relative">
+      {types.map((type) => {
+        const isPrimary = type.slug === "standard";
+        return (
+        <div key={type.id} className={`bg-white rounded-xl border relative ${isPrimary ? "border-blue-300 ring-1 ring-blue-100" : "border-gray-200"}`}>
           {/* Type header */}
           <div className="flex items-center px-5 py-4 gap-2">
             <button
@@ -227,6 +247,9 @@ export default function LogConfigPage() {
               onClick={() => setExpandedType(expandedType === type.id ? null : type.id)}
             >
               <span className="font-semibold text-gray-900 truncate">{type.name}</span>
+              {isPrimary && (
+                <span className="shrink-0 text-xs px-2 py-0.5 rounded-full font-semibold bg-blue-600 text-white">Primary</span>
+              )}
               <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${type.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                 {type.is_active ? "Active" : "Hidden"}
               </span>
@@ -248,6 +271,7 @@ export default function LogConfigPage() {
               {openMenu === type.id && (
                 <TypeActionsMenu
                   type={type}
+                  isPrimary={isPrimary}
                   onSetTimeMode={(mode) => handleSetTimeMode(type, mode)}
                   onToggleActive={() => { setOpenMenu(null); handleToggleActive(type); }}
                   onDelete={() => { setOpenMenu(null); handleDeleteType(type.id); }}
@@ -336,7 +360,8 @@ export default function LogConfigPage() {
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
 
       {/* Add new type */}
       <div className="bg-white rounded-xl border border-dashed border-blue-300 p-5">
@@ -415,12 +440,13 @@ export default function LogConfigPage() {
 
 interface TypeActionsMenuProps {
   type: LogEntryType;
+  isPrimary?: boolean;
   onSetTimeMode: (mode: TimeMode) => void;
   onToggleActive: () => void;
   onDelete: () => void;
 }
 
-function TypeActionsMenu({ type, onSetTimeMode, onToggleActive, onDelete }: TypeActionsMenuProps) {
+function TypeActionsMenu({ type, isPrimary, onSetTimeMode, onToggleActive, onDelete }: TypeActionsMenuProps) {
   const currentMode: TimeMode = (type.time_mode as TimeMode) ?? (type.is_timed ? "job" : "none");
 
   return (
@@ -447,13 +473,15 @@ function TypeActionsMenu({ type, onSetTimeMode, onToggleActive, onDelete }: Type
       >
         {type.is_active ? "Hide type" : "Show type"}
       </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
-      >
-        Delete type
-      </button>
+      {!isPrimary && (
+        <button
+          type="button"
+          onClick={onDelete}
+          className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+        >
+          Delete type
+        </button>
+      )}
     </div>
   );
 }

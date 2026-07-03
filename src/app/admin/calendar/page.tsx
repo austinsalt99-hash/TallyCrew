@@ -15,6 +15,130 @@ interface JobEvent {
   is_verified: boolean;
 }
 
+interface BillableSubEntry {
+  slug: string;
+  customFields?: Record<string, string>;
+  startTime?: string;
+  endTime?: string;
+  manualHours?: number;
+}
+
+interface OldTypeSnapshot {
+  client?: string;
+  description?: string;
+  customFields?: Record<string, string>;
+  startTime?: string;
+  endTime?: string;
+  manualHours?: number;
+}
+
+interface LinkedBillableEntry {
+  client?: string;
+  description?: string;
+  startTime?: string;
+  endTime?: string;
+  manualHours?: number;
+  customFields?: Record<string, string>;
+  linkedEventId?: string;
+  subEntries?: BillableSubEntry[];
+  // Old format fields (submissions before sub-entry redesign):
+  entryType?: string;
+  _typeData?: Record<string, OldTypeSnapshot>;
+}
+
+interface DisplayItem {
+  slug: string;
+  hrs: string;
+  client?: string;
+  description?: string;
+  fields?: [string, string][];
+}
+
+function getDisplayItems(entry: LinkedBillableEntry, generalHrs: string): DisplayItem[] {
+  const items: DisplayItem[] = [];
+
+  if (entry.subEntries != null) {
+    // New format
+    if (entry.client || entry.description) {
+      items.push({ slug: "standard", hrs: generalHrs, client: entry.client, description: entry.description });
+    }
+    for (const sub of entry.subEntries) {
+      const subHrs = calcHrs(sub.startTime, sub.endTime, sub.manualHours);
+      const fields = Object.entries(sub.customFields ?? {}).filter(([, v]) => v) as [string, string][];
+      items.push({ slug: sub.slug, hrs: subHrs, fields });
+    }
+  } else {
+    // Old format: entryType + _typeData
+    const activeSlug = entry.entryType ?? "standard";
+    if (activeSlug === "standard") {
+      if (entry.client || entry.description) {
+        items.push({ slug: "standard", hrs: generalHrs, client: entry.client, description: entry.description });
+      }
+    } else {
+      const fields = Object.entries(entry.customFields ?? {}).filter(([, v]) => v) as [string, string][];
+      items.push({ slug: activeSlug, hrs: generalHrs, fields });
+    }
+    for (const [slug, data] of Object.entries(entry._typeData ?? {})) {
+      const dataHrs = calcHrs(data.startTime, data.endTime, data.manualHours);
+      if (slug === "standard") {
+        if (data.client || data.description) {
+          items.push({ slug: "standard", hrs: dataHrs, client: data.client, description: data.description });
+        }
+      } else {
+        const fields = Object.entries(data.customFields ?? {}).filter(([, v]) => v) as [string, string][];
+        if (fields.length > 0) items.push({ slug, hrs: dataHrs, fields });
+      }
+    }
+  }
+
+  return items;
+}
+
+interface LinkedSubmission {
+  id: string;
+  employee_name: string;
+  date: string;
+  billable_entries: LinkedBillableEntry[];
+}
+
+function calcHrs(start?: string, end?: string, manual?: number): string {
+  if (manual != null) return `${manual}h`;
+  if (!start || !end) return "";
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  const mins = eh * 60 + em - (sh * 60 + sm);
+  if (mins <= 0) return "";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function calcHrsDecimal(start?: string, end?: string, manual?: number): number {
+  if (manual != null) return manual;
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  return Math.max((eh * 60 + em - (sh * 60 + sm)) / 60, 0);
+}
+
+function fmtDecimalHrs(h: number): string {
+  if (h <= 0) return "";
+  const hours = Math.floor(h);
+  const mins = Math.round((h - hours) * 60);
+  if (mins === 0) return `${hours}h`;
+  if (hours === 0) return `${mins}m`;
+  return `${hours}h ${mins}m`;
+}
+
+function slugLabel(slug: string): string {
+  return slug.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function fmtShortDate(d: string): string {
+  const [y, mo, day] = d.split("-").map(Number);
+  return new Date(y, mo - 1, day).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 const EMPTY_FORM = {
   date: "",
   title: "",
@@ -116,6 +240,9 @@ export default function AdminCalendar() {
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<JobEvent | null>(null);
+  const [linkedLogs, setLinkedLogs] = useState<LinkedSubmission[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [expandedLogs, setExpandedLogs] = useState<string[]>([]);
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [parsing, setParsing] = useState(false);
@@ -132,6 +259,20 @@ export default function AdminCalendar() {
       .then((r) => r.json())
       .then((data) => setEvents(Array.isArray(data) ? data : []));
   }, [from, to]);
+
+  useEffect(() => {
+    setExpandedLogs([]);
+    if (!selectedEvent) { setLinkedLogs([]); return; }
+    setLoadingLogs(true);
+    fetch(`/api/submissions?eventId=${selectedEvent.id}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => { setLinkedLogs(Array.isArray(data) ? data : []); setLoadingLogs(false); })
+      .catch(() => setLoadingLogs(false));
+  }, [selectedEvent?.id]);
+
+  function toggleLog(id: string) {
+    setExpandedLogs((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  }
 
   function openNew(date = "", startTime = "") {
     setForm({ ...EMPTY_FORM, date, start_time: startTime, is_verified: true });
@@ -543,6 +684,78 @@ export default function AdminCalendar() {
                   <p className="text-sm text-gray-800 whitespace-pre-wrap">{selectedEvent.description}</p>
                 </div>
               )}
+
+              {/* Linked hour logs */}
+              <div className="border-t border-gray-100 pt-4">
+                {(() => {
+                  const totalDecimal = linkedLogs.reduce((sum, log) => {
+                    const e = log.billable_entries.find((e) => e.linkedEventId === selectedEvent.id);
+                    return sum + calcHrsDecimal(e?.startTime, e?.endTime, e?.manualHours);
+                  }, 0);
+                  const totalStr = fmtDecimalHrs(totalDecimal);
+                  return (
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Linked Hour Logs</p>
+                      {!loadingLogs && totalStr && (
+                        <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                          {totalStr} total
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+                {loadingLogs ? (
+                  <p className="text-xs text-gray-400">Loading…</p>
+                ) : linkedLogs.length === 0 ? (
+                  <p className="text-xs text-gray-400">No employee logs linked to this job yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {linkedLogs.map((log) => {
+                      const entry = log.billable_entries.find((e) => e.linkedEventId === selectedEvent.id);
+                      if (!entry) return null;
+                      const hrs = calcHrs(entry.startTime, entry.endTime, entry.manualHours);
+                      const items = getDisplayItems(entry, hrs);
+                      const isExpanded = expandedLogs.includes(log.id);
+                      const hasDetails = items.length > 0;
+                      return (
+                        <div key={log.id} className="bg-gray-50 rounded-xl overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => hasDetails && toggleLog(log.id)}
+                            className={`w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors ${hasDetails ? "hover:bg-gray-100 cursor-pointer" : "cursor-default"}`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-sm font-semibold text-gray-900 truncate">{log.employee_name}</span>
+                              <span className="text-xs text-gray-400 shrink-0">{fmtShortDate(log.date)}</span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {hrs && <span className="text-xs font-semibold text-blue-600">{hrs}</span>}
+                              {hasDetails && <span className="text-gray-400 text-[10px]">{isExpanded ? "▲" : "▼"}</span>}
+                            </div>
+                          </button>
+                          {isExpanded && (
+                            <div className="px-3 pb-3 pt-2 space-y-1.5 border-t border-gray-200">
+                              {items.map((item, ii) => (
+                                <div key={ii} className="flex items-start gap-2">
+                                  <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${item.slug === "standard" ? "bg-blue-100 text-blue-700" : "bg-indigo-100 text-indigo-700"}`}>
+                                    {item.slug === "standard" ? "General" : slugLabel(item.slug)}
+                                    {item.hrs ? ` · ${item.hrs}` : ""}
+                                  </span>
+                                  <span className="text-xs text-gray-600">
+                                    {item.slug === "standard"
+                                      ? [item.client, item.description].filter(Boolean).join(" — ")
+                                      : (item.fields ?? []).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", ")}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Action buttons */}

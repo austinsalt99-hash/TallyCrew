@@ -1,11 +1,30 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import JobEventPicker, { type JobEvent } from "@/components/JobEventPicker";
+
+interface DashJobEvent extends JobEvent {
+  location?: string;
+  description?: string;
+  assigned_to?: string;
+}
 
 interface WorkTypeData {
   client?: string;
   description?: string;
   customFields?: Record<string, string>;
+  startTime?: string;
+  endTime?: string;
+  manualHours?: number;
+}
+
+interface BillableSubEntry {
+  id: string;
+  slug: string;
+  customFields?: Record<string, string>;
+  startTime?: string;
+  endTime?: string;
+  manualHours?: number;
 }
 
 interface BillableEntry {
@@ -13,10 +32,15 @@ interface BillableEntry {
   description: string;
   startTime: string;
   endTime: string;
-  entryType?: string;
+  manualHours?: number;
   customFields?: Record<string, string>;
-  _typeData?: Record<string, WorkTypeData>;
+  subEntries?: BillableSubEntry[];
   photos?: string[];
+  linkedEventId?: string;
+  linkedEventTitle?: string;
+  // Old format fields:
+  entryType?: string;
+  _typeData?: Record<string, WorkTypeData>;
 }
 interface NonBillableEntry { description: string; hours: string; }
 interface DailyEntry { typeSlug: string; typeName: string; customFields: Record<string, string>; }
@@ -33,34 +57,61 @@ interface Submission {
   notes: string;
   total_billable_hours: number;
   total_non_billable_hours: number;
+  break_minutes?: number;
 }
 
 interface WorkItem {
   slug: string;
+  hours?: string;
   client?: string;
   description?: string;
   customFields?: Record<string, string>;
 }
 
+function hoursFromData(start?: string, end?: string, manual?: number): string | undefined {
+  if (manual != null) return `${manual}h`;
+  if (!start || !end) return undefined;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  const mins = eh * 60 + em - (sh * 60 + sm);
+  if (mins <= 0) return undefined;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 function getWorkItems(entry: BillableEntry): WorkItem[] {
+  // New format: subEntries array present
+  if (entry.subEntries != null) {
+    const items: WorkItem[] = [];
+    if (entry.client || entry.description) {
+      items.push({ slug: "standard", hours: hoursFromData(entry.startTime, entry.endTime, entry.manualHours), client: entry.client, description: entry.description });
+    }
+    for (const sub of entry.subEntries) {
+      items.push({ slug: sub.slug, hours: hoursFromData(sub.startTime, sub.endTime, sub.manualHours), customFields: sub.customFields });
+    }
+    return items;
+  }
+
+  // Old format: entryType + _typeData
   const items: WorkItem[] = [];
   const activeSlug = entry.entryType ?? "standard";
 
   if (activeSlug === "standard") {
     if (entry.client || entry.description) {
-      items.push({ slug: "standard", client: entry.client, description: entry.description });
+      items.push({ slug: "standard", hours: hoursFromData(entry.startTime, entry.endTime, entry.manualHours), client: entry.client, description: entry.description });
     }
   } else if (entry.customFields && Object.values(entry.customFields).some(Boolean)) {
-    items.push({ slug: activeSlug, customFields: entry.customFields });
+    items.push({ slug: activeSlug, hours: hoursFromData(entry.startTime, entry.endTime, entry.manualHours), customFields: entry.customFields });
   }
 
   for (const [slug, data] of Object.entries(entry._typeData ?? {})) {
     if (slug === "standard") {
       if (data.client || data.description) {
-        items.push({ slug: "standard", client: data.client, description: data.description });
+        items.push({ slug: "standard", hours: hoursFromData(data.startTime, data.endTime, data.manualHours), client: data.client, description: data.description });
       }
     } else if (data.customFields && Object.values(data.customFields).some(Boolean)) {
-      items.push({ slug, customFields: data.customFields });
+      items.push({ slug, hours: hoursFromData(data.startTime, data.endTime, data.manualHours), customFields: data.customFields });
     }
   }
 
@@ -74,7 +125,12 @@ function formatTime(t: string) {
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function calcWorkedHours(start?: string, end?: string): string | null {
+function slugToLabel(slug: string): string {
+  return slug.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function calcWorkedHours(start?: string, end?: string, manualHours?: number): string | null {
+  if (manualHours != null) return `${manualHours}h`;
   if (!start || !end) return null;
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
@@ -104,12 +160,41 @@ export default function Dashboard() {
   const [filterDate, setFilterDate] = useState("");
   const [filterName, setFilterName] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [events, setEvents] = useState<DashJobEvent[]>([]);
+  const [viewingEvent, setViewingEvent] = useState<DashJobEvent | null>(null);
+  const [linkingTarget, setLinkingTarget] = useState<{ submissionId: string; entryIndex: number; date: string } | null>(null);
+  const [linkWeekOffset, setLinkWeekOffset] = useState(0);
 
   useEffect(() => {
     fetch("/api/submissions", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => { setSubmissions(Array.isArray(data) ? data : []); setLoading(false); });
   }, []);
+
+  useEffect(() => {
+    fetch("/api/events", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setEvents(Array.isArray(data) ? data : []));
+  }, []);
+
+  async function handleAdminLink(event: JobEvent) {
+    if (!linkingTarget) return;
+    const sub = submissions.find((s) => s.id === linkingTarget.submissionId);
+    if (!sub) return;
+    const linkedEventTitle = event.client ? `${event.title} – ${event.client}` : event.title;
+    await fetch("/api/submissions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id: sub.id, entryIndex: linkingTarget.entryIndex, linkedEventId: event.id, linkedEventTitle }),
+    });
+    setSubmissions((prev) => prev.map((s) =>
+      s.id === linkingTarget.submissionId
+        ? { ...s, billable_entries: s.billable_entries.map((e, i) => i === linkingTarget.entryIndex ? { ...e, linkedEventId: event.id, linkedEventTitle } : e) }
+        : s
+    ));
+    setLinkingTarget(null);
+  }
 
   const filtered = submissions.filter((s) => {
     if (filterDate && s.date !== filterDate) return false;
@@ -201,34 +286,62 @@ export default function Dashboard() {
                             {s.billable_entries.map((entry, ji) => {
                               const workItems = getWorkItems(entry);
                               if (!workItems.length) return null;
-                              const jobHours = calcWorkedHours(entry.startTime, entry.endTime);
-                              const hasTimes = !!(entry.startTime && entry.endTime);
+                              const jobHours = calcWorkedHours(entry.startTime, entry.endTime, entry.manualHours);
+                              const hasTimes = !!(entry.startTime && entry.endTime) || entry.manualHours != null;
                               const isDayLevel = !hasTimes && !!(entry.entryType && entry.entryType !== "standard");
                               return (
                                 <div key={ji} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                                   {/* Job header */}
-                                  <div className="flex items-center gap-2 text-sm bg-blue-50 px-3 py-2">
+                                  <div className="flex flex-wrap items-center gap-2 text-sm bg-blue-50 px-3 py-2">
                                     <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Job {ji + 1}</span>
-                                    {hasTimes ? (
+                                    {hasTimes && (
                                       <>
-                                        <span className="mx-1 text-gray-300">|</span>
-                                        <span className="text-gray-600">{formatTime(entry.startTime)} – {formatTime(entry.endTime)}</span>
-                                        {jobHours && <span className="ml-auto font-semibold text-gray-700">{jobHours}</span>}
+                                        {entry.startTime && entry.endTime && (
+                                          <>
+                                            <span className="text-gray-300">|</span>
+                                            <span className="text-gray-600">{formatTime(entry.startTime)} – {formatTime(entry.endTime)}</span>
+                                          </>
+                                        )}
+                                        {jobHours && <span className="font-semibold text-gray-700">{jobHours}</span>}
                                       </>
-                                    ) : isDayLevel ? (
-                                      <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">General</span>
-                                    ) : null}
+                                    )}
+                                    {isDayLevel && (
+                                      <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">General</span>
+                                    )}
+                                    {entry.linkedEventTitle ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const found = events.find((ev) => ev.id === entry.linkedEventId);
+                                          setViewingEvent(found ?? { id: entry.linkedEventId ?? "", date: s.date, title: entry.linkedEventTitle! });
+                                        }}
+                                        className="ml-auto text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full hover:bg-green-100 transition-colors"
+                                      >
+                                        📅 {entry.linkedEventTitle}
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => { setLinkingTarget({ submissionId: s.id, entryIndex: ji, date: s.date }); setLinkWeekOffset(0); }}
+                                        className="ml-auto text-xs text-gray-400 border border-dashed border-gray-300 px-2 py-0.5 rounded-full hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                                      >
+                                        📅 Link to schedule
+                                      </button>
+                                    )}
                                   </div>
                                   {/* Work items */}
                                   <div className="px-3 py-2 space-y-2">
                                     {workItems.map((item, wi) => (
                                       <div key={wi} className="flex gap-2 items-start">
-                                        <span className={`mt-0.5 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                                        <span className={`mt-0.5 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1 ${
                                           item.slug === "standard"
                                             ? "bg-blue-100 text-blue-700"
                                             : "bg-indigo-100 text-indigo-700"
                                         }`}>
-                                          {item.slug === "standard" ? "Standard" : item.slug.replace(/-/g, " ")}
+                                          {item.slug === "standard" ? "General" : slugToLabel(item.slug)}
+                                          {item.hours && (
+                                            <span className="font-bold opacity-70">· {item.hours}</span>
+                                          )}
                                         </span>
                                         <div className="text-sm text-gray-700">
                                           {item.slug === "standard" ? (
@@ -350,6 +463,78 @@ export default function Dashboard() {
             );
           })}
         </div>
+      )}
+
+      {/* Event detail modal */}
+      {viewingEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setViewingEvent(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-0.5 text-green-600">Job Details</p>
+                <h2 className="text-lg font-bold text-gray-900 leading-snug">{viewingEvent.title}</h2>
+              </div>
+              <button
+                onClick={() => setViewingEvent(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 text-xl font-bold shrink-0 mt-0.5"
+              >×</button>
+            </div>
+            <div className="p-5 space-y-3">
+              {viewingEvent.date && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Date</p>
+                  <p className="text-sm text-gray-800">{formatDateLabel(viewingEvent.date)}</p>
+                </div>
+              )}
+              {(viewingEvent.start_time || viewingEvent.end_time) && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Time</p>
+                  <p className="text-sm text-gray-800">
+                    {viewingEvent.start_time && formatTime(viewingEvent.start_time)}
+                    {viewingEvent.end_time && ` – ${formatTime(viewingEvent.end_time)}`}
+                  </p>
+                </div>
+              )}
+              {viewingEvent.client && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Client</p>
+                  <p className="text-sm text-gray-800">{viewingEvent.client}</p>
+                </div>
+              )}
+              {viewingEvent.location && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Location</p>
+                  <p className="text-sm text-gray-800">{viewingEvent.location}</p>
+                </div>
+              )}
+              {viewingEvent.assigned_to && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Assigned to</p>
+                  <p className="text-sm text-gray-800">{viewingEvent.assigned_to}</p>
+                </div>
+              )}
+              {viewingEvent.description && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Notes</p>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{viewingEvent.description}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Link to schedule picker */}
+      {linkingTarget && (
+        <JobEventPicker
+          events={events}
+          baseDate={linkingTarget.date}
+          weekOffset={linkWeekOffset}
+          onPrev={() => setLinkWeekOffset((o) => o - 1)}
+          onNext={() => setLinkWeekOffset((o) => o + 1)}
+          onSelect={(ev) => { handleAdminLink(ev); }}
+          onClose={() => setLinkingTarget(null)}
+        />
       )}
     </div>
   );

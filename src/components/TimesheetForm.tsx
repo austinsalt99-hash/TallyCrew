@@ -19,7 +19,7 @@ function today(): string {
 }
 
 function newBillable(): BillableEntryData {
-  return { id: crypto.randomUUID(), client: "", description: "", startTime: "", endTime: "" };
+  return { id: crypto.randomUUID(), client: "", description: "", startTime: "", endTime: "", subEntries: [] };
 }
 
 function newNonBillable(): NonBillableEntryData {
@@ -40,11 +40,14 @@ function fmt12h(t: string): string {
 function calcTotalBillable(entries: BillableEntryData[]): number {
   let total = 0;
   for (const e of entries) {
-    if (!e.startTime || !e.endTime) continue;
-    const [sh, sm] = e.startTime.split(":").map(Number);
-    const [eh, em] = e.endTime.split(":").map(Number);
-    const mins = eh * 60 + em - (sh * 60 + sm);
-    if (mins > 0) total += mins / 60;
+    if (e.manualHours != null) {
+      total += e.manualHours;
+    } else if (e.startTime && e.endTime) {
+      const [sh, sm] = e.startTime.split(":").map(Number);
+      const [eh, em] = e.endTime.split(":").map(Number);
+      const mins = eh * 60 + em - (sh * 60 + sm);
+      if (mins > 0) total += mins / 60;
+    }
   }
   return Math.round(total * 100) / 100;
 }
@@ -751,6 +754,10 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
               ...entry,
               linkedEventId: event.id,
               linkedEventTitle: `${event.title}${event.client ? ` – ${event.client}` : ""}`,
+              client: event.client ?? entry.client,
+              description: event.title,
+              startTime: event.start_time ?? entry.startTime,
+              endTime: event.end_time ?? entry.endTime,
             });
           }
           setLinkingEntryId(null);

@@ -45,7 +45,6 @@ async function fetchEntryTypesForCompany(
 }
 
 export async function POST(request: Request) {
-  const resend = new Resend(process.env.RESEND_API_KEY);
   try {
     const supabase = await createSupabaseServer();
     const { user, profile } = await getSessionUser(supabase);
@@ -108,30 +107,23 @@ export async function POST(request: Request) {
     }
     const submissionId = inserted?.id as string;
 
-    const entryTypes = await fetchEntryTypesForCompany(supabase, profile.company_id);
-    const html = buildEmailHtml({
-      employeeName,
-      date,
-      dayStartTime,
-      dayEndTime,
-      billable,
-      nonBillable,
-      notes,
-      totalBillableHours,
-      totalNonBillableHours,
-      entryTypes,
-    });
-
-    const { error: emailError } = await resend.emails.send({
-      from: "TallyCrew Hours <onboarding@resend.dev>",
-      to: process.env.RECIPIENT_EMAIL!,
-      subject: `Hours submitted: ${employeeName} – ${date}`,
-      html,
-    });
-
-    if (emailError) {
-      console.error("Resend error:", emailError);
-      return NextResponse.json({ ok: true, id: submissionId, emailWarning: "Saved but email failed to send" });
+    if (process.env.RESEND_API_KEY && process.env.RECIPIENT_EMAIL) {
+      try {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        const entryTypes = await fetchEntryTypesForCompany(supabase, profile.company_id);
+        const html = buildEmailHtml({
+          employeeName, date, dayStartTime, dayEndTime,
+          billable, nonBillable, notes, totalBillableHours, totalNonBillableHours, entryTypes,
+        });
+        await resend.emails.send({
+          from: "TallyCrew Hours <onboarding@resend.dev>",
+          to: process.env.RECIPIENT_EMAIL,
+          subject: `Hours submitted: ${employeeName} – ${date}`,
+          html,
+        });
+      } catch (emailErr) {
+        console.error("Email send failed (submission still saved):", emailErr);
+      }
     }
 
     return NextResponse.json({ ok: true, id: submissionId });
@@ -142,7 +134,6 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const resend = new Resend(process.env.RESEND_API_KEY);
   try {
     const supabase = await createSupabaseServer();
     const { user, profile } = await getSessionUser(supabase);
@@ -202,26 +193,24 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Failed to update record" }, { status: 500 });
     }
 
-    const entryTypes = await fetchEntryTypesForCompany(supabase, profile.company_id);
-    const html = buildEmailHtml({
-      employeeName,
-      date,
-      dayStartTime,
-      dayEndTime,
-      billable,
-      nonBillable,
-      notes,
-      totalBillableHours,
-      totalNonBillableHours,
-      entryTypes,
-    });
-
-    await resend.emails.send({
-      from: "TallyCrew Hours <onboarding@resend.dev>",
-      to: process.env.RECIPIENT_EMAIL!,
-      subject: `Hours updated: ${employeeName} – ${date}`,
-      html,
-    });
+    if (process.env.RESEND_API_KEY && process.env.RECIPIENT_EMAIL) {
+      try {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        const entryTypes = await fetchEntryTypesForCompany(supabase, profile.company_id);
+        const html = buildEmailHtml({
+          employeeName, date, dayStartTime, dayEndTime,
+          billable, nonBillable, notes, totalBillableHours, totalNonBillableHours, entryTypes,
+        });
+        await resend.emails.send({
+          from: "TallyCrew Hours <onboarding@resend.dev>",
+          to: process.env.RECIPIENT_EMAIL,
+          subject: `Hours updated: ${employeeName} – ${date}`,
+          html,
+        });
+      } catch (emailErr) {
+        console.error("Email send failed (submission still saved):", emailErr);
+      }
+    }
 
     return NextResponse.json({ ok: true, id });
   } catch (err) {
