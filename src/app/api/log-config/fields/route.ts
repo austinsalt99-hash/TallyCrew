@@ -36,13 +36,15 @@ export async function PUT(request: Request) {
 
   const body = await request.json();
   const { id } = body;
-  const safeUpdates = {
+  const safeUpdates: Record<string, unknown> = {
     label:       body.label,
     field_key:   body.field_key,
     field_type:  body.field_type,
     sort_order:  body.sort_order,
     is_required: body.is_required,
   };
+  if ("rate_type" in body)   safeUpdates.rate_type   = body.rate_type ?? null;
+  if ("rate_amount" in body) safeUpdates.rate_amount = body.rate_amount ?? null;
   const { data, error } = await supabase
     .from("log_entry_fields")
     .update(safeUpdates)

@@ -257,7 +257,9 @@ CREATE TABLE log_entry_fields (
   field_key   TEXT    NOT NULL,
   field_type  TEXT    NOT NULL CHECK (field_type IN ('dropdown', 'number', 'text')),
   sort_order  INTEGER NOT NULL DEFAULT 0,
-  is_required BOOLEAN NOT NULL DEFAULT false
+  is_required BOOLEAN NOT NULL DEFAULT false,
+  rate_type   TEXT    CHECK (rate_type IN ('per_hour', 'per_unit')),
+  rate_amount NUMERIC
 );
 
 ALTER TABLE log_entry_fields ENABLE ROW LEVEL SECURITY;
@@ -304,10 +306,12 @@ CREATE POLICY log_fields_admin_delete ON log_entry_fields FOR DELETE
 --     Dropdown options for fields (e.g. "Smith Farm").
 -- -------------------------------------------------------------
 CREATE TABLE log_entry_field_options (
-  id         UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
-  field_id   UUID    NOT NULL REFERENCES log_entry_fields(id) ON DELETE CASCADE,
-  label      TEXT    NOT NULL,
-  sort_order INTEGER NOT NULL DEFAULT 0
+  id          UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  field_id    UUID    NOT NULL REFERENCES log_entry_fields(id) ON DELETE CASCADE,
+  label       TEXT    NOT NULL,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  rate_type   TEXT    CHECK (rate_type IN ('per_hour', 'per_unit')),
+  rate_amount NUMERIC
 );
 
 ALTER TABLE log_entry_field_options ENABLE ROW LEVEL SECURITY;

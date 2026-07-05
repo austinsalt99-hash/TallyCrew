@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import BillableEntry, { BillableEntryData } from "@/components/BillableEntry";
 import TimesheetForm from "@/components/TimesheetForm";
 import type { LogEntryType, LogEntryField, LogEntryFieldOption } from "@/types/logConfig";
@@ -40,8 +40,7 @@ export default function LogConfigPage() {
   // New option forms keyed by field id
   const [newOptionLabel, setNewOptionLabel] = useState<Record<string, string>>({});
 
-  // Edit-in-place for option labels
-  const [editingOption, setEditingOption] = useState<{ id: string; label: string } | null>(null);
+  // no editingOption state needed — OptionRow manages its own state
 
   // Close menu when clicking outside the open menu
   useEffect(() => {
@@ -111,6 +110,20 @@ export default function LogConfigPage() {
     setAddingType(false);
     await reload();
   }
+
+  const handleSaveFieldRate = useCallback(async (fieldId: string, rateType: string, rateAmount: string) => {
+    await fetch("/api/log-config/fields", {
+      method: "PUT",
+      headers: authHeader(), credentials: "include",
+      body: JSON.stringify({
+        id: fieldId,
+        rate_type: rateType || null,
+        rate_amount: rateAmount !== "" ? parseFloat(rateAmount) : null,
+      }),
+    });
+    await reload();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleDeleteType(id: string) {
     if (!confirm("Delete this log type and all its fields? This cannot be undone.")) return;
@@ -201,16 +214,20 @@ export default function LogConfigPage() {
     await reload();
   }
 
-  async function handleSaveOptionEdit() {
-    if (!editingOption) return;
+  const handleSaveOption = useCallback(async (id: string, label: string, rateType: string, rateAmount: string) => {
     await fetch("/api/log-config/options", {
       method: "PUT",
       headers: authHeader(), credentials: "include",
-      body: JSON.stringify({ id: editingOption.id, label: editingOption.label }),
+      body: JSON.stringify({
+        id,
+        label,
+        rate_type: rateType || null,
+        rate_amount: rateAmount !== "" ? parseFloat(rateAmount) : null,
+      }),
     });
-    setEditingOption(null);
     await reload();
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (loading) {
     return <p className="text-gray-400 text-sm">Loading…</p>;
@@ -287,6 +304,7 @@ export default function LogConfigPage() {
           {/* Expanded: fields */}
           {expandedType === type.id && (
             <div className="border-t border-gray-100 px-5 py-4 space-y-3 bg-gray-50 rounded-b-xl overflow-hidden">
+
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Fields</p>
                 <button
@@ -309,6 +327,7 @@ export default function LogConfigPage() {
                   <FieldRow
                     key={field.id}
                     field={field}
+                    isTimed={type.time_mode !== "none"}
                     expanded={expandedField === field.id}
                     onToggle={() => setExpandedField(expandedField === field.id ? null : field.id)}
                     onDelete={() => handleDeleteField(field.id)}
@@ -318,13 +337,8 @@ export default function LogConfigPage() {
                     }
                     onAddOption={() => handleAddOption(field.id)}
                     onDeleteOption={handleDeleteOption}
-                    editingOption={editingOption}
-                    onStartEdit={(opt) => setEditingOption({ id: opt.id, label: opt.label })}
-                    onEditChange={(label) =>
-                      setEditingOption((prev) => (prev ? { ...prev, label } : prev))
-                    }
-                    onSaveEdit={handleSaveOptionEdit}
-                    onCancelEdit={() => setEditingOption(null)}
+                    onSaveOption={handleSaveOption}
+                    onSaveFieldRate={handleSaveFieldRate}
                   />
                 ))}
 
@@ -613,6 +627,7 @@ function PreviewModal({ type, allTypes, onClose }: PreviewModalProps) {
 
 interface FieldRowProps {
   field: LogEntryField;
+  isTimed: boolean;
   expanded: boolean;
   onToggle: () => void;
   onDelete: () => void;
@@ -620,15 +635,91 @@ interface FieldRowProps {
   onNewOptionChange: (v: string) => void;
   onAddOption: () => void;
   onDeleteOption: (id: string) => void;
-  editingOption: { id: string; label: string } | null;
-  onStartEdit: (opt: LogEntryFieldOption) => void;
-  onEditChange: (label: string) => void;
-  onSaveEdit: () => void;
-  onCancelEdit: () => void;
+  onSaveOption: (id: string, label: string, rateType: string, rateAmount: string) => void;
+  onSaveFieldRate: (id: string, rateType: string, rateAmount: string) => void;
 }
+
+// ─── OptionRow ────────────────────────────────────────────────────────────────
+// Manages its own local state; saves to DB on blur when anything changed.
+
+function OptionRow({ opt, isTimed, onSave, onDelete }: {
+  opt: LogEntryFieldOption;
+  isTimed: boolean;
+  onSave: (id: string, label: string, rateType: string, rateAmount: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [label, setLabel] = useState(opt.label);
+  // If the type is not timed and a per_hour rate was somehow saved, treat it as no rate
+  const [rateType, setRateType] = useState<string>(!isTimed && opt.rate_type === "per_hour" ? "" : (opt.rate_type ?? ""));
+  const [rateAmount, setRateAmount] = useState<string>(opt.rate_amount != null ? String(opt.rate_amount) : "");
+
+  useEffect(() => {
+    setLabel(opt.label);
+    setRateType(!isTimed && opt.rate_type === "per_hour" ? "" : (opt.rate_type ?? ""));
+    setRateAmount(opt.rate_amount != null ? String(opt.rate_amount) : "");
+  }, [opt.label, opt.rate_type, opt.rate_amount, isTimed]);
+
+  function save() {
+    const origRate = opt.rate_type ?? "";
+    const origAmount = opt.rate_amount != null ? String(opt.rate_amount) : "";
+    if (label.trim() !== opt.label || rateType !== origRate || rateAmount !== origAmount) {
+      onSave(opt.id, label.trim() || opt.label, rateType, rateAmount);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <input
+        type="text"
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } }}
+        className="flex-1 min-w-[80px] border border-gray-200 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-navy-400 focus:border-navy-400"
+        placeholder="Option label"
+      />
+      <select
+        value={rateType}
+        onChange={(e) => { setRateType(e.target.value); if (!e.target.value) setRateAmount(""); }}
+        onBlur={save}
+        className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy-400"
+      >
+        <option value="">No rate</option>
+        {isTimed && <option value="per_hour">$/hr</option>}
+        <option value="per_unit">$/unit</option>
+      </select>
+      {rateType && (
+        <div className="flex items-center gap-0.5">
+          <span className="text-xs text-gray-400">$</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={rateAmount}
+            onChange={(e) => setRateAmount(e.target.value)}
+            onBlur={save}
+            className="w-16 border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400"
+            placeholder="0.00"
+          />
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => onDelete(opt.id)}
+        className="text-red-400 hover:text-red-600 flex items-center shrink-0 ml-auto"
+        title="Remove option"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
+      </button>
+    </div>
+  );
+}
+
+// ─── FieldRow ─────────────────────────────────────────────────────────────────
 
 function FieldRow({
   field,
+  isTimed,
   expanded,
   onToggle,
   onDelete,
@@ -636,25 +727,34 @@ function FieldRow({
   onNewOptionChange,
   onAddOption,
   onDeleteOption,
-  editingOption,
-  onStartEdit,
-  onEditChange,
-  onSaveEdit,
-  onCancelEdit,
+  onSaveOption,
+  onSaveFieldRate,
 }: FieldRowProps) {
+  const [numRateType, setNumRateType] = useState<string>(field.rate_type ?? "");
+  const [numRateAmount, setNumRateAmount] = useState<string>(field.rate_amount != null ? String(field.rate_amount) : "");
+
+  useEffect(() => {
+    setNumRateType(field.rate_type ?? "");
+    setNumRateAmount(field.rate_amount != null ? String(field.rate_amount) : "");
+  }, [field.rate_type, field.rate_amount]);
+
+  function saveNumRate() {
+    const origType = field.rate_type ?? "";
+    const origAmount = field.rate_amount != null ? String(field.rate_amount) : "";
+    if (numRateType !== origType || numRateAmount !== origAmount) {
+      onSaveFieldRate(field.id, numRateType, numRateAmount);
+    }
+  }
+
   const typeLabel =
-    field.field_type === "dropdown"
-      ? "Dropdown"
-      : field.field_type === "number"
-      ? "Number"
-      : "Text";
+    field.field_type === "dropdown" ? "Dropdown"
+    : field.field_type === "number" ? "Number"
+    : "Text";
 
   const typeBadgeColor =
-    field.field_type === "dropdown"
-      ? "bg-purple-100 text-purple-700"
-      : field.field_type === "number"
-      ? "bg-amber-100 text-amber-700"
-      : "bg-gray-100 text-gray-600";
+    field.field_type === "dropdown" ? "bg-purple-100 text-purple-700"
+    : field.field_type === "number" ? "bg-amber-100 text-amber-700"
+    : "bg-gray-100 text-gray-600";
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -669,11 +769,9 @@ function FieldRow({
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeBadgeColor}`}>
               {typeLabel}
             </span>
-            {field.field_type === "dropdown" && (
-              <span className="text-xs text-gray-400">
-                {field.options.length} option{field.options.length !== 1 ? "s" : ""}
-              </span>
-            )}
+            <span className="text-xs text-gray-400">
+              {field.options.length} option{field.options.length !== 1 ? "s" : ""}
+            </span>
             <span className="text-gray-400 text-sm ml-auto">{expanded ? "▲" : "▼"}</span>
           </button>
         ) : (
@@ -684,18 +782,58 @@ function FieldRow({
             </span>
           </div>
         )}
-        <button
-          type="button"
-          onClick={onDelete}
-          className="text-xs text-red-400 hover:text-red-600 shrink-0"
-        >
+        <button type="button" onClick={onDelete} className="text-xs text-red-400 hover:text-red-600 shrink-0">
           Remove
         </button>
       </div>
 
-      {/* Options list for dropdown fields */}
+      {/* Inline rate inputs for number fields */}
+      {field.field_type === "number" && (
+        <div className="border-t border-gray-100 px-4 py-2.5 bg-gray-50 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-400 shrink-0">Rate:</span>
+          <select
+            value={numRateType}
+            onChange={(e) => { setNumRateType(e.target.value); if (!e.target.value) setNumRateAmount(""); }}
+            onBlur={saveNumRate}
+            className="border border-gray-200 rounded px-2 py-1 text-xs bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy-400"
+          >
+            <option value="">No rate</option>
+            <option value="per_hour">Per hour</option>
+            <option value="per_unit">Per unit</option>
+          </select>
+          {numRateType && (
+            <div className="flex items-center gap-0.5">
+              <span className="text-xs text-gray-400">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={numRateAmount}
+                onChange={(e) => setNumRateAmount(e.target.value)}
+                onBlur={saveNumRate}
+                className="w-20 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400"
+                placeholder="0.00"
+              />
+            </div>
+          )}
+          {field.rate_amount != null && field.rate_type && (
+            <span className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5 ml-1">
+              ${field.rate_amount}/{field.rate_type === "per_hour" ? "hr" : "unit"}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Options list — always-editable inline rows */}
       {field.field_type === "dropdown" && expanded && (
         <div className="border-t border-gray-100 px-4 py-3 space-y-2 bg-gray-50">
+          {field.options.length > 0 && (
+            <div className="flex items-center gap-1.5 pb-0.5">
+              <span className="flex-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Option</span>
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Rate type</span>
+              <span className="w-16 text-[10px] font-semibold text-gray-400 uppercase tracking-wide pl-3.5">Amount</span>
+            </div>
+          )}
           {field.options.length === 0 && (
             <p className="text-xs text-gray-400">No options yet.</p>
           )}
@@ -703,54 +841,28 @@ function FieldRow({
             .slice()
             .sort((a, b) => a.sort_order - b.sort_order)
             .map((opt) => (
-              <div key={opt.id} className="flex items-center gap-2">
-                {editingOption?.id === opt.id ? (
-                  <>
-                    <input
-                      type="text"
-                      value={editingOption.label}
-                      onChange={(e) => onEditChange(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSaveEdit(); } if (e.key === "Escape") onCancelEdit(); }}
-                      className="flex-1 border border-navy-400 rounded px-2 py-1 text-sm focus:outline-none"
-                      autoFocus
-                    />
-                    <button type="button" onClick={onSaveEdit} className="text-xs text-navy-600 font-semibold">Save</button>
-                    <button type="button" onClick={onCancelEdit} className="text-xs text-gray-400">Cancel</button>
-                  </>
-                ) : (
-                  <>
-                    <span
-                      className="flex-1 text-sm text-gray-700 cursor-pointer hover:text-navy-600"
-                      onClick={() => onStartEdit(opt)}
-                      title="Click to edit"
-                    >
-                      {opt.label}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteOption(opt.id)}
-                      className="text-red-400 hover:text-red-600 flex items-center"
-                    >
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
-                    </button>
-                  </>
-                )}
-              </div>
+              <OptionRow
+                key={opt.id}
+                opt={opt}
+                isTimed={isTimed}
+                onSave={onSaveOption}
+                onDelete={onDeleteOption}
+              />
             ))}
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex gap-2 pt-1 border-t border-gray-200 mt-1">
             <input
               type="text"
               placeholder="New option…"
               value={newOptionLabel}
               onChange={(e) => onNewOptionChange(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onAddOption(); } }}
-              className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+              className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
             />
             <button
               type="button"
               onClick={onAddOption}
-              className="bg-navy-600 hover:bg-navy-700 text-white text-xs font-semibold px-3 py-1 rounded"
+              className="bg-navy-600 hover:bg-navy-700 text-white text-xs font-semibold px-3 py-1.5 rounded"
             >
               Add
             </button>

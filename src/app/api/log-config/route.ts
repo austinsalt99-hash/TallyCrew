@@ -74,6 +74,9 @@ export async function POST(request: Request) {
       sort_order: body.sort_order ?? 0,
       time_mode: timeMode,
       is_timed: timeMode === "job",
+      is_priced: body.is_priced ?? false,
+      rate_type: body.rate_type ?? null,
+      rate_amount: body.rate_amount ?? null,
     })
     .select()
     .single();
@@ -90,12 +93,15 @@ export async function PUT(request: Request) {
   const body = await request.json();
   const { id } = body;
   const safeUpdates = {
-    name:       body.name,
-    slug:       body.slug,
-    sort_order: body.sort_order,
-    is_active:  body.is_active,
-    time_mode:  body.time_mode,
-    is_timed:   body.is_timed,
+    name:        body.name,
+    slug:        body.slug,
+    sort_order:  body.sort_order,
+    is_active:   body.is_active,
+    time_mode:   body.time_mode,
+    is_timed:    body.is_timed,
+    is_priced:   body.is_priced,
+    rate_type:   body.rate_type,
+    rate_amount: body.rate_amount,
   };
   const { error } = await supabase
     .from("log_entry_types")

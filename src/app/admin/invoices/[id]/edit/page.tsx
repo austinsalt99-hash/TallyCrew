@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -28,8 +28,8 @@ interface LineItemState {
   amount: string;
   sourceJobId?: string;
   sourceJobTitle?: string;
-  breakdown?: BreakdownEntry[];  // contributing sub-entries when >1 were merged
-  priceBasis?: string[];          // human-readable pricing calculation lines
+  breakdown?: BreakdownEntry[];
+  priceBasis?: string[];
 }
 
 interface LinkedJob {
@@ -52,15 +52,6 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function nextInvoiceNumber(existing: string[]): string {
-  const year = new Date().getFullYear();
-  const nums = existing
-    .map((n) => { const m = n.match(/^INV-\d{4}-(\d+)$/); return m ? parseInt(m[1]) : 0; })
-    .filter(Boolean);
-  const next = nums.length ? Math.max(...nums) + 1 : 1;
-  return `INV-${year}-${String(next).padStart(3, "0")}`;
-}
-
 function formatDate(d: string) {
   if (!d) return "";
   const [y, m, day] = d.split("-").map(Number);
@@ -71,7 +62,7 @@ function blankItem(): LineItemState {
   return { id: crypto.randomUUID(), description: "", employee: "", date: todayStr(), hours: "", amount: "" };
 }
 
-// ── Editable cell (used in right preview panel) ───────────────────────────────
+// ── Editable cell ─────────────────────────────────────────────────────────────
 
 function EditableCell({
   value,
@@ -91,7 +82,6 @@ function EditableCell({
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState(String(value));
 
-  // Keep local in sync when value changes externally (e.g. left panel edit)
   useEffect(() => { if (!editing) setLocal(String(value)); }, [value, editing]);
 
   if (editing) {
@@ -122,32 +112,15 @@ function EditableCell({
   );
 }
 
-// ── Invoice preview (right panel) ─────────────────────────────────────────────
+// ── Invoice preview ───────────────────────────────────────────────────────────
 
 function InvoicePreview({
-  invoiceNumber,
-  invoiceDate,
-  companyName,
-  companyAddress,
-  clientName,
-  dateFrom,
-  dateTo,
-  notes,
-  lineItems,
-  activeItemId,
-  onActivate,
-  onUpdateItem,
+  invoiceNumber, invoiceDate, companyName, companyAddress,
+  clientName, dateFrom, dateTo, notes, lineItems, activeItemId, onActivate, onUpdateItem,
 }: {
-  invoiceNumber: string;
-  invoiceDate: string;
-  companyName: string;
-  companyAddress: string;
-  clientName: string;
-  dateFrom: string;
-  dateTo: string;
-  notes: string;
-  lineItems: LineItemState[];
-  activeItemId: string | null;
+  invoiceNumber: string; invoiceDate: string; companyName: string; companyAddress: string;
+  clientName: string; dateFrom: string; dateTo: string; notes: string;
+  lineItems: LineItemState[]; activeItemId: string | null;
   onActivate: (id: string) => void;
   onUpdateItem: (id: string, field: keyof LineItemState, value: string) => void;
 }) {
@@ -155,7 +128,6 @@ function InvoicePreview({
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 min-h-[600px]">
-      {/* Header */}
       <div className="flex justify-between items-start mb-8">
         <div>
           {companyName && <div className="text-xl font-bold text-gray-900 mb-1">{companyName}</div>}
@@ -173,7 +145,6 @@ function InvoicePreview({
         </div>
       </div>
 
-      {/* Bill To */}
       <div className="mb-8">
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Bill To</div>
         <div className="text-lg font-semibold text-gray-900">{clientName || <span className="text-gray-300">Client name</span>}</div>
@@ -184,7 +155,6 @@ function InvoicePreview({
         )}
       </div>
 
-      {/* Line items table */}
       <table className="w-full text-sm mb-8 border-collapse">
         <thead>
           <tr className="border-b-2 border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -198,47 +168,26 @@ function InvoicePreview({
         <tbody>
           {lineItems.length === 0 ? (
             <tr>
-              <td colSpan={5} className="py-6 text-center text-gray-300 text-sm italic">
-                Line items will appear here
-              </td>
+              <td colSpan={5} className="py-6 text-center text-gray-300 text-sm italic">Line items will appear here</td>
             </tr>
           ) : lineItems.map((item) => {
             const isActive = activeItemId === item.id;
             return (
-              <tr
-                key={item.id}
-                className={`border-b border-gray-100 transition-colors ${isActive ? "bg-navy-50" : ""}`}
-              >
+              <tr key={item.id} className={`border-b border-gray-100 transition-colors ${isActive ? "bg-navy-50" : ""}`}>
                 <td className="py-2 pr-3 text-gray-600 text-xs">{item.date || "—"}</td>
                 <td className="py-2 pr-3 text-gray-700 text-xs">{item.employee || "—"}</td>
                 <td className="py-2 pr-3 text-gray-700">
-                  <EditableCell
-                    value={item.description}
-                    onFocus={() => onActivate(item.id)}
-                    onCommit={(v) => onUpdateItem(item.id, "description", v)}
-                    placeholder="Description"
-                    className="text-sm"
-                  />
+                  <EditableCell value={item.description} onFocus={() => onActivate(item.id)}
+                    onCommit={(v) => onUpdateItem(item.id, "description", v)} placeholder="Description" className="text-sm" />
                 </td>
                 <td className="py-2 pr-3 text-right text-gray-500">
-                  <EditableCell
-                    value={item.hours !== "" && item.hours !== 0 ? item.hours : ""}
-                    type="number"
-                    onFocus={() => onActivate(item.id)}
-                    onCommit={(v) => onUpdateItem(item.id, "hours", v)}
-                    placeholder="0"
-                    className="text-sm text-right"
-                  />
+                  <EditableCell value={item.hours !== "" && item.hours !== 0 ? item.hours : ""} type="number"
+                    onFocus={() => onActivate(item.id)} onCommit={(v) => onUpdateItem(item.id, "hours", v)}
+                    placeholder="0" className="text-sm text-right" />
                 </td>
                 <td className="py-2 text-right font-medium text-gray-900">
-                  <EditableCell
-                    value={item.amount}
-                    type="number"
-                    onFocus={() => onActivate(item.id)}
-                    onCommit={(v) => onUpdateItem(item.id, "amount", v)}
-                    placeholder="0.00"
-                    className="text-sm text-right"
-                  />
+                  <EditableCell value={item.amount} type="number" onFocus={() => onActivate(item.id)}
+                    onCommit={(v) => onUpdateItem(item.id, "amount", v)} placeholder="0.00" className="text-sm text-right" />
                 </td>
               </tr>
             );
@@ -252,26 +201,22 @@ function InvoicePreview({
         </tfoot>
       </table>
 
-      {/* Notes */}
       {notes && (
         <div className="border-t border-gray-100 pt-4">
           <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
           <p className="text-sm text-gray-600 whitespace-pre-line">{notes}</p>
         </div>
       )}
-
-      {/* Draft watermark */}
-      <div className="mt-6 text-center text-xs text-gray-300 uppercase tracking-widest">— Draft —</div>
     </div>
   );
 }
 
 // ── Job calendar picker modal ─────────────────────────────────────────────────
 
-const MONTH_NAMES  = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const MONTH_SHORT  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const DOW_FULL     = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const DOW_SHORT    = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const DOW_FULL    = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DOW_SHORT   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 function getMonday(d: Date): Date {
   const day = d.getDay();
@@ -287,24 +232,17 @@ function fmtDs(d: Date): string {
 }
 
 function JobCalendarModal({
-  linkedJobIds,
-  loadingJobId,
-  onLink,
-  onClose,
+  linkedJobIds, loadingJobId, onLink, onClose,
 }: {
-  linkedJobIds: Set<string>;
-  loadingJobId: string | null;
-  onLink: (job: CalendarEvent) => void;
-  onClose: () => void;
+  linkedJobIds: Set<string>; loadingJobId: string | null;
+  onLink: (job: CalendarEvent) => void; onClose: () => void;
 }) {
-  const [view, setView]       = useState<"month" | "week" | "day">("month");
-  const [pivot, setPivot]     = useState<Date>(() => new Date());
-  const [events, setEvents]   = useState<CalendarEvent[]>([]);
+  const [view, setView]     = useState<"month" | "week" | "day">("month");
+  const [pivot, setPivot]   = useState<Date>(() => new Date());
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
-
   const today = todayStr();
 
-  // Fetch events whenever view or pivot changes
   useEffect(() => {
     const p = (n: number) => String(n).padStart(2, "0");
     let from: string, to: string;
@@ -324,9 +262,7 @@ function JobCalendarModal({
     createSupabaseBrowser()
       .from("job_events")
       .select("id, title, client, date")
-      .gte("date", from)
-      .lte("date", to)
-      .order("date")
+      .gte("date", from).lte("date", to).order("date")
       .then(({ data }) => { setEvents(data ?? []); setLoading(false); });
   }, [view, pivot]);
 
@@ -346,7 +282,6 @@ function JobCalendarModal({
     else if (view === "week") setPivot(p => { const d = new Date(p); d.setDate(p.getDate() + 7); return d; });
     else setPivot(p => { const d = new Date(p); d.setDate(p.getDate() + 1); return d; });
   }
-
   function getTitle() {
     if (view === "month") return `${MONTH_NAMES[pivot.getMonth()]} ${pivot.getFullYear()}`;
     if (view === "week") {
@@ -359,7 +294,6 @@ function JobCalendarModal({
     return `${DOW_FULL[pivot.getDay()]}, ${MONTH_NAMES[pivot.getMonth()]} ${pivot.getDate()}`;
   }
 
-  // Small event chip used in month + week views
   function EventChip({ job }: { job: CalendarEvent }) {
     const linked = linkedJobIds.has(job.id);
     const busy   = loadingJobId === job.id;
@@ -377,7 +311,6 @@ function JobCalendarModal({
     );
   }
 
-  // ── Month view ────────────────────────────────────────────────────────────
   function renderMonth() {
     const y = pivot.getFullYear(), m = pivot.getMonth();
     const firstDow = new Date(y, m, 1).getDay();
@@ -387,13 +320,10 @@ function JobCalendarModal({
     for (let i = 0; i < firstDow; i++) cells.push(null);
     for (let d = 1; d <= days; d++) cells.push(d);
     while (cells.length % 7 !== 0) cells.push(null);
-
     return (
       <div className="flex-1 overflow-auto min-h-0">
         <div className="grid grid-cols-7 border-b border-gray-100">
-          {DOW_SHORT.map(d => (
-            <div key={d} className="py-2 text-center text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{d}</div>
-          ))}
+          {DOW_SHORT.map(d => <div key={d} className="py-2 text-center text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{d}</div>)}
         </div>
         <div className="grid grid-cols-7 border-l border-t border-gray-100">
           {cells.map((day, i) => {
@@ -403,10 +333,7 @@ function JobCalendarModal({
             const isToday = ds === today;
             return (
               <div key={i} className="border-r border-b border-gray-100 min-h-[72px] p-1">
-                <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs mb-0.5
-                  ${isToday ? "bg-navy-600 text-white font-bold" : "text-gray-600 font-medium"}`}>
-                  {day}
-                </span>
+                <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs mb-0.5 ${isToday ? "bg-navy-600 text-white font-bold" : "text-gray-600 font-medium"}`}>{day}</span>
                 {de.slice(0, 3).map(e => <EventChip key={e.id} job={e} />)}
                 {de.length > 3 && <span className="text-[10px] text-gray-400 pl-1">+{de.length - 3} more</span>}
               </div>
@@ -417,12 +344,9 @@ function JobCalendarModal({
     );
   }
 
-  // ── Week view ─────────────────────────────────────────────────────────────
   function renderWeek() {
     const monday = getMonday(pivot);
-    const weekDays = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(monday); d.setDate(monday.getDate() + i); return d;
-    });
+    const weekDays = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return d; });
     return (
       <div className="flex-1 overflow-auto min-h-0">
         <div className="grid grid-cols-7 border-b border-gray-100">
@@ -431,10 +355,7 @@ function JobCalendarModal({
             return (
               <div key={i} className="py-2 text-center border-r border-gray-100 last:border-r-0">
                 <p className="text-[10px] font-semibold text-gray-400 uppercase">{DOW_SHORT[d.getDay()]}</p>
-                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm mx-auto mt-0.5
-                  ${isToday ? "bg-navy-600 text-white font-bold" : "text-gray-700 font-medium"}`}>
-                  {d.getDate()}
-                </span>
+                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm mx-auto mt-0.5 ${isToday ? "bg-navy-600 text-white font-bold" : "text-gray-700 font-medium"}`}>{d.getDate()}</span>
               </div>
             );
           })}
@@ -455,7 +376,6 @@ function JobCalendarModal({
     );
   }
 
-  // ── Day view ──────────────────────────────────────────────────────────────
   function renderDay() {
     const ds = fmtDs(pivot);
     const de = byDate[ds] ?? [];
@@ -491,51 +411,33 @@ function JobCalendarModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-3xl flex flex-col" style={{ height: "85vh", maxHeight: 680 }}>
-        {/* ── Header ── */}
         <div className="flex items-center px-4 py-3 border-b border-gray-100 gap-2 shrink-0">
           <button onClick={goPrev} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="10 12 6 8 10 4"/>
-            </svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="10 12 6 8 10 4"/></svg>
           </button>
           <h3 className="flex-1 text-center font-semibold text-gray-900 text-sm">{getTitle()}</h3>
           <button onClick={goNext} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 4 10 8 6 12"/>
-            </svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 4 10 8 6 12"/></svg>
           </button>
-          {/* View switcher */}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden ml-2">
             {(["month", "week", "day"] as const).map(v => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors
-                  ${view === v ? "bg-navy-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}
-              >
+              <button key={v} onClick={() => setView(v)}
+                className={`px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors ${view === v ? "bg-navy-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
                 {v}
               </button>
             ))}
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 transition-colors ml-1">
-            <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/>
-            </svg>
+            <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
           </button>
         </div>
         {loading && <div className="h-0.5 bg-navy-200 animate-pulse shrink-0" />}
-
-        {/* ── View ── */}
         {view === "month" && renderMonth()}
         {view === "week"  && renderWeek()}
         {view === "day"   && renderDay()}
-
-        {/* ── Footer ── */}
         <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between shrink-0">
           <span className="text-xs text-gray-400">Click a job to link it · already-linked jobs are crossed out</span>
           <button onClick={onClose} className="text-sm font-semibold text-navy-600 hover:text-navy-800 transition-colors">Done</button>
@@ -545,70 +447,77 @@ function JobCalendarModal({
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Edit Invoice Page ─────────────────────────────────────────────────────────
 
-export default function NewInvoicePage() {
+export default function EditInvoicePage() {
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
+  const [loadingInvoice, setLoadingInvoice] = useState(true);
+
   // Invoice meta
-  const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState(todayStr());
-  const [companyName, setCompanyName] = useState("");
-  const [companyAddress, setCompanyAddress] = useState("");
-  const [clientName, setClientName] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [notes, setNotes] = useState("");
+  const [invoiceNumber, setInvoiceNumber]     = useState("");
+  const [invoiceDate, setInvoiceDate]         = useState(todayStr());
+  const [companyName, setCompanyName]         = useState("");
+  const [companyAddress, setCompanyAddress]   = useState("");
+  const [clientName, setClientName]           = useState("");
+  const [dateFrom, setDateFrom]               = useState("");
+  const [dateTo, setDateTo]                   = useState("");
+  const [notes, setNotes]                     = useState("");
 
   // Line items & linked jobs
-  const [lineItems, setLineItems] = useState<LineItemState[]>([]);
+  const [lineItems, setLineItems]   = useState<LineItemState[]>([]);
   const [linkedJobs, setLinkedJobs] = useState<LinkedJob[]>([]);
 
   // Job search
-  const [jobSearch, setJobSearch] = useState("");
-  const [jobResults, setJobResults] = useState<JobResult[]>([]);
+  const [jobSearch, setJobSearch]         = useState("");
+  const [jobResults, setJobResults]       = useState<JobResult[]>([]);
   const [jobSearchOpen, setJobSearchOpen] = useState(false);
-  const [loadingJobId, setLoadingJobId] = useState<string | null>(null);
+  const [loadingJobId, setLoadingJobId]   = useState<string | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
 
-  // Breakdown expand state (tracks which line item IDs are expanded)
   const [expandedBreakdowns, setExpandedBreakdowns] = useState<Set<string>>(new Set());
-  function toggleBreakdown(id: string) {
-    setExpandedBreakdowns((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  function toggleBreakdown(iid: string) {
+    setExpandedBreakdowns((prev) => { const next = new Set(prev); next.has(iid) ? next.delete(iid) : next.add(iid); return next; });
   }
 
-  // Calendar picker
-  const [calOpen, setCalOpen] = useState(false);
-
-  // Left–right sync
+  const [calOpen, setCalOpen]         = useState(false);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [mobileView, setMobileView]   = useState<"form" | "preview">("form");
+  const [saving, setSaving]           = useState(false);
+  const [saveError, setSaveError]     = useState("");
 
-  // Mobile view toggle
-  const [mobileView, setMobileView] = useState<"form" | "preview">("form");
-
-  // Save state
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-
-  // ── On mount: fetch invoice number ────────────────────────────────────────
+  // ── Load existing invoice ─────────────────────────────────────────────────
   useEffect(() => {
-    fetch("/api/invoices")
+    fetch(`/api/invoices/${id}`, { credentials: "include" })
       .then((r) => r.json())
-      .then((data: { invoice_number: string }[]) => {
-        const nums = Array.isArray(data) ? data.map((d) => d.invoice_number) : [];
-        setInvoiceNumber(nextInvoiceNumber(nums));
+      .then((data) => {
+        setInvoiceNumber(data.invoice_number || "");
+        setInvoiceDate(data.invoice_date || todayStr());
+        setCompanyName(data.company_name || "");
+        setCompanyAddress(data.company_address || "");
+        setClientName(data.client_name || "");
+        setDateFrom(data.date_from || "");
+        setDateTo(data.date_to || "");
+        setNotes(data.notes || "");
+        setLineItems(
+          (data.line_items || []).map((item: Record<string, unknown>) => ({
+            id: crypto.randomUUID(),
+            description: String(item.description || ""),
+            employee: String(item.employee || ""),
+            date: String(item.date || todayStr()),
+            hours: item.hours ?? "",
+            amount: String(item.amount ?? ""),
+          }))
+        );
+        setLoadingInvoice(false);
       });
-  }, []);
+  }, [id]);
 
   // ── Job search ────────────────────────────────────────────────────────────
   const searchJobs = useCallback(async (term: string) => {
     if (!term.trim()) { setJobResults([]); setJobSearchOpen(false); return; }
-    const supabase = createSupabaseBrowser();
-    const { data } = await supabase
+    const { data } = await createSupabaseBrowser()
       .from("job_events")
       .select("id, title, client, date")
       .or(`title.ilike.%${term}%,client.ilike.%${term}%`)
@@ -623,12 +532,9 @@ export default function NewInvoicePage() {
     return () => clearTimeout(t);
   }, [jobSearch, searchJobs]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setJobSearchOpen(false);
-      }
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setJobSearchOpen(false);
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
@@ -645,59 +551,38 @@ export default function NewInvoicePage() {
     const res = await fetch(`/api/invoices/job-entries?eventId=${job.id}`, { credentials: "include" });
     const data = await res.json();
     setLoadingJobId(null);
-
     if (!res.ok) return;
 
     const { event, lineItems: newItems } = data as { event: LinkedJob & { id: string }; lineItems: LineItemState[] };
-
     setLinkedJobs((prev) => [...prev, { eventId: job.id, title: event.title, client: event.client, date: event.date }]);
     setLineItems((prev) => [...prev, ...newItems]);
-
-    // Auto-fill client name if not set
     if (!clientName && event.client) setClientName(event.client);
-
-    // Auto-fill / expand date range
-    setDateFrom((prev) => {
-      if (!prev || event.date < prev) return event.date;
-      return prev;
-    });
-    setDateTo((prev) => {
-      if (!prev || event.date > prev) return event.date;
-      return prev;
-    });
+    setDateFrom((prev) => (!prev || event.date < prev) ? event.date : prev);
+    setDateTo((prev) => (!prev || event.date > prev) ? event.date : prev);
   }
 
-  // ── Unlink a job ──────────────────────────────────────────────────────────
   function unlinkJob(eventId: string) {
     setLinkedJobs((prev) => prev.filter((j) => j.eventId !== eventId));
     setLineItems((prev) => prev.filter((item) => item.sourceJobId !== eventId));
-
-    // Recompute date range from remaining jobs
     setLinkedJobs((prev) => {
       const remaining = prev.filter((j) => j.eventId !== eventId);
       if (remaining.length > 0) {
         const dates = remaining.map((j) => j.date).sort();
-        setDateFrom(dates[0]);
-        setDateTo(dates[dates.length - 1]);
+        setDateFrom(dates[0]); setDateTo(dates[dates.length - 1]);
       }
       return remaining;
     });
   }
 
   // ── Line item CRUD ────────────────────────────────────────────────────────
-  function updateItem(id: string, field: keyof LineItemState, value: string) {
-    setLineItems((prev) => prev.map((item) => item.id === id ? { ...item, [field]: value } : item));
+  function updateItem(iid: string, field: keyof LineItemState, value: string) {
+    setLineItems((prev) => prev.map((item) => item.id === iid ? { ...item, [field]: value } : item));
   }
-
-  function removeItem(id: string) {
-    setLineItems((prev) => prev.filter((item) => item.id !== id));
-    if (activeItemId === id) setActiveItemId(null);
+  function removeItem(iid: string) {
+    setLineItems((prev) => prev.filter((item) => item.id !== iid));
+    if (activeItemId === iid) setActiveItemId(null);
   }
-
-  function addBlankItem() {
-    const item = blankItem();
-    setLineItems((prev) => [...prev, item]);
-  }
+  function addBlankItem() { setLineItems((prev) => [...prev, blankItem()]); }
 
   // ── Save ──────────────────────────────────────────────────────────────────
   async function save() {
@@ -709,8 +594,8 @@ export default function NewInvoicePage() {
     const total = lineItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
     const savedItems = lineItems.map(({ id: _id, sourceJobId: _sj, sourceJobTitle: _st, breakdown: _bd, priceBasis: _pb, ...rest }) => rest);
 
-    const res = await fetch("/api/invoices", {
-      method: "POST",
+    const res = await fetch(`/api/invoices/${id}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({
@@ -724,13 +609,12 @@ export default function NewInvoicePage() {
         line_items: savedItems,
         total,
         notes: notes || null,
-        status: "draft",
       }),
     });
     const data = await res.json();
     setSaving(false);
-    if (data.id) {
-      router.push(`/admin/invoices/${data.id}`);
+    if (data.ok) {
+      router.push(`/admin/invoices/${id}`);
     } else {
       setSaveError(data.error ?? "Failed to save. Please try again.");
     }
@@ -738,31 +622,26 @@ export default function NewInvoicePage() {
 
   const total = lineItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
 
+  if (loadingInvoice) return <p className="text-gray-500 p-8">Loading invoice…</p>;
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="-mx-4 -mt-8">
-      {/* Mobile toggle bar */}
       <div className="lg:hidden flex border-b border-gray-200 bg-white sticky top-0 z-20">
         {(["form", "preview"] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => setMobileView(v)}
-            className={`flex-1 py-3 text-sm font-semibold capitalize transition-colors ${
-              mobileView === v ? "text-navy-600 border-b-2 border-navy-600" : "text-gray-400"
-            }`}
-          >
+          <button key={v} onClick={() => setMobileView(v)}
+            className={`flex-1 py-3 text-sm font-semibold capitalize transition-colors ${mobileView === v ? "text-navy-600 border-b-2 border-navy-600" : "text-gray-400"}`}>
             {v === "form" ? "Form" : "Preview"}
           </button>
         ))}
       </div>
 
-      {/* Split grid */}
       <div className="grid lg:grid-cols-[45%_55%]">
         {/* ── LEFT PANEL ─────────────────────────────────────────────────── */}
         <div className={`${mobileView === "preview" ? "hidden lg:block" : "block"} px-4 pt-8 space-y-4 bg-gray-50 lg:bg-transparent`} style={{ paddingBottom: "calc(7rem + env(safe-area-inset-bottom))" }}>
           <div className="flex items-center gap-3 mb-6">
             <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-sm">← Back</button>
-            <h1 className="text-2xl font-bold text-gray-900">New Invoice</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Edit Invoice</h1>
           </div>
 
           {/* Invoice Details */}
@@ -771,78 +650,47 @@ export default function NewInvoicePage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Invoice #</label>
-                <input
-                  value={invoiceNumber}
-                  onChange={(e) => setInvoiceNumber(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
-                />
+                <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Invoice Date</label>
-                <input
-                  type="date"
-                  value={invoiceDate}
-                  onChange={(e) => setInvoiceDate(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
-                />
+                <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Your Company Name</label>
-                <input
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="Optional"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
-                />
+                <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Optional"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Your Company Address</label>
-                <input
-                  value={companyAddress}
-                  onChange={(e) => setCompanyAddress(e.target.value)}
-                  placeholder="Optional"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
-                />
+                <input value={companyAddress} onChange={(e) => setCompanyAddress(e.target.value)} placeholder="Optional"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Client Name</label>
-                <input
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  placeholder="Auto-fills from linked job"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
-                />
+                <input value={clientName} onChange={(e) => setClientName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
               </div>
               <div className="grid grid-cols-2 gap-2 col-span-1">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Work From</label>
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
-                  />
+                  <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Work To</label>
-                  <input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
-                  />
+                  <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
                 </div>
               </div>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Notes (optional)</label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
                 placeholder="Payment terms, thank you message, etc."
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 resize-none"
-              />
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 resize-none" />
             </div>
           </div>
 
@@ -852,8 +700,6 @@ export default function NewInvoicePage() {
             <p className="text-xs text-gray-400 mb-3">
               Search your calendar jobs — linked hour logs are automatically added as line items.
             </p>
-
-            {/* Linked job chips */}
             {linkedJobs.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
                 {linkedJobs.map((job) => {
@@ -863,10 +709,7 @@ export default function NewInvoicePage() {
                       <span className="font-semibold text-navy-700">{job.title}</span>
                       <span className="text-navy-400">·</span>
                       <span className="text-navy-500">{count} {count === 1 ? "item" : "items"}</span>
-                      <button
-                        onClick={() => unlinkJob(job.eventId)}
-                        className="ml-1 text-navy-400 hover:text-navy-700 transition-colors"
-                      >
+                      <button onClick={() => unlinkJob(job.eventId)} className="ml-1 text-navy-400 hover:text-navy-700 transition-colors">
                         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                           <line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/>
                         </svg>
@@ -876,22 +719,13 @@ export default function NewInvoicePage() {
                 })}
               </div>
             )}
-
-            {/* Search input + calendar button */}
             <div ref={searchRef} className="relative flex gap-2">
-              <input
-                value={jobSearch}
-                onChange={(e) => setJobSearch(e.target.value)}
+              <input value={jobSearch} onChange={(e) => setJobSearch(e.target.value)}
                 placeholder="Search by job title or client…"
                 className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
-                onFocus={() => { if (jobResults.length > 0) setJobSearchOpen(true); }}
-              />
-              <button
-                type="button"
-                onClick={() => setCalOpen(true)}
-                title="Pick from calendar"
-                className="shrink-0 border border-gray-300 rounded-lg px-2.5 py-2 text-gray-500 hover:text-navy-600 hover:border-navy-400 transition-colors"
-              >
+                onFocus={() => { if (jobResults.length > 0) setJobSearchOpen(true); }} />
+              <button type="button" onClick={() => setCalOpen(true)} title="Pick from calendar"
+                className="shrink-0 border border-gray-300 rounded-lg px-2.5 py-2 text-gray-500 hover:text-navy-600 hover:border-navy-400 transition-colors">
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="14" height="13" rx="2"/>
                   <line x1="3" y1="8" x2="17" y2="8"/>
@@ -904,23 +738,16 @@ export default function NewInvoicePage() {
                   {jobResults.map((job) => {
                     const alreadyLinked = linkedJobs.some((j) => j.eventId === job.id);
                     return (
-                      <button
-                        key={job.id}
-                        disabled={alreadyLinked || loadingJobId === job.id}
+                      <button key={job.id} disabled={alreadyLinked || loadingJobId === job.id}
                         onClick={() => linkJob(job)}
-                        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors disabled:opacity-50"
-                      >
+                        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors disabled:opacity-50">
                         <div>
                           <p className="text-sm font-semibold text-gray-900">{job.title}</p>
                           <p className="text-xs text-gray-500">{job.client} · {job.date}</p>
                         </div>
-                        {alreadyLinked ? (
-                          <span className="text-xs text-navy-500 font-medium">Linked</span>
-                        ) : loadingJobId === job.id ? (
-                          <span className="text-xs text-gray-400">Loading…</span>
-                        ) : (
-                          <span className="text-xs text-navy-600 font-semibold">+ Add</span>
-                        )}
+                        {alreadyLinked ? <span className="text-xs text-navy-500 font-medium">Linked</span>
+                          : loadingJobId === job.id ? <span className="text-xs text-gray-400">Loading…</span>
+                          : <span className="text-xs text-navy-600 font-semibold">+ Add</span>}
                       </button>
                     );
                   })}
@@ -946,128 +773,83 @@ export default function NewInvoicePage() {
                   const isExpanded = expandedBreakdowns.has(item.id);
                   const hasBreakdown = (item.breakdown && item.breakdown.length > 1) || (item.priceBasis && item.priceBasis.length > 0);
                   return (
-                    <div
-                      key={item.id}
-                      className={`rounded-lg border transition-colors ${isActive ? "border-navy-300 bg-navy-50" : "border-transparent hover:bg-gray-50"}`}
-                    >
+                    <div key={item.id} className={`rounded-lg border transition-colors ${isActive ? "border-navy-300 bg-navy-50" : "border-transparent hover:bg-gray-50"}`}>
                       <div className="grid grid-cols-[1fr_auto] gap-2 p-2">
                         <div className="space-y-1.5">
                           {item.sourceJobTitle && (
-                            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
-                              {item.sourceJobTitle}
-                            </span>
+                            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{item.sourceJobTitle}</span>
                           )}
                           <div className="grid grid-cols-2 gap-1.5">
                             <div>
                               <label className="text-[10px] text-gray-400">Employee</label>
-                              <input
-                                value={item.employee}
-                                onChange={(e) => updateItem(item.id, "employee", e.target.value)}
+                              <input value={item.employee} onChange={(e) => updateItem(item.id, "employee", e.target.value)}
                                 onFocus={() => setActiveItemId(item.id)}
-                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400"
-                              />
+                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400" />
                             </div>
                             <div>
                               <label className="text-[10px] text-gray-400">Date</label>
-                              <input
-                                type="date"
-                                value={item.date}
-                                onChange={(e) => updateItem(item.id, "date", e.target.value)}
+                              <input type="date" value={item.date} onChange={(e) => updateItem(item.id, "date", e.target.value)}
                                 onFocus={() => setActiveItemId(item.id)}
-                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400"
-                              />
+                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400" />
                             </div>
                           </div>
                           <div>
                             <label className="text-[10px] text-gray-400">Description</label>
-                            <input
-                              value={item.description}
-                              onChange={(e) => updateItem(item.id, "description", e.target.value)}
+                            <input value={item.description} onChange={(e) => updateItem(item.id, "description", e.target.value)}
                               onFocus={() => setActiveItemId(item.id)}
-                              className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400"
-                            />
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400" />
                           </div>
                           <div className="grid grid-cols-2 gap-1.5">
                             <div>
                               <label className="text-[10px] text-gray-400">Hours</label>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.25"
-                                value={item.hours}
+                              <input type="number" min="0" step="0.25" value={item.hours}
                                 onChange={(e) => updateItem(item.id, "hours", e.target.value)}
                                 onFocus={() => setActiveItemId(item.id)}
-                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400"
-                              />
+                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400" />
                             </div>
                             <div>
                               <label className="text-[10px] text-gray-400">Amount ($)</label>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.amount}
+                              <input type="number" min="0" step="0.01" value={item.amount}
                                 onChange={(e) => updateItem(item.id, "amount", e.target.value)}
-                                onFocus={() => setActiveItemId(item.id)}
-                                placeholder="0.00"
-                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400"
-                              />
+                                onFocus={() => setActiveItemId(item.id)} placeholder="0.00"
+                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400" />
                             </div>
                           </div>
                         </div>
-                        <button
-                          onClick={() => removeItem(item.id)}
-                          className="self-start mt-1 text-red-400 hover:text-red-600 p-1"
-                        >
+                        <button onClick={() => removeItem(item.id)} className="self-start mt-1 text-red-400 hover:text-red-600 p-1">
                           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                             <line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/>
                           </svg>
                         </button>
                       </div>
 
-                      {/* Breakdown toggle */}
                       {hasBreakdown && (
                         <div className="px-2 pb-2">
-                          <button
-                            onClick={() => toggleBreakdown(item.id)}
-                            className="flex items-center gap-1 text-[11px] text-navy-500 hover:text-navy-700 font-medium transition-colors"
-                          >
-                            <svg
-                              width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"
+                          <button onClick={() => toggleBreakdown(item.id)}
+                            className="flex items-center gap-1 text-[11px] text-navy-500 hover:text-navy-700 font-medium transition-colors">
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"
                               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                              className={`transition-transform ${isExpanded ? "rotate-90" : ""}`}
-                            >
+                              className={`transition-transform ${isExpanded ? "rotate-90" : ""}`}>
                               <polyline points="3 2 7 5 3 8"/>
                             </svg>
-                            {item.breakdown && item.breakdown.length > 1
-                              ? `${item.breakdown.length} entries merged`
-                              : "Pricing detail"}
+                            {item.breakdown && item.breakdown.length > 1 ? `${item.breakdown.length} entries merged` : "Pricing detail"}
                           </button>
-
                           {isExpanded && (
                             <div className="mt-2 pl-3 border-l-2 border-navy-200 space-y-2">
-                              {/* Contributing entries */}
                               {item.breakdown && item.breakdown.length > 1 && (
                                 <div className="space-y-0.5">
                                   {item.breakdown.map((b, i) => (
                                     <div key={i} className="flex items-center justify-between text-[11px]">
-                                      <span className="text-gray-700">
-                                        <span className="font-medium">{b.employee}</span>
-                                        <span className="text-gray-400"> · {b.date}</span>
-                                      </span>
+                                      <span className="text-gray-700"><span className="font-medium">{b.employee}</span><span className="text-gray-400"> · {b.date}</span></span>
                                       <span className="text-gray-600 font-medium tabular-nums">{b.hours}h</span>
                                     </div>
                                   ))}
                                   <div className="flex items-center justify-between text-[11px] pt-0.5 border-t border-gray-200 mt-0.5">
                                     <span className="text-gray-500 font-semibold">Total</span>
-                                    <span className="text-gray-800 font-bold tabular-nums">
-                                      {item.breakdown.reduce((s, b) => s + b.hours, 0).toFixed(2)}h
-                                    </span>
+                                    <span className="text-gray-800 font-bold tabular-nums">{item.breakdown.reduce((s, b) => s + b.hours, 0).toFixed(2)}h</span>
                                   </div>
                                 </div>
                               )}
-
-                              {/* Pricing basis */}
                               {item.priceBasis && item.priceBasis.length > 0 && (
                                 <div className="space-y-0.5">
                                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">How amount was calculated</p>
@@ -1095,44 +877,31 @@ export default function NewInvoicePage() {
             <div className="text-lg font-bold text-gray-900">
               Total: <span className="text-navy-600">${total.toFixed(2)}</span>
             </div>
-            <button
-              onClick={save}
-              disabled={saving}
-              className="bg-navy-600 hover:bg-navy-700 disabled:opacity-50 text-white font-semibold rounded-xl px-6 py-2.5 text-sm"
-            >
-              {saving ? "Saving…" : "Save as Draft"}
+            <button onClick={save} disabled={saving}
+              className="bg-navy-600 hover:bg-navy-700 disabled:opacity-50 text-white font-semibold rounded-xl px-6 py-2.5 text-sm">
+              {saving ? "Saving…" : "Save Changes"}
             </button>
           </div>
           {saveError && <p className="text-red-500 text-sm text-center">{saveError}</p>}
         </div>
 
         {/* ── RIGHT PANEL (preview) ───────────────────────────────────────── */}
-        <div
-          className={`${mobileView === "form" ? "hidden lg:block" : "block"} border-l border-gray-200 bg-gray-50 px-4 py-8`}
-          style={{ position: "sticky", top: 72, alignSelf: "start", maxHeight: "calc(100vh - 72px)", overflowY: "auto" }}
-        >
+        <div className={`${mobileView === "form" ? "hidden lg:block" : "block"} border-l border-gray-200 bg-gray-50 px-4 py-8`}
+          style={{ position: "sticky", top: 72, alignSelf: "start", maxHeight: "calc(100vh - 72px)", overflowY: "auto" }}>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
             Live Preview
             <span className="normal-case font-normal ml-2 text-gray-300">· click any field to edit</span>
           </p>
           <InvoicePreview
-            invoiceNumber={invoiceNumber}
-            invoiceDate={invoiceDate}
-            companyName={companyName}
-            companyAddress={companyAddress}
-            clientName={clientName}
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            notes={notes}
-            lineItems={lineItems}
-            activeItemId={activeItemId}
-            onActivate={setActiveItemId}
-            onUpdateItem={updateItem}
+            invoiceNumber={invoiceNumber} invoiceDate={invoiceDate}
+            companyName={companyName} companyAddress={companyAddress}
+            clientName={clientName} dateFrom={dateFrom} dateTo={dateTo}
+            notes={notes} lineItems={lineItems} activeItemId={activeItemId}
+            onActivate={setActiveItemId} onUpdateItem={updateItem}
           />
         </div>
       </div>
 
-      {/* Calendar picker modal */}
       {calOpen && (
         <JobCalendarModal
           linkedJobIds={new Set(linkedJobs.map((j) => j.eventId))}

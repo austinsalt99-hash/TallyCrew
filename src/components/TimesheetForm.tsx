@@ -28,6 +28,10 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function fmtDate(dt: Date): string {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
 function newBillable(): BillableEntryData {
   return { id: uuid(), client: "", description: "", startTime: "", endTime: "", subEntries: [] };
 }
@@ -102,6 +106,9 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   const [breakMinutes, setBreakMinutes] = useState("");
   const [breakStartTimestamp, setBreakStartTimestamp] = useState<number | null>(null);
   const [breakElapsed, setBreakElapsed] = useState("");
+  const [weekStripOffset, setWeekStripOffset] = useState(0);
+  const [weekSummaries, setWeekSummaries] = useState<Record<string, { billable: number; nonBillable: number }>>({});
+  const [popoverDate, setPopoverDate] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function handleClockIn() {
@@ -161,6 +168,24 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       .then((data) => { if (Array.isArray(data)) setCalendarEvents(data); })
       .catch(() => {});
   }, [linkingEntryId, calendarWeekOffset, date]);
+
+  useEffect(() => {
+    const [y, mo, d] = date.split("-").map(Number);
+    const base = new Date(y, mo - 1, d);
+    const monday = new Date(base);
+    monday.setDate(base.getDate() - ((base.getDay() + 6) % 7) + weekStripOffset * 7);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    fetch(`/api/submissions/employee?from=${fmtDate(monday)}&to=${fmtDate(sunday)}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        const map: Record<string, { billable: number; nonBillable: number }> = {};
+        for (const s of data) map[s.date] = { billable: s.total_billable_hours || 0, nonBillable: s.total_non_billable_hours || 0 };
+        setWeekSummaries(map);
+      })
+      .catch(() => {});
+  }, [date, weekStripOffset]);
 
   // Load draft on mount
   useEffect(() => {
@@ -320,6 +345,15 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
 
   const totalBillable = calcTotalBillable(billable);
   const totalNonBillable = calcTotalNonBillable(nonBillable);
+  const todayStr = today();
+  const wBaseDate = (() => { const [y, mo, d] = date.split("-").map(Number); return new Date(y, mo - 1, d); })();
+  const wMonday = new Date(wBaseDate);
+  wMonday.setDate(wBaseDate.getDate() - ((wBaseDate.getDay() + 6) % 7) + weekStripOffset * 7);
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const dt = new Date(wMonday);
+    dt.setDate(wMonday.getDate() + i);
+    return { dateStr: fmtDate(dt), label: ["M","T","W","T","F","S","S"][i], num: dt.getDate() };
+  });
 
   if (submitState === "success") {
     return (
@@ -367,20 +401,6 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
 
   return (
     <>
-    {/* History button */}
-    <div className="flex items-center justify-between mb-1">
-      <button
-        type="button"
-        onClick={() => setShowHistory(true)}
-        className="flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-navy-600 transition-colors"
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 15 15"/>
-        </svg>
-        History
-      </button>
-    </div>
-
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Preview mode banner */}
       {previewMode && (
@@ -409,13 +429,137 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Submitting as</p>
           <p className="text-base font-semibold text-gray-900">{previewMode ? "Preview User" : userName}</p>
         </div>
+
+        {/* Week day strip */}
+        <div>
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={() => setWeekStripOffset((o) => o - 1)}
+              className="p-1 text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+            <div className="flex-1 flex">
+              {weekDays.map(({ dateStr, label, num }) => {
+                const summary = weekSummaries[dateStr];
+                const hasLog = !!summary;
+                const total = hasLog ? Math.round((summary.billable + summary.nonBillable) * 100) / 100 : null;
+                const isSelected = dateStr === date;
+                const isTodayDate = dateStr === todayStr;
+                return (
+                  <button
+                    key={dateStr}
+                    type="button"
+                    onClick={() => {
+                      if (hasLog) {
+                        setPopoverDate(popoverDate === dateStr ? null : dateStr);
+                      } else {
+                        setDate(dateStr);
+                        setHistoryMsg("");
+                        setWeekStripOffset(0);
+                        setPopoverDate(null);
+                      }
+                    }}
+                    className="flex-1 flex flex-col items-center gap-0.5 py-0.5"
+                  >
+                    <span className="text-[10px] font-medium text-gray-400">{label}</span>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
+                      isSelected
+                        ? "bg-navy-600 text-white"
+                        : popoverDate === dateStr
+                          ? "bg-navy-100 text-navy-700 ring-2 ring-navy-300"
+                          : hasLog
+                            ? "bg-navy-50 text-navy-600 ring-1 ring-navy-200"
+                            : isTodayDate
+                              ? "ring-2 ring-navy-400 text-navy-600"
+                              : "bg-gray-100 text-gray-400"
+                    }`}>
+                      {num}
+                    </div>
+                    {total !== null && (
+                      <span className="text-[9px] font-medium text-gray-500">{total}h</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setWeekStripOffset((o) => o + 1)}
+              className="p-1 text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowHistory(true)}
+              title="Full history"
+              className="ml-1 p-1.5 text-gray-400 hover:text-navy-600 transition-colors shrink-0"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            </button>
+          </div>
+
+          {popoverDate && weekSummaries[popoverDate] && (
+            <div className="mt-2 bg-navy-50 rounded-xl border border-navy-100 p-3 relative">
+              <button
+                type="button"
+                onClick={() => setPopoverDate(null)}
+                className="absolute top-2 right-2 text-gray-300 hover:text-gray-500"
+              >
+                <svg width="11" height="11" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="1" y1="1" x2="12" y2="12"/><line x1="12" y1="1" x2="1" y2="12"/>
+                </svg>
+              </button>
+              <p className="text-sm font-semibold text-gray-900 mb-1.5">
+                {(() => { const [py, pmo, pd] = popoverDate.split("-").map(Number); return new Date(py, pmo - 1, pd).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }); })()}
+              </p>
+              <div className="flex gap-3 text-xs mb-2.5">
+                {weekSummaries[popoverDate].billable > 0 && (
+                  <span className="text-navy-600">{weekSummaries[popoverDate].billable}h billable</span>
+                )}
+                {weekSummaries[popoverDate].nonBillable > 0 && (
+                  <span className="text-orange-500">{weekSummaries[popoverDate].nonBillable}h non-billable</span>
+                )}
+                {Math.round((weekSummaries[popoverDate].billable + weekSummaries[popoverDate].nonBillable) * 100) / 100 > 0 && (
+                  <span className="font-semibold text-gray-700">
+                    {Math.round((weekSummaries[popoverDate].billable + weekSummaries[popoverDate].nonBillable) * 100) / 100}h total
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDate(popoverDate);
+                  setWeekStripOffset(0);
+                  loadPastLog(popoverDate);
+                  setPopoverDate(null);
+                }}
+                className="w-full bg-navy-600 hover:bg-navy-700 text-white text-xs font-semibold rounded-lg py-2 transition-colors"
+              >
+                Load & Edit
+              </button>
+            </div>
+          )}
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
           <div className="flex gap-2">
             <input
               type="date"
               value={date}
-              onChange={(e) => { setDate(e.target.value); setHistoryMsg(""); }}
+              onChange={(e) => { setDate(e.target.value); setHistoryMsg(""); setWeekStripOffset(0); setPopoverDate(null); }}
               className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
             />
             <button

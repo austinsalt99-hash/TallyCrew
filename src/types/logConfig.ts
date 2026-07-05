@@ -3,6 +3,8 @@ export interface LogEntryFieldOption {
   field_id: string;
   label: string;
   sort_order: number;
+  rate_type?: "per_hour" | "per_unit" | null;
+  rate_amount?: number | null;
 }
 
 export interface LogEntryField {
@@ -14,6 +16,8 @@ export interface LogEntryField {
   sort_order: number;
   is_required: boolean;
   options: LogEntryFieldOption[];
+  rate_type?: "per_hour" | "per_unit" | null;
+  rate_amount?: number | null;
 }
 
 export interface LogEntryType {
@@ -25,4 +29,7 @@ export interface LogEntryType {
   is_timed: boolean;
   time_mode: "job" | "day" | "none";
   fields: LogEntryField[];
+  is_priced: boolean;
+  rate_type?: "per_hour" | "per_unit" | null;
+  rate_amount?: number | null;
 }

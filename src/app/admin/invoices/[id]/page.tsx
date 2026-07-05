@@ -84,6 +84,14 @@ export default function InvoiceDetailPage() {
           {invoice.status}
         </span>
         <div className="flex-1" />
+        {invoice.status !== "draft" && (
+          <button
+            onClick={() => setStatus("draft")}
+            className="text-sm border border-gray-300 text-gray-500 hover:bg-gray-50 rounded-lg px-3 py-1.5 font-medium"
+          >
+            Revert to Draft
+          </button>
+        )}
         {invoice.status !== "sent" && (
           <button
             onClick={() => setStatus("sent")}
