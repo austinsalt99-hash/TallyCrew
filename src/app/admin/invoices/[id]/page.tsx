@@ -29,7 +29,7 @@ interface Invoice {
 
 const statusBadge: Record<string, string> = {
   draft: "bg-gray-100 text-gray-600",
-  sent: "bg-blue-100 text-blue-700",
+  sent: "bg-navy-100 text-navy-700",
   paid: "bg-green-100 text-green-700",
 };
 
@@ -87,7 +87,7 @@ export default function InvoiceDetailPage() {
         {invoice.status !== "sent" && (
           <button
             onClick={() => setStatus("sent")}
-            className="text-sm border border-blue-300 text-blue-600 hover:bg-blue-50 rounded-lg px-3 py-1.5 font-medium"
+            className="text-sm border border-navy-300 text-navy-600 hover:bg-navy-50 rounded-lg px-3 py-1.5 font-medium"
           >
             Mark as Sent
           </button>
@@ -102,7 +102,7 @@ export default function InvoiceDetailPage() {
         )}
         <button
           onClick={() => window.print()}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl px-4 py-2 text-sm"
+          className="bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl px-4 py-2 text-sm"
         >
           Print / Save PDF
         </button>
@@ -132,7 +132,7 @@ export default function InvoiceDetailPage() {
             )}
           </div>
           <div className="text-right">
-            <div className="text-3xl font-bold text-blue-600 mb-1">INVOICE</div>
+            <div className="text-3xl font-bold text-navy-600 mb-1">INVOICE</div>
             <div className="text-sm text-gray-600">
               <div><span className="font-medium">Invoice #:</span> {invoice.invoice_number}</div>
               <div><span className="font-medium">Date:</span> {formatDate(invoice.invoice_date)}</div>
@@ -176,7 +176,7 @@ export default function InvoiceDetailPage() {
           <tfoot>
             <tr>
               <td colSpan={4} className="text-right py-3 pr-4 font-bold text-gray-700 text-base">Total</td>
-              <td className="py-3 text-right font-bold text-blue-600 text-base">${total.toFixed(2)}</td>
+              <td className="py-3 text-right font-bold text-navy-600 text-base">${total.toFixed(2)}</td>
             </tr>
           </tfoot>
         </table>

@@ -106,7 +106,7 @@ export default function WorkersPage() {
                 </div>
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                   w.role === "admin"
-                    ? "bg-blue-100 text-blue-700"
+                    ? "bg-navy-100 text-navy-700"
                     : "bg-gray-100 text-gray-600"
                 }`}>
                   {w.role}
@@ -124,7 +124,7 @@ export default function WorkersPage() {
           <button
             onClick={generateCode}
             disabled={generatingCode}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl px-4 py-2 text-sm transition-colors disabled:opacity-50"
+            className="bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl px-4 py-2 text-sm transition-colors disabled:opacity-50"
           >
             {generatingCode ? "Generating…" : "Generate code"}
           </button>
@@ -164,7 +164,7 @@ export default function WorkersPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => copyCode(c.code)}
-                            className="text-xs text-blue-600 hover:underline"
+                            className="text-xs text-navy-600 hover:underline"
                           >
                             Copy
                           </button>
@@ -198,11 +198,11 @@ export default function WorkersPage() {
         </div>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-4">
-        <p className="text-sm text-blue-800 font-semibold mb-1">How invite codes work</p>
-        <p className="text-sm text-blue-700">
+      <div className="bg-navy-50 border border-navy-200 rounded-xl px-5 py-4">
+        <p className="text-sm text-navy-800 font-semibold mb-1">How invite codes work</p>
+        <p className="text-sm text-navy-700">
           Generate a code and share it with your worker. They go to{" "}
-          <span className="font-mono bg-blue-100 px-1 rounded">/register/join</span>, enter the code,
+          <span className="font-mono bg-navy-100 px-1 rounded">/register/join</span>, enter the code,
           and create their account. Each code can only be used once.
         </p>
       </div>

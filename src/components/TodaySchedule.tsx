@@ -43,7 +43,7 @@ export default function TodaySchedule() {
           <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Today</p>
           <h2 className="text-lg font-bold text-gray-900">{dayLabel}</h2>
         </div>
-        <Link href="/schedule" className="text-sm font-semibold hover:underline" style={{ color: "#5DB941" }}>
+        <Link href="/schedule" className="text-sm font-semibold hover:underline" style={{ color: "#F4A823" }}>
           Full week →
         </Link>
       </div>
@@ -56,17 +56,27 @@ export default function TodaySchedule() {
         <div className="divide-y divide-gray-100">
           {events.map((ev) => (
             <div key={ev.id} className="px-5 py-3.5 flex items-start gap-3">
-              <div className="w-2 h-2 rounded-full mt-2 flex-shrink-0" style={{ backgroundColor: "#5DB941" }} />
+              <div className="w-2 h-2 rounded-full mt-2 flex-shrink-0" style={{ backgroundColor: "#F4A823" }} />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900">{ev.title}</p>
                 {ev.client && <p className="text-sm text-gray-500">{ev.client}</p>}
-                {ev.location && <p className="text-sm text-gray-400">📍 {ev.location}</p>}
-                {ev.assigned_to && <p className="text-sm text-gray-400">👷 {ev.assigned_to}</p>}
+                {ev.location && (
+                  <p className="text-sm text-gray-400 flex items-center gap-1">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M8 1.5A4.5 4.5 0 0 1 12.5 6c0 3.5-4.5 8.5-4.5 8.5S3.5 9.5 3.5 6A4.5 4.5 0 0 1 8 1.5z"/><circle cx="8" cy="6" r="1.5"/></svg>
+                    {ev.location}
+                  </p>
+                )}
+                {ev.assigned_to && (
+                  <p className="text-sm text-gray-400 flex items-center gap-1">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><circle cx="8" cy="5.5" r="2.5"/><path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/></svg>
+                    {ev.assigned_to}
+                  </p>
+                )}
                 {ev.description && <p className="text-sm text-gray-500 mt-0.5">{ev.description}</p>}
               </div>
               {ev.start_time && (
                 <div className="text-right flex-shrink-0">
-                  <p className="text-sm font-semibold" style={{ color: "#5DB941" }}>{formatTime(ev.start_time)}</p>
+                  <p className="text-sm font-semibold" style={{ color: "#F4A823" }}>{formatTime(ev.start_time)}</p>
                   {ev.end_time && <p className="text-xs text-gray-400">{formatTime(ev.end_time)}</p>}
                 </div>
               )}

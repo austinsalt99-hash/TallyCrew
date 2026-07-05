@@ -86,7 +86,9 @@ export default function LogHistoryPanel({ onLoadDate, onClose }: Props) {
             </svg>
             <h2 className="font-semibold text-gray-900">Log History</h2>
           </div>
-          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 text-xl leading-none">×</button>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="12" y2="12"/><line x1="12" y1="1" x2="1" y2="12"/></svg>
+          </button>
         </div>
 
         {/* Jump to date */}
@@ -97,12 +99,12 @@ export default function LogHistoryPanel({ onLoadDate, onClose }: Props) {
               type="date"
               value={jumpDate}
               onChange={(e) => setJumpDate(e.target.value)}
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
             />
             <button
               onClick={() => { if (jumpDate) { onLoadDate(jumpDate); onClose(); } }}
               disabled={!jumpDate}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg disabled:opacity-40 transition-colors"
+              className="px-4 py-2 bg-navy-600 hover:bg-navy-700 text-white text-sm font-semibold rounded-lg disabled:opacity-40 transition-colors"
             >
               Load
             </button>
@@ -135,7 +137,7 @@ export default function LogHistoryPanel({ onLoadDate, onClose }: Props) {
                               "No hours logged"
                             ) : (
                               <>
-                                {billable > 0 && <span className="text-blue-600">{billable}h billable</span>}
+                                {billable > 0 && <span className="text-navy-600">{billable}h billable</span>}
                                 {billable > 0 && nonBillable > 0 && " · "}
                                 {nonBillable > 0 && <span className="text-orange-500">{nonBillable}h non-billable</span>}
                               </>
@@ -144,7 +146,7 @@ export default function LogHistoryPanel({ onLoadDate, onClose }: Props) {
                         </div>
                         <button
                           onClick={() => { onLoadDate(sub.date); onClose(); }}
-                          className="text-xs font-semibold text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors shrink-0 ml-3"
+                          className="text-xs font-semibold text-navy-600 hover:text-navy-800 px-3 py-1.5 rounded-lg hover:bg-navy-50 transition-colors shrink-0 ml-3"
                         >
                           Load
                         </button>

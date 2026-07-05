@@ -5,6 +5,8 @@ import BillableEntry, { BillableEntryData } from "@/components/BillableEntry";
 import TimesheetForm from "@/components/TimesheetForm";
 import type { LogEntryType, LogEntryField, LogEntryFieldOption } from "@/types/logConfig";
 
+const NAVY = "#0A1172";
+
 function authHeader() {
   return { "Content-Type": "application/json" };
 }
@@ -14,7 +16,6 @@ function toSlug(name: string): string {
 }
 
 type TimeMode = "job" | "day" | "none";
-const TIME_MODE_LABELS: Record<TimeMode, string> = { job: "Per job", day: "General", none: "No time" };
 
 export default function LogConfigPage() {
   const [types, setTypes] = useState<LogEntryType[]>([]);
@@ -28,7 +29,8 @@ export default function LogConfigPage() {
 
   // New type form
   const [newTypeName, setNewTypeName] = useState("");
-  const [newTypeTimeMode, setNewTypeTimeMode] = useState<TimeMode>("job");
+  const [newTypePosition, setNewTypePosition] = useState<"job" | "day">("job");
+  const [newTypeTimed, setNewTypeTimed] = useState(true);
   const [addingType, setAddingType] = useState(false);
 
   // New field forms keyed by type id
@@ -91,6 +93,7 @@ export default function LogConfigPage() {
     if (!newTypeName.trim()) return;
     setAddingType(true);
     const slug = toSlug(newTypeName);
+    const time_mode = newTypeTimed ? newTypePosition : "none";
     await fetch("/api/log-config", {
       method: "POST",
       headers: authHeader(), credentials: "include",
@@ -98,12 +101,13 @@ export default function LogConfigPage() {
         name: newTypeName.trim(),
         slug,
         sort_order: types.length,
-        time_mode: newTypeTimeMode,
-        is_timed: newTypeTimeMode === "job",
+        time_mode,
+        is_timed: newTypeTimed,
       }),
     });
     setNewTypeName("");
-    setNewTypeTimeMode("job");
+    setNewTypePosition("job");
+    setNewTypeTimed(true);
     setAddingType(false);
     await reload();
   }
@@ -223,7 +227,7 @@ export default function LogConfigPage() {
         </div>
         <button
           onClick={() => setShowFormPreview(true)}
-          className="shrink-0 text-sm font-semibold text-blue-600 border border-blue-300 hover:bg-blue-50 rounded-lg px-3 py-1.5 transition-colors"
+          className="shrink-0 text-sm font-semibold text-navy-600 border border-navy-300 hover:bg-navy-50 rounded-lg px-3 py-1.5 transition-colors"
         >
           Preview Form
         </button>
@@ -238,7 +242,7 @@ export default function LogConfigPage() {
       {types.map((type) => {
         const isPrimary = type.slug === "standard";
         return (
-        <div key={type.id} className={`bg-white rounded-xl border relative ${isPrimary ? "border-blue-300 ring-1 ring-blue-100" : "border-gray-200"}`}>
+        <div key={type.id} className={`bg-white rounded-xl border relative ${isPrimary ? "border-navy-300 ring-1 ring-navy-100" : "border-gray-200"}`}>
           {/* Type header */}
           <div className="flex items-center px-5 py-4 gap-2">
             <button
@@ -248,7 +252,7 @@ export default function LogConfigPage() {
             >
               <span className="font-semibold text-gray-900 truncate">{type.name}</span>
               {isPrimary && (
-                <span className="shrink-0 text-xs px-2 py-0.5 rounded-full font-semibold bg-blue-600 text-white">Primary</span>
+                <span className="shrink-0 text-xs px-2 py-0.5 rounded-full font-semibold bg-navy-600 text-white">Primary</span>
               )}
               <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${type.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                 {type.is_active ? "Active" : "Hidden"}
@@ -288,7 +292,7 @@ export default function LogConfigPage() {
                 <button
                   type="button"
                   onClick={() => setPreviewType(type)}
-                  className="text-xs border border-blue-300 text-blue-600 rounded-lg px-3 py-1 hover:bg-blue-50 transition-colors"
+                  className="text-xs border border-navy-300 text-navy-600 rounded-lg px-3 py-1 hover:bg-navy-50 transition-colors"
                 >
                   Preview
                 </button>
@@ -334,7 +338,7 @@ export default function LogConfigPage() {
                     setNewFieldName((prev) => ({ ...prev, [type.id]: e.target.value }))
                   }
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddField(type.id); } }}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
                 />
                 <div className="flex gap-2">
                   <select
@@ -342,7 +346,7 @@ export default function LogConfigPage() {
                     onChange={(e) =>
                       setNewFieldType((prev) => ({ ...prev, [type.id]: e.target.value }))
                     }
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
                   >
                     <option value="dropdown">Dropdown</option>
                     <option value="number">Number</option>
@@ -351,7 +355,7 @@ export default function LogConfigPage() {
                   <button
                     type="button"
                     onClick={() => handleAddField(type.id)}
-                    className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+                    className="shrink-0 bg-navy-600 hover:bg-navy-700 text-white text-sm font-semibold px-4 py-2 rounded-lg"
                   >
                     Add Field
                   </button>
@@ -364,46 +368,69 @@ export default function LogConfigPage() {
       })}
 
       {/* Add new type */}
-      <div className="bg-white rounded-xl border border-dashed border-blue-300 p-5">
-        <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-3">
+      <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-5">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
           New Log Type
         </p>
-        <div className="flex gap-2">
+
+        {/* Name + submit */}
+        <div className="flex gap-2 mb-4">
           <input
             type="text"
             placeholder="Type name (e.g. Trucking)"
             value={newTypeName}
             onChange={(e) => setNewTypeName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddType(); } }}
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
           />
           <button
             type="button"
             onClick={handleAddType}
             disabled={addingType || !newTypeName.trim()}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-semibold px-5 py-2 rounded-lg"
+            className="shrink-0 text-white text-sm font-semibold px-5 py-2 rounded-lg disabled:opacity-40 transition-opacity"
+            style={{ backgroundColor: NAVY }}
           >
             {addingType ? "Saving…" : "Add Type"}
           </button>
         </div>
-        <div className="mt-3">
-          <p className="text-xs text-gray-500 mb-2">Time tracking</p>
+
+        {/* Time placement: Per Job | General */}
+        <div className="mb-3">
+          <p className="text-xs text-gray-500 mb-2">Time placement</p>
           <div className="flex gap-2">
-            {(["job", "day", "none"] as TimeMode[]).map((mode) => (
+            {(["job", "day"] as const).map((pos) => (
               <button
-                key={mode}
+                key={pos}
                 type="button"
-                onClick={() => setNewTypeTimeMode(mode)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                  newTypeTimeMode === mode
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-white text-gray-500 border-gray-300 hover:border-blue-400"
-                }`}
+                onClick={() => setNewTypePosition(pos)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+                style={
+                  newTypePosition === pos
+                    ? { backgroundColor: NAVY, color: "#fff", borderColor: NAVY }
+                    : { backgroundColor: "#fff", color: "#6b7280", borderColor: "#d1d5db" }
+                }
               >
-                {TIME_MODE_LABELS[mode]}
+                {pos === "job" ? "Per Job" : "General"}
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Timed toggle */}
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-gray-500">Timed</p>
+          <button
+            type="button"
+            onClick={() => setNewTypeTimed((v) => !v)}
+            className="w-9 h-5 rounded-full relative transition-colors"
+            style={{ backgroundColor: newTypeTimed ? NAVY : "#d1d5db" }}
+          >
+            <div
+              className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+              style={{ transform: newTypeTimed ? "translateX(18px)" : "translateX(2px)" }}
+            />
+          </button>
+          <span className="text-xs text-gray-400">{newTypeTimed ? "On" : "Off"}</span>
         </div>
       </div>
 
@@ -417,9 +444,9 @@ export default function LogConfigPage() {
             <span className="font-semibold text-gray-900">Employee Form Preview</span>
             <button
               onClick={() => setShowFormPreview(false)}
-              className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1"
+              className="text-gray-400 hover:text-gray-600 px-1 flex items-center"
             >
-              ×
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="12" y2="12"/><line x1="12" y1="1" x2="1" y2="12"/></svg>
             </button>
           </div>
           <div className="text-xs text-gray-400 italic bg-gray-50 px-5 py-2 border-b border-gray-100 shrink-0">
@@ -448,24 +475,61 @@ interface TypeActionsMenuProps {
 
 function TypeActionsMenu({ type, isPrimary, onSetTimeMode, onToggleActive, onDelete }: TypeActionsMenuProps) {
   const currentMode: TimeMode = (type.time_mode as TimeMode) ?? (type.is_timed ? "job" : "none");
+  const isTimed = currentMode !== "none";
+  const [positionMode, setPositionMode] = useState<"job" | "day">(
+    currentMode === "none" ? "job" : (currentMode as "job" | "day")
+  );
+
+  function handlePositionChange(pos: "job" | "day") {
+    setPositionMode(pos);
+    if (isTimed) onSetTimeMode(pos);
+  }
+
+  function handleTimedToggle() {
+    onSetTimeMode(isTimed ? "none" : positionMode);
+  }
 
   return (
-    <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg w-52 py-1 overflow-hidden">
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-3 pt-2 pb-1">
-        Time tracking
-      </p>
-      {(["job", "day", "none"] as TimeMode[]).map((mode) => (
+    <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg w-56 overflow-hidden">
+      {/* Time placement */}
+      <div className="px-3 pt-3 pb-2">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Time placement</p>
+        <div className="flex gap-2">
+          {(["job", "day"] as const).map((pos) => (
+            <button
+              key={pos}
+              type="button"
+              onClick={() => handlePositionChange(pos)}
+              className="flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+              style={
+                positionMode === pos
+                  ? { backgroundColor: NAVY, color: "#fff", borderColor: NAVY }
+                  : { backgroundColor: "#f9fafb", color: "#6b7280", borderColor: "#e5e7eb" }
+              }
+            >
+              {pos === "job" ? "Per Job" : "General"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Timed toggle */}
+      <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
+        <span className="text-sm text-gray-700">Timed</span>
         <button
-          key={mode}
           type="button"
-          onClick={() => onSetTimeMode(mode)}
-          className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+          onClick={handleTimedToggle}
+          className="w-9 h-5 rounded-full relative transition-colors"
+          style={{ backgroundColor: isTimed ? NAVY : "#d1d5db" }}
         >
-          <span className={`w-3 h-3 rounded-full border shrink-0 ${currentMode === mode ? "bg-blue-600 border-blue-600" : "border-gray-300 bg-white"}`} />
-          {TIME_MODE_LABELS[mode]}
+          <div
+            className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+            style={{ transform: isTimed ? "translateX(18px)" : "translateX(2px)" }}
+          />
         </button>
-      ))}
-      <div className="border-t border-gray-100 my-1" />
+      </div>
+
+      <div className="border-t border-gray-100" />
       <button
         type="button"
         onClick={onToggleActive}
@@ -523,9 +587,9 @@ function PreviewModal({ type, allTypes, onClose }: PreviewModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            className="text-gray-400 hover:text-gray-600 flex items-center"
           >
-            ×
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="12" y2="12"/><line x1="12" y1="1" x2="1" y2="12"/></svg>
           </button>
         </div>
         <div className="text-xs text-gray-400 italic bg-gray-50 px-5 py-2 border-b border-gray-100">
@@ -647,16 +711,16 @@ function FieldRow({
                       value={editingOption.label}
                       onChange={(e) => onEditChange(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSaveEdit(); } if (e.key === "Escape") onCancelEdit(); }}
-                      className="flex-1 border border-blue-400 rounded px-2 py-1 text-sm focus:outline-none"
+                      className="flex-1 border border-navy-400 rounded px-2 py-1 text-sm focus:outline-none"
                       autoFocus
                     />
-                    <button type="button" onClick={onSaveEdit} className="text-xs text-blue-600 font-semibold">Save</button>
+                    <button type="button" onClick={onSaveEdit} className="text-xs text-navy-600 font-semibold">Save</button>
                     <button type="button" onClick={onCancelEdit} className="text-xs text-gray-400">Cancel</button>
                   </>
                 ) : (
                   <>
                     <span
-                      className="flex-1 text-sm text-gray-700 cursor-pointer hover:text-blue-600"
+                      className="flex-1 text-sm text-gray-700 cursor-pointer hover:text-navy-600"
                       onClick={() => onStartEdit(opt)}
                       title="Click to edit"
                     >
@@ -665,9 +729,9 @@ function FieldRow({
                     <button
                       type="button"
                       onClick={() => onDeleteOption(opt.id)}
-                      className="text-xs text-red-400 hover:text-red-600"
+                      className="text-red-400 hover:text-red-600 flex items-center"
                     >
-                      ×
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
                     </button>
                   </>
                 )}
@@ -681,12 +745,12 @@ function FieldRow({
               value={newOptionLabel}
               onChange={(e) => onNewOptionChange(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onAddOption(); } }}
-              className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
             />
             <button
               type="button"
               onClick={onAddOption}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1 rounded"
+              className="bg-navy-600 hover:bg-navy-700 text-white text-xs font-semibold px-3 py-1 rounded"
             >
               Add
             </button>

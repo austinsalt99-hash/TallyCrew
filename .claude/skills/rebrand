@@ -1,0 +1,82 @@
+# Rebrand — update TallyCrew brand colors
+
+The user will provide a new color palette. Apply it globally across the app.
+
+## Step 1 — Parse the user's input
+
+Ask the user (or read from args) for:
+- **Primary color** — the main brand color (replaces navy `#0A1172`). This is used for: headers, gradients, nav active states, primary buttons, focus rings, billable indicators.
+- **Accent color** — the pop/action color (replaces orange `#F4A823`). This is used for: "View schedule →" links, today highlights on calendars, job event colors, important CTAs.
+
+If the user gives color names instead of hex values, pick a professional-looking hex and confirm it with them before making changes.
+
+From the primary hex, derive:
+- **Dark variant** — darken by ~40% for gradient start (e.g. if primary is `#0A1172`, dark is `#060b47`). You can compute this by multiplying each RGB component by 0.6.
+- **Light variant (50-shade)** — very light tint for active nav backgrounds, ~95% lighter. Multiply each RGB component by 0.9 and blend toward white.
+- **Full shade scale** — generate shades 50/100/200/300/400/500/600/700/800/900 for the Tailwind config. The 600 shade should equal the primary hex. Scale linearly from near-white at 50 to near-black at 900.
+
+## Step 2 — Update tailwind.config.ts
+
+The custom `navy` color block lives at:
+`tailwind.config.ts` → `theme.extend.colors.navy`
+
+Replace all hex values in that block with the new shade scale derived from the new primary color. Keep the key name `navy` — don't rename it (the Tailwind classes `navy-600`, `navy-50`, etc. are used everywhere and renaming would break them all).
+
+## Step 3 — Replace inline hex values in src/
+
+There are three hardcoded hex values to replace:
+
+| Find | Replace with | Description |
+|------|-------------|-------------|
+| `#0A1172` | new primary hex | Navy used in SVG strokes, inline styles |
+| `#060b47` | new dark variant hex | Gradient dark stop, NAVY_DARK constant |
+| `#F4A823` | new accent hex | Orange used in inline styles, ORANGE constants |
+
+Run targeted sed across `src/`:
+```bash
+find src -name "*.tsx" -exec sed -i '' \
+  's/#0A1172/NEW_PRIMARY/g; s/#060b47/NEW_DARK/g; s/#F4A823/NEW_ACCENT/g' {} \;
+```
+
+Also check for any light-tint variants used in barFill() or similar:
+- `#d5d9ff` (navy-100, used in bar chart past-no-data fill) → regenerate from new primary
+- `#fde8bb` (orange light, used in bar chart today-no-data fill) → regenerate from new accent
+
+Update those manually in `src/components/DashboardView.tsx` `barFill()` function.
+
+## Step 4 — Update constants in component files
+
+These files define named color constants that need their values updated:
+
+| File | Constant | New value |
+|------|----------|-----------|
+| `src/components/DashboardView.tsx` | `NAVY` | new primary |
+| `src/components/DashboardView.tsx` | `NAVY_DARK` | new dark variant |
+| `src/components/DashboardView.tsx` | `ORANGE` | new accent |
+| `src/app/schedule/page.tsx` | `ORANGE` | new accent |
+| `src/app/admin/calendar/page.tsx` | (find the color constant at top of file) | update both |
+
+## Step 5 — Run TypeScript check
+
+```bash
+npx tsc --noEmit
+```
+
+Fix any errors before reporting done.
+
+## Step 6 — Confirm with user
+
+Tell the user:
+- What primary and accent hex values were applied
+- The derived dark and light variants
+- That they can reload the dev server to see changes
+
+---
+
+## Current brand colors (as of last rebrand)
+- Primary (navy): `#0A1172`
+- Primary dark (gradient): `#060b47`
+- Accent (orange): `#F4A823`
+- Tailwind key: `navy` (do NOT rename this key)
+- Light tint in bar chart (past/no-data): `#d5d9ff`
+- Light tint in bar chart (today/no-data): `#fde8bb`

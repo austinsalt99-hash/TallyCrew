@@ -7,10 +7,22 @@ import { createSupabaseBrowser } from "@/lib/supabase-browser";
 
 const tabs = [
   {
+    href: "/admin/home",
+    label: "Dashboard",
+    icon: (active: boolean) => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#0A1172" : "#9ca3af"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/dashboard",
     label: "Logs",
     icon: (active: boolean) => (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#2563eb" : "#9ca3af"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#0A1172" : "#9ca3af"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="8" y1="6" x2="21" y2="6" />
         <line x1="8" y1="12" x2="21" y2="12" />
         <line x1="8" y1="18" x2="21" y2="18" />
@@ -24,7 +36,7 @@ const tabs = [
     href: "/admin/calendar",
     label: "Calendar",
     icon: (active: boolean) => (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#2563eb" : "#9ca3af"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#0A1172" : "#9ca3af"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="4" width="18" height="18" rx="2" />
         <line x1="16" y1="2" x2="16" y2="6" />
         <line x1="8" y1="2" x2="8" y2="6" />
@@ -66,16 +78,6 @@ const moreItems = [
         <polyline points="14 2 14 8 20 8" />
         <line x1="16" y1="13" x2="8" y2="13" />
         <line x1="16" y1="17" x2="8" y2="17" />
-      </svg>
-    ),
-  },
-  {
-    href: "/admin/profile",
-    label: "Profile",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
       </svg>
     ),
   },
@@ -144,16 +146,16 @@ export default function AdminBottomNav() {
       </div>
 
       {/* Bottom nav bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm border-t border-gray-200 flex pb-safe">
+      <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm border-t border-gray-200 flex" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         {tabs.map((tab) => {
           const active = pathname === tab.href;
           return (
             <Link key={tab.href} href={tab.href}
               className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors">
-              <div className={`p-1.5 rounded-xl transition-colors ${active ? "bg-blue-50" : ""}`}>
+              <div className={`p-1.5 rounded-xl transition-colors ${active ? "bg-navy-50" : ""}`}>
                 {tab.icon(active)}
               </div>
-              <span className={`text-[10px] font-semibold tracking-wide ${active ? "text-blue-600" : "text-gray-400"}`}>
+              <span className={`text-[10px] font-semibold tracking-wide ${active ? "text-navy-600" : "text-gray-400"}`}>
                 {tab.label}
               </span>
             </Link>
@@ -163,14 +165,14 @@ export default function AdminBottomNav() {
           onClick={() => setMoreOpen((o) => !o)}
           className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5"
         >
-          <div className={`p-1.5 rounded-xl transition-colors ${moreOpen ? "bg-blue-50" : ""}`}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill={moreOpen ? "#2563eb" : "#9ca3af"} stroke="none">
+          <div className={`p-1.5 rounded-xl transition-colors ${moreOpen ? "bg-navy-50" : ""}`}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill={moreOpen ? "#0A1172" : "#9ca3af"} stroke="none">
               <circle cx="5" cy="12" r="2" />
               <circle cx="12" cy="12" r="2" />
               <circle cx="19" cy="12" r="2" />
             </svg>
           </div>
-          <span className={`text-[10px] font-semibold tracking-wide ${moreOpen ? "text-blue-600" : "text-gray-400"}`}>More</span>
+          <span className={`text-[10px] font-semibold tracking-wide ${moreOpen ? "text-navy-600" : "text-gray-400"}`}>More</span>
         </button>
       </nav>
     </>

@@ -69,7 +69,7 @@ export default function AdminProfilePage() {
         <div className="space-y-4">
           {/* Account card */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
-            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Account</p>
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wide">Account</p>
             <Field label="Name" value={data.fullName} />
             <Field label="Email" value={data.email} />
             <Field label="Member since" value={data.memberSince} />
@@ -77,7 +77,7 @@ export default function AdminProfilePage() {
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Role</p>
               <span className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full ${
                 data.role === "admin"
-                  ? "bg-blue-100 text-blue-700"
+                  ? "bg-navy-100 text-navy-700"
                   : "bg-gray-100 text-gray-600"
               }`}>
                 {data.role.charAt(0).toUpperCase() + data.role.slice(1)}
@@ -87,7 +87,7 @@ export default function AdminProfilePage() {
 
           {/* Company card */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
-            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Company</p>
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wide">Company</p>
             <Field label="Company name" value={data.companyName} />
           </div>
         </div>

@@ -72,7 +72,7 @@ export default function WeeklyHoursSummary() {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-5 py-4">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#5DB941" }}>This Week</p>
+        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#F4A823" }}>This Week</p>
         <p className="text-xs text-gray-400">{fmtShort(summary.from)} – {fmtShort(summary.to)}</p>
       </div>
       <div className="flex items-center gap-5">
@@ -82,7 +82,7 @@ export default function WeeklyHoursSummary() {
         </div>
         <div className="h-8 w-px bg-gray-100 shrink-0" />
         <div>
-          <p className="text-base font-semibold text-blue-600 leading-none">{summary.totalBillable}h</p>
+          <p className="text-base font-semibold text-navy-600 leading-none">{summary.totalBillable}h</p>
           <p className="text-xs text-gray-400 mt-1">billable</p>
         </div>
         <div>

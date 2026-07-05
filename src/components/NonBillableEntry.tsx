@@ -25,10 +25,10 @@ export default function NonBillableEntry({ entry, onChange, onRemove, showRemove
           <button
             type="button"
             onClick={onRemove}
-            className="text-red-400 hover:text-red-600 text-lg leading-none font-bold"
+            className="text-red-400 hover:text-red-600 leading-none"
             aria-label="Remove entry"
           >
-            ×
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/></svg>
           </button>
         )}
       </div>

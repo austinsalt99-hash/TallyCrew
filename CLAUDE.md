@@ -5,55 +5,84 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev      # Start local dev server (http://localhost:3000)
-npm run build    # Production build
-npm run lint     # ESLint check
-npx tsc --noEmit # TypeScript type check (no test suite exists)
+npm run dev       # Start local dev server (http://localhost:3000)
+npm run build     # Production build
+npm run lint      # ESLint check
+npx tsc --noEmit  # TypeScript type check (no test suite exists)
 ```
 
-**Important:** The `.next` build cache frequently corrupts on this machine (likely due to OneDrive syncing interference). If the dev server throws `ENOENT: no such file or directory` errors referencing `.next/server/...` files, delete the `.next` folder and restart:
+**Important:** The `.next` build cache frequently corrupts on this machine (likely due to OneDrive syncing interference). If the dev server throws `ENOENT: no such file or directory` errors referencing `.next/server/...` files, delete the folder and restart:
 ```bash
-Remove-Item -Recurse -Force .next
-npm run dev
+rm -rf .next && npm run dev
 ```
 
 ## Architecture
 
-### Two distinct user surfaces
-- **`/`** — Employee timesheet form. No auth. Employees fill in hours and submit for the day.
-- **`/admin`** — Admin area. Password-protected via a custom JWT stored in `localStorage`.
+### User surfaces
+- **`/`** — Employee timesheet form. Employees fill in daily hours and submit. Has a `BottomNav` with tabs for the form, `/schedule` (today's job schedule), `/profile`, and `/settings`.
+- **`/admin`** — Admin area with `AdminBottomNav`. Tabs: Dashboard (view/manage submissions), Calendar (schedule jobs), Log Config (custom entry types), Workers, Invoices.
+- **`/login`**, **`/register`**, **`/register/join`** — Auth and onboarding flows.
 
-### Data flow on submission
-Employee submits form → `POST /api/submit` → inserts row into Supabase `submissions` table → fetches log type config from Supabase to resolve field labels → sends HTML email via Resend.
+### Auth (Supabase sessions)
+Auth is Supabase session-based, not a custom JWT. The middleware (`src/middleware.ts`) refreshes the session on every request and enforces:
+- Unauthenticated users → redirect to `/login` (except `/api/` routes and `/login`, `/register`)
+- `/admin` routes require `profile.role === "admin"` — workers are redirected to `/`
+- Logged-in users hitting login/register → redirect to their home based on role
 
-### Auth system (`src/lib/auth.ts`)
-Homegrown JWT (no library). The token is a base64url-encoded `header.payload.signature` string, signed with `JWT_SECRET`. It expires after 12 hours and is stored in `localStorage` as `tallycrew-admin-token`. All admin API routes verify the Bearer token using `verifyToken()` before writing. The admin login page posts to `POST /api/admin/login`, which compares the submitted password against `ADMIN_PASSWORD` env var.
+All admin API routes call `createSupabaseServer()` + `getSessionUser()`, then check `profile.role !== "admin"`. All data is scoped to `profile.company_id`.
 
-### Supabase usage
-- Client is a lazy singleton in `src/lib/supabase.ts` — always call `getSupabase()`, never instantiate directly.
-- RLS is enabled on all tables. Public tables allow anon SELECT; writes are permitted via anon key but gated at the API route level by JWT checks.
-- No server-side auth with Supabase; the anon key is used for all DB operations.
+### Supabase clients — use the right one
+- `src/lib/supabase-server.ts` — for Server Components and API route handlers. Exports `createSupabaseServer()` and `getSessionUser()`.
+- `src/lib/supabase-browser.ts` — for Client Components (`"use client"`). Call `createSupabaseBrowser()`.
+- `src/lib/supabase.ts` — legacy singleton (`getSupabase()`). Avoid for new code.
 
-### Custom log entry types
-Admins can define custom billable entry types (e.g. "Trucking") with configurable fields. Three tables: `log_entry_types` → `log_entry_fields` → `log_entry_field_options`. Types have `is_active` (visible to employees) and `is_timed` (whether start/end time fields appear). The employee form fetches `GET /api/log-config` on mount and passes the result down to each `BillableEntry` component. Field values are stored as `customFields: Record<string, string>` in the JSONB `billable_entries` column alongside the existing `client`/`description` fields (which are left blank for custom type entries).
+`getSessionUser(supabase)` returns `{ user, profile }` where `profile` includes `id`, `company_id`, `full_name`, `role`, `is_dev`.
 
 ### Supabase tables
-- `submissions` — employee timesheets; `billable_entries` and `non_billable_entries` are JSONB arrays.
-- `job_events` — admin-created calendar entries; public read, admin write.
-- `log_entry_types` / `log_entry_fields` / `log_entry_field_options` — log type configuration; public read, admin write.
+- `submissions` — employee timesheets. `billable_entries` and `non_billable_entries` are JSONB arrays.
+- `profiles` — one row per user; has `company_id`, `role` (`"admin"` | `"worker"`), `is_dev`.
+- `job_events` — admin-created calendar entries.
+- `log_entry_types` / `log_entry_fields` / `log_entry_field_options` — custom log type config.
 
-### SQL migrations (run in Supabase SQL Editor in order)
-1. `supabase-schema.sql` — submissions table
-2. `supabase-events-schema.sql` — job_events table
-3. `supabase-log-config-schema.sql` — log type config tables
-4. `supabase-log-config-is-timed.sql` — adds `is_timed` column
+### Multi-tenant scoping
+Every company has its own `company_id`. All queries must scope to `profile.company_id` — never query across companies. Admin endpoints verify `company_id` ownership before any write or delete.
+
+### JSONB containment — critical gotcha
+To query inside a JSONB array column (e.g. `billable_entries`), **do not use `.contains()`** — that emits PostgreSQL array syntax `{...}` which fails on JSONB. Use:
+```typescript
+.filter("billable_entries", "cs", JSON.stringify([{ linkedEventId: eventId }]))
+```
+
+### BillableEntry dual format
+`BillableEntryData` in `src/components/BillableEntry.tsx` exists in two formats stored in `submissions.billable_entries`:
+
+- **New format** (submissions after the tab-strip redesign): `subEntries: SubEntry[]` is present (may be empty `[]`). General fields (`client`, `description`, `startTime`, `endTime`, `manualHours`) are top-level. Each `SubEntry` has `{ id, slug, customFields?, startTime?, endTime?, manualHours? }`.
+- **Old format** (earlier submissions): `subEntries` is absent. Active type stored in `entryType` + top-level `customFields`. Other types saved as snapshots in `_typeData: Record<slug, TypeSnapshot>`.
+
+**Detection:** `entry.subEntries != null` → new format. Both the admin dashboard `getWorkItems()` and the admin calendar `getDisplayItems()` handle both paths.
+
+### Custom log entry types
+Admins configure types (e.g. "Trucking", "Machine Operating") with typed fields. `LogEntryType` (see `src/types/logConfig.ts`) has:
+- `is_active` — visible to employees
+- `is_timed` — whether time fields appear
+- `time_mode: "job" | "day" | "none"` — controls time field rendering in `BillableEntry`
+
+The employee form fetches `GET /api/log-config` on mount and passes the result to each `BillableEntry`. Field values are stored in `customFields: Record<string, string>`.
+
+### Data flow on submission
+Employee submits → `POST /api/submit` → inserts into `submissions` → fetches log type config to resolve field labels → sends HTML email via Resend.
+
+Admin can link an employee's billable entry to a calendar job via `PATCH /api/submissions` (scoped by `company_id`, not `user_id`).
+
+### SQL migrations
+Run `supabase-schema.sql` in the Supabase SQL Editor. This single file contains the complete schema — all tables, RLS policies, helper functions, and storage bucket setup. No other migration files needed.
 
 ### Styling conventions
-- Tailwind CSS only, no component library.
-- Blue (`blue-600`) for billable/admin elements, orange (`orange-500`) for non-billable, green for schedule/calendar.
-- Cards use `bg-white rounded-xl border border-gray-200`.
-- Primary buttons: `bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl`.
-- Section labels: `text-xs font-semibold text-{color}-600 uppercase tracking-wide`.
+Tailwind CSS only, no component library.
+- Blue (`blue-600`) for billable/admin elements, orange (`orange-500`) for non-billable.
+- Cards: `bg-white rounded-xl border border-gray-200`
+- Primary buttons: `bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl`
+- Section labels: `text-xs font-semibold text-{color}-600 uppercase tracking-wide`
 
 ### Environment variables (`.env.local`)
 ```
@@ -61,6 +90,7 @@ NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 RESEND_API_KEY
 RECIPIENT_EMAIL
+ANTHROPIC_API_KEY
 ADMIN_PASSWORD
 JWT_SECRET
 ```

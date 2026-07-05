@@ -86,7 +86,7 @@ export default function JoinPage() {
                 required
                 value={form.code}
                 onChange={set("code")}
-                className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-400 tracking-widest"
+                className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-navy-400 tracking-widest"
                 placeholder="A3F7K2QX"
                 maxLength={8}
               />
@@ -102,7 +102,7 @@ export default function JoinPage() {
                     required
                     value={form.fullName}
                     onChange={set("fullName")}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
                     placeholder="John Doe"
                   />
                 </div>
@@ -114,7 +114,7 @@ export default function JoinPage() {
                     autoComplete="email"
                     value={form.email}
                     onChange={set("email")}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
                     placeholder="you@example.com"
                   />
                 </div>
@@ -126,7 +126,7 @@ export default function JoinPage() {
                     autoComplete="new-password"
                     value={form.password}
                     onChange={set("password")}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
                     placeholder="Min. 8 characters"
                   />
                 </div>
@@ -138,7 +138,7 @@ export default function JoinPage() {
                     autoComplete="new-password"
                     value={form.confirmPassword}
                     onChange={set("confirmPassword")}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
                     placeholder="••••••••"
                   />
                 </div>
@@ -152,7 +152,7 @@ export default function JoinPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl py-3 transition-colors disabled:opacity-50"
+              className="w-full bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl py-3 transition-colors disabled:opacity-50"
             >
               {loading ? "Creating account…" : "Create account"}
             </button>
@@ -161,7 +161,7 @@ export default function JoinPage() {
 
         <p className="text-center text-sm text-gray-500 mt-4">
           Already have an account?{" "}
-          <a href="/login" className="text-blue-600 hover:underline font-medium">
+          <a href="/login" className="text-navy-600 hover:underline font-medium">
             Sign in
           </a>
         </p>

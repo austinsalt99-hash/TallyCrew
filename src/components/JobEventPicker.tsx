@@ -126,7 +126,7 @@ export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, o
               type="button"
               onClick={() => setView("list")}
               title="List view"
-              className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${view === "list" ? "bg-white shadow-sm text-blue-600" : "text-gray-400 hover:text-gray-600"}`}
+              className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${view === "list" ? "bg-white shadow-sm text-navy-600" : "text-gray-400 hover:text-gray-600"}`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="8" y1="6" x2="21" y2="6" />
@@ -141,7 +141,7 @@ export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, o
               type="button"
               onClick={() => setView("calendar")}
               title="Calendar view"
-              className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${view === "calendar" ? "bg-white shadow-sm text-blue-600" : "text-gray-400 hover:text-gray-600"}`}
+              className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${view === "calendar" ? "bg-white shadow-sm text-navy-600" : "text-gray-400 hover:text-gray-600"}`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -152,7 +152,9 @@ export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, o
             </button>
           </div>
 
-          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 text-xl leading-none">×</button>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="12" y2="12"/><line x1="12" y1="1" x2="1" y2="12"/></svg>
+          </button>
         </div>
 
         {/* Body */}
@@ -177,7 +179,7 @@ export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, o
                           key={event.id}
                           type="button"
                           onClick={() => onSelect(event)}
-                          className="w-full text-left bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 hover:bg-blue-100 transition-colors"
+                          className="w-full text-left bg-navy-50 border border-navy-200 rounded-xl px-4 py-3 hover:bg-navy-100 transition-colors"
                         >
                           <div className="flex items-start justify-between gap-2">
                             <span className="font-semibold text-gray-900 text-sm">{event.title}</span>
@@ -261,14 +263,14 @@ export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, o
                             key={ev.id}
                             type="button"
                             onClick={() => onSelect(ev)}
-                            className="absolute left-0.5 right-0.5 rounded-lg px-1 py-0.5 bg-blue-500 hover:bg-blue-600 overflow-hidden text-left transition-colors"
+                            className="absolute left-0.5 right-0.5 rounded-lg px-1 py-0.5 bg-navy-500 hover:bg-navy-600 overflow-hidden text-left transition-colors"
                             style={{ top: top + 1, height }}
                           >
                             <p className="text-white font-semibold leading-tight truncate" style={{ fontSize: 10 }}>
                               {ev.title}
                             </p>
                             {height > 28 && ev.client && (
-                              <p className="text-blue-100 leading-tight truncate" style={{ fontSize: 9 }}>
+                              <p className="text-navy-100 leading-tight truncate" style={{ fontSize: 9 }}>
                                 {ev.client}
                               </p>
                             )}

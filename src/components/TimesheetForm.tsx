@@ -14,16 +14,26 @@ interface DayEntry {
   customFields: Record<string, string>;
 }
 
+function uuid(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
 function newBillable(): BillableEntryData {
-  return { id: crypto.randomUUID(), client: "", description: "", startTime: "", endTime: "", subEntries: [] };
+  return { id: uuid(), client: "", description: "", startTime: "", endTime: "", subEntries: [] };
 }
 
 function newNonBillable(): NonBillableEntryData {
-  return { id: crypto.randomUUID(), description: "", hours: "" };
+  return { id: uuid(), description: "", hours: "" };
 }
 
 function storageKey(userId: string, date: string): string {
@@ -239,8 +249,8 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       if (data.date) setDate(data.date);
       setDayStartTime(data.day_start_time ?? "");
       setDayEndTime(data.day_end_time ?? "");
-      if (data.billable_entries?.length) setBillable(data.billable_entries.map((e: BillableEntryData) => ({ ...e, id: e.id ?? crypto.randomUUID() })));
-      if (data.non_billable_entries?.length) setNonBillable(data.non_billable_entries.map((e: NonBillableEntryData) => ({ ...e, id: e.id ?? crypto.randomUUID() })));
+      if (data.billable_entries?.length) setBillable(data.billable_entries.map((e: BillableEntryData) => ({ ...e, id: e.id ?? uuid() })));
+      if (data.non_billable_entries?.length) setNonBillable(data.non_billable_entries.map((e: NonBillableEntryData) => ({ ...e, id: e.id ?? uuid() })));
       if (data.daily_entries?.length) setDayEntries(data.daily_entries as DayEntry[]);
       setNotes(data.notes ?? "");
       setSubmittedId(data.id);
@@ -314,7 +324,12 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   if (submitState === "success") {
     return (
       <div className="bg-white rounded-2xl p-6 sm:p-10 text-center shadow-sm border border-gray-200">
-        <div className="text-5xl mb-4">✓</div>
+        <div className="mb-4 flex justify-center">
+          <svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500">
+            <circle cx="28" cy="28" r="26"/>
+            <polyline points="17,28 24,36 39,20"/>
+          </svg>
+        </div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Hours submitted!</h2>
         <p className="text-gray-500 mb-6">Your timesheet for {date} has been sent.</p>
         <div className="flex flex-col items-center gap-3">
@@ -324,7 +339,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
                 setIsEditing(true);
                 setSubmitState("idle");
               }}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm"
+              className="bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm"
             >
               Edit this submission
             </button>
@@ -341,7 +356,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
               setNotes("");
               setDate(today());
             }}
-            className="text-blue-600 underline text-sm"
+            className="text-navy-600 underline text-sm"
           >
             Start a new entry
           </button>
@@ -357,7 +372,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       <button
         type="button"
         onClick={() => setShowHistory(true)}
-        className="flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-blue-600 transition-colors"
+        className="flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-navy-600 transition-colors"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 15 15"/>
@@ -369,7 +384,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Preview mode banner */}
       {previewMode && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
+        <div className="bg-navy-50 border border-navy-200 rounded-xl px-4 py-3 text-sm text-navy-800">
           Preview — this is exactly what employees see. No data will be submitted.
         </div>
       )}
@@ -401,14 +416,14 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
               type="date"
               value={date}
               onChange={(e) => { setDate(e.target.value); setHistoryMsg(""); }}
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
             />
             <button
               type="button"
               onClick={() => loadPastLog()}
               disabled={historyLoading}
               title="Load your log for this date"
-              className="px-3 py-3 border border-gray-300 rounded-lg text-gray-400 hover:text-blue-600 hover:border-blue-400 transition-colors disabled:opacity-50"
+              className="px-3 py-3 border border-gray-300 rounded-lg text-gray-400 hover:text-navy-600 hover:border-navy-400 transition-colors disabled:opacity-50"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
@@ -484,15 +499,19 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
 
         {/* Manual time inputs — always visible */}
         <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-gray-100">
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <label className="block text-xs font-medium text-gray-500 mb-1">Start time</label>
-            <input type="time" value={dayStartTime} onChange={(e) => setDayStartTime(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            <div className="overflow-x-hidden rounded-lg">
+              <input type="time" size={1} value={dayStartTime} onChange={(e) => setDayStartTime(e.target.value)}
+                className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-navy-400" />
+            </div>
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <label className="block text-xs font-medium text-gray-500 mb-1">End time</label>
-            <input type="time" value={dayEndTime} onChange={(e) => setDayEndTime(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            <div className="overflow-x-hidden rounded-lg">
+              <input type="time" size={1} value={dayEndTime} onChange={(e) => setDayEndTime(e.target.value)}
+                className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-navy-400" />
+            </div>
           </div>
         </div>
       </div>
@@ -552,7 +571,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       <section>
         <h2 className="text-base font-semibold text-gray-800 mb-3">Jobs</h2>
         <div className="space-y-3">
-          {billable.map((entry) => (
+          {billable.map((entry, idx) => (
             <BillableEntry
               key={entry.id}
               entry={entry}
@@ -561,13 +580,14 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
               showRemove={billable.length > 1}
               entryTypes={entryTypes}
               onLinkJob={() => { setLinkingEntryId(entry.id); setCalendarWeekOffset(0); }}
+              jobNumber={idx + 1}
             />
           ))}
         </div>
         <button
           type="button"
           onClick={addBillable}
-          className="mt-3 w-full py-3 border-2 border-dashed border-blue-300 rounded-xl text-blue-600 font-medium text-sm hover:bg-blue-50 transition-colors"
+          className="mt-3 w-full py-3 border-2 border-dashed border-navy-300 rounded-xl text-navy-600 font-medium text-sm hover:bg-navy-50 transition-colors"
         >
           + Add another job
         </button>
@@ -588,7 +608,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
               if (!type) return null;
               return (
                 <div key={dayEntry.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-                  <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">{dayEntry.typeName}</span>
+                  <span className="text-xs font-semibold text-navy-600 uppercase tracking-wide">{dayEntry.typeName}</span>
                   {type.fields
                     .slice()
                     .sort((a, b) => a.sort_order - b.sort_order)
@@ -607,7 +627,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
                                 )
                               )
                             }
-                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
                           >
                             <option value="">Select {field.label.toLowerCase()}…</option>
                             {field.options
@@ -633,7 +653,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
                                 )
                               )
                             }
-                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
                           />
                         ) : (
                           <input
@@ -648,7 +668,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
                                 )
                               )
                             }
-                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
                           />
                         )}
                       </div>
@@ -696,7 +716,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
-          className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+          className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400 resize-none"
         />
       </div>
 
@@ -721,7 +741,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
         <button
           type="submit"
           disabled={submitState === "submitting"}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-lg py-4 rounded-2xl transition-colors shadow-sm"
+          className="w-full bg-navy-600 hover:bg-navy-700 disabled:bg-navy-400 text-white font-bold text-lg py-4 rounded-2xl transition-colors shadow-sm"
         >
           {submitState === "submitting"
             ? (isEditing ? "Updating..." : "Submitting...")

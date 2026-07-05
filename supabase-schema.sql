@@ -4,30 +4,33 @@
 -- rebuild the database from scratch.
 --
 -- TABLE ORDER (dependency safe):
---   1. companies
---   2. profiles          (references companies, auth.users)
---   3. Helper functions  (reference profiles — must exist first)
---   4. RLS policies      (use helper functions — must exist first)
---   5. invite_codes      (references companies + profiles)
---   6. submissions       (references companies, auth.users)
---   7. job_events        (references companies)
---   8. log_entry_types   (references companies)
---   9. log_entry_fields  (references log_entry_types)
---  10. log_entry_field_options (references log_entry_fields)
---  11. invoices          (references companies)
---  12. Storage bucket    (job photos)
+--   1.  companies
+--   2.  profiles              (references companies, auth.users)
+--   3.  Helper functions      (reference profiles — must exist first)
+--   4.  RLS policies          (use helper functions — must exist first)
+--   5.  invite_codes          (references companies + profiles)
+--   6.  submissions           (references companies, auth.users)
+--   7.  job_events            (references companies)
+--   8.  log_entry_types       (references companies)
+--   9.  log_entry_fields      (references log_entry_types)
+--  10.  log_entry_field_options (references log_entry_fields)
+--  11.  invoices              (references companies)
+--  12.  announcements         (references companies, profiles)
+--  13.  Storage buckets       (job photos, company banners)
 -- =============================================================
 
 
 -- -------------------------------------------------------------
 -- 1. COMPANIES
 --    One row per customer company. All data is scoped to this.
+--    banner_url: optional custom dashboard banner image.
 -- -------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS companies (
   id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   name                TEXT        NOT NULL,
   created_at          TIMESTAMPTZ DEFAULT NOW(),
-  subscription_status TEXT        DEFAULT 'active'
+  subscription_status TEXT        DEFAULT 'active',
+  banner_url          TEXT
 );
 
 ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
@@ -75,11 +78,16 @@ CREATE OR REPLACE FUNCTION get_my_role()
 CREATE POLICY companies_read ON companies FOR SELECT
   USING (id = get_my_company_id());
 
+-- Admins can update their company row (e.g. banner_url)
+CREATE POLICY companies_admin_update ON companies FOR UPDATE
+  USING (id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (id = get_my_company_id() AND get_my_role() = 'admin');
+
 -- Profiles: users see all profiles in their company
 CREATE POLICY profiles_read ON profiles FOR SELECT
   USING (company_id = get_my_company_id());
 
--- Users can update their own profile only, and cannot change role or company_id
+-- Users can update their own profile only, cannot change role or company_id
 CREATE POLICY profiles_update ON profiles FOR UPDATE
   USING (id = auth.uid())
   WITH CHECK (
@@ -120,6 +128,7 @@ CREATE POLICY invite_codes_admin_update ON invite_codes FOR UPDATE
 -- 6. SUBMISSIONS
 --    Employee timesheet submissions. billable_entries,
 --    non_billable_entries, and daily_entries are JSONB arrays.
+--    break_minutes: total break time deducted from the day.
 -- -------------------------------------------------------------
 CREATE TABLE submissions (
   id                       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -136,7 +145,7 @@ CREATE TABLE submissions (
   notes                    TEXT,
   total_billable_hours     DECIMAL,
   total_non_billable_hours DECIMAL,
-  break_minutes            INTEGER DEFAULT 0
+  break_minutes            INTEGER     DEFAULT 0
 );
 
 ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
@@ -170,6 +179,7 @@ CREATE POLICY submissions_delete ON submissions FOR DELETE
 -- -------------------------------------------------------------
 -- 7. JOB EVENTS
 --    Admin-created calendar entries visible to all workers.
+--    is_verified: marks the job as confirmed/verified.
 -- -------------------------------------------------------------
 CREATE TABLE job_events (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -182,7 +192,8 @@ CREATE TABLE job_events (
   description TEXT,
   start_time  TIME,
   end_time    TIME,
-  assigned_to TEXT
+  assigned_to TEXT,
+  is_verified BOOLEAN     DEFAULT true
 );
 
 ALTER TABLE job_events ENABLE ROW LEVEL SECURITY;
@@ -203,7 +214,7 @@ CREATE POLICY job_events_admin_delete ON job_events FOR DELETE
 -- -------------------------------------------------------------
 -- 8. LOG ENTRY TYPES
 --    Admins define custom billable entry types (e.g. "Trucking").
---    time_mode: 'job' = per-job start/end times, 'none' = no times.
+--    time_mode: 'job' = per-job start/end, 'none' = no times.
 --    Slugs are unique per company.
 -- -------------------------------------------------------------
 CREATE TABLE log_entry_types (
@@ -228,7 +239,7 @@ CREATE POLICY log_types_admin_insert ON log_entry_types FOR INSERT
   WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
 
 CREATE POLICY log_types_admin_update ON log_entry_types FOR UPDATE
-  USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  USING  (company_id = get_my_company_id() AND get_my_role() = 'admin')
   WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
 
 CREATE POLICY log_types_admin_delete ON log_entry_types FOR DELETE
@@ -380,11 +391,49 @@ CREATE POLICY invoices_admin_delete ON invoices FOR DELETE
 
 
 -- -------------------------------------------------------------
--- 12. STORAGE — Job Photos
---     Public bucket for photos attached to billable job entries.
---     URLs are stored in billable_entries JSONB as
---     { "photos": ["https://..."] }
+-- 12. ANNOUNCEMENTS
+--     Admin-posted notices shown on employee and admin dashboards.
+--     pinned rows appear first; sorted by created_at DESC otherwise.
 -- -------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS announcements (
+  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID        NOT NULL REFERENCES companies(id),
+  title      TEXT        NOT NULL,
+  body       TEXT,
+  pinned     BOOLEAN     NOT NULL DEFAULT false,
+  created_by UUID        NOT NULL REFERENCES profiles(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
+
+-- All company members can read announcements
+CREATE POLICY announcements_read ON announcements FOR SELECT
+  USING (company_id = get_my_company_id());
+
+-- Only admins can create, update, or delete announcements
+CREATE POLICY announcements_admin_insert ON announcements FOR INSERT
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY announcements_admin_update ON announcements FOR UPDATE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY announcements_admin_delete ON announcements FOR DELETE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+
+-- -------------------------------------------------------------
+-- 13. STORAGE BUCKETS
+--     job-photos:     photos attached to billable job entries
+--     company-banners: custom dashboard banner images (admin upload)
+--
+--     NOTE: Create both buckets manually in Supabase Dashboard →
+--     Storage → New bucket, with Public: ON, before using them.
+--     Then run the policies below.
+-- -------------------------------------------------------------
+
+-- Job photos bucket
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('job-photos', 'job-photos', true)
 ON CONFLICT (id) DO NOTHING;
@@ -392,3 +441,12 @@ ON CONFLICT (id) DO NOTHING;
 CREATE POLICY "job_photos_read"   ON storage.objects FOR SELECT  USING     (bucket_id = 'job-photos');
 CREATE POLICY "job_photos_insert" ON storage.objects FOR INSERT  WITH CHECK (bucket_id = 'job-photos' AND auth.uid() IS NOT NULL);
 CREATE POLICY "job_photos_delete" ON storage.objects FOR DELETE  USING     (bucket_id = 'job-photos' AND auth.uid() IS NOT NULL);
+
+-- Company banners bucket
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('company-banners', 'company-banners', true)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE POLICY "company_banners_read"   ON storage.objects FOR SELECT  USING     (bucket_id = 'company-banners');
+CREATE POLICY "company_banners_insert" ON storage.objects FOR INSERT  WITH CHECK (bucket_id = 'company-banners' AND auth.uid() IS NOT NULL);
+CREATE POLICY "company_banners_delete" ON storage.objects FOR DELETE  USING     (bucket_id = 'company-banners' AND auth.uid() IS NOT NULL);

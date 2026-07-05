@@ -213,17 +213,17 @@ export default function Dashboard() {
           type="date"
           value={filterDate}
           onChange={(e) => setFilterDate(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
         />
         <input
           type="text"
           placeholder="Filter by employee name"
           value={filterName}
           onChange={(e) => setFilterName(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-48"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 w-48"
         />
         {(filterDate || filterName) && (
-          <button onClick={() => { setFilterDate(""); setFilterName(""); }} className="text-sm text-blue-600 underline">
+          <button onClick={() => { setFilterDate(""); setFilterName(""); }} className="text-sm text-navy-600 underline">
             Clear filters
           </button>
         )}
@@ -258,7 +258,7 @@ export default function Dashboard() {
                     <div className="flex items-center gap-3 shrink-0">
                       <div className="text-right text-sm">
                         {workedHours && <div className="text-gray-700 font-semibold">{workedHours} worked</div>}
-                        <div className="text-blue-600 font-medium">{s.total_billable_hours}h billable</div>
+                        <div className="text-navy-600 font-medium">{s.total_billable_hours}h billable</div>
                         {s.total_non_billable_hours > 0 && <div className="text-orange-500">{s.total_non_billable_hours}h non-bill.</div>}
                       </div>
                       <span className="text-gray-400 text-sm">{expanded === s.id ? "▲" : "▼"}</span>
@@ -281,7 +281,7 @@ export default function Dashboard() {
                       {/* Jobs */}
                       {s.billable_entries?.some(e => getWorkItems(e).length > 0) && (
                         <div>
-                          <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Jobs</h3>
+                          <h3 className="text-xs font-semibold text-navy-600 uppercase tracking-wide mb-2">Jobs</h3>
                           <div className="space-y-2">
                             {s.billable_entries.map((entry, ji) => {
                               const workItems = getWorkItems(entry);
@@ -292,8 +292,8 @@ export default function Dashboard() {
                               return (
                                 <div key={ji} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                                   {/* Job header */}
-                                  <div className="flex flex-wrap items-center gap-2 text-sm bg-blue-50 px-3 py-2">
-                                    <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Job {ji + 1}</span>
+                                  <div className="flex flex-wrap items-center gap-2 text-sm bg-navy-50 px-3 py-2">
+                                    <span className="text-xs font-semibold text-navy-600 uppercase tracking-wide">Job {ji + 1}</span>
                                     {hasTimes && (
                                       <>
                                         {entry.startTime && entry.endTime && (
@@ -306,7 +306,7 @@ export default function Dashboard() {
                                       </>
                                     )}
                                     {isDayLevel && (
-                                      <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">General</span>
+                                      <span className="text-xs bg-navy-100 text-navy-600 px-2 py-0.5 rounded-full">General</span>
                                     )}
                                     {entry.linkedEventTitle ? (
                                       <button
@@ -317,15 +317,15 @@ export default function Dashboard() {
                                         }}
                                         className="ml-auto text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full hover:bg-green-100 transition-colors"
                                       >
-                                        📅 {entry.linkedEventTitle}
+                                        <svg className="inline w-3 h-3 mr-1" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.5-1.5a3.5 3.5 0 0 0-4.95-4.95l-.87.87"/><path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0l-1.5 1.5a3.5 3.5 0 0 0 4.95 4.95l.87-.87"/></svg>{entry.linkedEventTitle}
                                       </button>
                                     ) : (
                                       <button
                                         type="button"
                                         onClick={() => { setLinkingTarget({ submissionId: s.id, entryIndex: ji, date: s.date }); setLinkWeekOffset(0); }}
-                                        className="ml-auto text-xs text-gray-400 border border-dashed border-gray-300 px-2 py-0.5 rounded-full hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                                        className="ml-auto text-xs text-gray-400 border border-dashed border-gray-300 px-2 py-0.5 rounded-full hover:text-navy-600 hover:border-navy-300 hover:bg-navy-50 transition-colors"
                                       >
-                                        📅 Link to schedule
+                                        <svg className="inline w-3 h-3 mr-1" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.5-1.5a3.5 3.5 0 0 0-4.95-4.95l-.87.87"/><path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0l-1.5 1.5a3.5 3.5 0 0 0 4.95 4.95l.87-.87"/></svg>Link to schedule
                                       </button>
                                     )}
                                   </div>
@@ -335,7 +335,7 @@ export default function Dashboard() {
                                       <div key={wi} className="flex gap-2 items-start">
                                         <span className={`mt-0.5 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1 ${
                                           item.slug === "standard"
-                                            ? "bg-blue-100 text-blue-700"
+                                            ? "bg-navy-100 text-navy-700"
                                             : "bg-indigo-100 text-indigo-700"
                                         }`}>
                                           {item.slug === "standard" ? "General" : slugToLabel(item.slug)}
@@ -382,11 +382,11 @@ export default function Dashboard() {
 
                       {s.daily_entries && s.daily_entries.length > 0 && (
                         <div>
-                          <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">General</h3>
+                          <h3 className="text-xs font-semibold text-navy-600 uppercase tracking-wide mb-2">General</h3>
                           <div className="space-y-2">
                             {s.daily_entries.map((de, di) => (
                               <div key={di} className="bg-gray-50 rounded-lg px-3 py-2">
-                                <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">{de.typeName}</span>
+                                <span className="text-xs font-semibold text-navy-600 uppercase tracking-wide">{de.typeName}</span>
                                 <div className="mt-1 space-y-0.5">
                                   {Object.entries(de.customFields ?? {}).filter(([, v]) => v).map(([k, v]) => (
                                     <div key={k} className="text-xs text-gray-600">
@@ -476,8 +476,10 @@ export default function Dashboard() {
               </div>
               <button
                 onClick={() => setViewingEvent(null)}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 text-xl font-bold shrink-0 mt-0.5"
-              >×</button>
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 shrink-0 mt-0.5"
+              >
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="12" y2="12"/><line x1="12" y1="1" x2="1" y2="12"/></svg>
+              </button>
             </div>
             <div className="p-5 space-y-3">
               {viewingEvent.date && (

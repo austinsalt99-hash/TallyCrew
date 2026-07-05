@@ -4,6 +4,16 @@ import { useRef, useState } from "react";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import type { LogEntryType } from "@/types/logConfig";
 
+function uuid(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export interface SubEntry {
   id: string;
   slug: string;
@@ -59,9 +69,10 @@ interface Props {
   showRemove: boolean;
   entryTypes: LogEntryType[];
   onLinkJob?: () => void;
+  jobNumber?: number;
 }
 
-export default function BillableEntry({ entry, onChange, onRemove, showRemove, entryTypes, onLinkJob }: Props) {
+export default function BillableEntry({ entry, onChange, onRemove, showRemove, entryTypes, onLinkJob, jobNumber }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [activeSubId, setActiveSubId] = useState<string | null>(null);
@@ -101,7 +112,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
   };
 
   const addSubEntry = (slug: string) => {
-    const id = crypto.randomUUID();
+    const id = uuid();
     onChange({
       ...entry,
       subEntries: [...subEntries, { id, slug, customFields: {}, startTime: "", endTime: "" }],
@@ -144,10 +155,12 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
     <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Job</span>
+        <span className="text-xs font-semibold text-navy-600 uppercase tracking-wide">
+          {jobNumber != null ? `Job ${jobNumber}` : "Job"}
+        </span>
         <div className="flex items-center gap-2">
           {generalHours && (
-            <span className="text-sm font-semibold text-gray-700 bg-blue-50 px-2 py-0.5 rounded-full">
+            <span className="text-sm font-semibold text-gray-700 bg-navy-50 px-2 py-0.5 rounded-full">
               {generalHours}
             </span>
           )}
@@ -155,19 +168,19 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
             <button
               type="button"
               onClick={onLinkJob}
-              className="text-xs text-blue-500 border border-blue-200 rounded-lg px-2 py-0.5 hover:bg-blue-50 transition-colors"
+              className="text-xs text-navy-500 border border-navy-200 rounded-lg px-2 py-0.5 hover:bg-navy-50 transition-colors"
             >
-              📅 Link to schedule
+              <svg className="inline w-3 h-3 mr-1" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.5-1.5a3.5 3.5 0 0 0-4.95-4.95l-.87.87"/><path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0l-1.5 1.5a3.5 3.5 0 0 0 4.95 4.95l.87-.87"/></svg>Link to schedule
             </button>
           )}
           {showRemove && (
             <button
               type="button"
               onClick={onRemove}
-              className="text-red-400 hover:text-red-600 text-lg leading-none font-bold"
+              className="text-red-400 hover:text-red-600 leading-none"
               aria-label="Remove entry"
             >
-              ×
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/></svg>
             </button>
           )}
         </div>
@@ -177,15 +190,15 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
       {entry.linkedEventId && (
         <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
           <span className="text-xs text-green-700 font-medium flex-1 min-w-0 truncate">
-            📅 {entry.linkedEventTitle ?? "Linked event"}
+            <svg className="inline w-3 h-3 mr-1 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.5-1.5a3.5 3.5 0 0 0-4.95-4.95l-.87.87"/><path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0l-1.5 1.5a3.5 3.5 0 0 0 4.95 4.95l.87-.87"/></svg>{entry.linkedEventTitle ?? "Linked event"}
           </span>
           <button
             type="button"
             onClick={() => onChange({ ...entry, linkedEventId: undefined, linkedEventTitle: undefined })}
-            className="text-green-400 hover:text-green-600 text-base leading-none font-bold shrink-0"
+            className="text-green-400 hover:text-green-600 leading-none shrink-0"
             aria-label="Unlink event"
           >
-            ×
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/></svg>
           </button>
         </div>
       )}
@@ -199,13 +212,13 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
             onClick={() => setActiveSubId(null)}
             className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-colors flex items-center gap-1.5 ${
               activeSubId === null
-                ? "bg-blue-600 text-white border-blue-600"
-                : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"
+                ? "bg-navy-600 text-white border-navy-600"
+                : "bg-white text-gray-600 border-gray-200 hover:border-navy-300"
             }`}
           >
             <span>{generalName}</span>
             {generalHours && (
-              <span className={`text-xs font-bold ${activeSubId === null ? "opacity-80" : "text-blue-600"}`}>
+              <span className={`text-xs font-bold ${activeSubId === null ? "opacity-80" : "text-navy-600"}`}>
                 {generalHours}
               </span>
             )}
@@ -220,7 +233,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
               <div
                 key={sub.id}
                 className={`flex items-center rounded-xl border-2 transition-colors ${
-                  isActive ? "bg-blue-600 border-blue-600" : "bg-white border-gray-200"
+                  isActive ? "bg-navy-600 border-navy-600" : "bg-white border-gray-200"
                 }`}
               >
                 <button
@@ -232,7 +245,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                 >
                   <span>{subType?.name ?? sub.slug}</span>
                   {subHours && (
-                    <span className={`text-xs font-bold ${isActive ? "opacity-80" : "text-blue-600"}`}>
+                    <span className={`text-xs font-bold ${isActive ? "opacity-80" : "text-navy-600"}`}>
                       {subHours}
                     </span>
                   )}
@@ -241,11 +254,11 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                   type="button"
                   onClick={() => removeSubEntry(sub.id)}
                   aria-label="Remove"
-                  className={`pr-2.5 py-2 font-bold text-base leading-none ${
+                  className={`pr-2.5 py-2 leading-none flex items-center ${
                     isActive ? "text-white/60 hover:text-white" : "text-gray-300 hover:text-red-400"
                   }`}
                 >
-                  ×
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
                 </button>
               </div>
             );
@@ -261,14 +274,14 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
             placeholder="Customer / Client name"
             value={entry.client}
             onChange={(e) => update("client", e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
           />
           <input
             type="text"
             placeholder="Job description"
             value={entry.description}
             onChange={(e) => update("description", e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
           />
           {standardType?.fields
             .slice()
@@ -280,7 +293,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                   <select
                     value={entry.customFields?.[field.field_key] ?? ""}
                     onChange={(e) => updateCustomField(field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
                   >
                     <option value="">Select {field.label.toLowerCase()}…</option>
                     {field.options
@@ -295,13 +308,13 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                     type="number" min="0" step="1" placeholder="0"
                     value={entry.customFields?.[field.field_key] ?? ""}
                     onChange={(e) => updateCustomField(field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
                   />
                 ) : (
                   <input type="text"
                     value={entry.customFields?.[field.field_key] ?? ""}
                     onChange={(e) => updateCustomField(field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
                   />
                 )}
               </div>
@@ -322,7 +335,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                   <select
                     value={activeSub.customFields?.[field.field_key] ?? ""}
                     onChange={(e) => updateSubCustomField(activeSub.id, field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
                   >
                     <option value="">Select {field.label.toLowerCase()}…</option>
                     {field.options
@@ -337,13 +350,13 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                     type="number" min="0" step="1" placeholder="0"
                     value={activeSub.customFields?.[field.field_key] ?? ""}
                     onChange={(e) => updateSubCustomField(activeSub.id, field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
                   />
                 ) : (
                   <input type="text"
                     value={activeSub.customFields?.[field.field_key] ?? ""}
                     onChange={(e) => updateSubCustomField(activeSub.id, field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
                   />
                 )}
               </div>
@@ -353,35 +366,43 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
 
       {/* Time row */}
       {showTime && (
-        <div className="flex gap-2">
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs text-gray-500 mb-1">Start time</label>
-            <input
-              type="time"
-              value={activeSub ? (activeSub.startTime ?? "") : entry.startTime}
-              onChange={(e) =>
-                activeSub
-                  ? updateSubEntry(activeSub.id, { startTime: e.target.value })
-                  : update("startTime", e.target.value)
-              }
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 appearance-none"
-            />
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Start time</label>
+              <div className="overflow-x-hidden rounded-lg">
+                <input
+                  type="time"
+                  size={1}
+                  value={activeSub ? (activeSub.startTime ?? "") : entry.startTime}
+                  onChange={(e) =>
+                    activeSub
+                      ? updateSubEntry(activeSub.id, { startTime: e.target.value })
+                      : update("startTime", e.target.value)
+                  }
+                  className="w-full min-w-0 border border-gray-300 rounded-lg px-2 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-navy-400 appearance-none"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">End time</label>
+              <div className="overflow-x-hidden rounded-lg">
+                <input
+                  type="time"
+                  size={1}
+                  value={activeSub ? (activeSub.endTime ?? "") : entry.endTime}
+                  onChange={(e) =>
+                    activeSub
+                      ? updateSubEntry(activeSub.id, { endTime: e.target.value })
+                      : update("endTime", e.target.value)
+                  }
+                  className="w-full min-w-0 border border-gray-300 rounded-lg px-2 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-navy-400 appearance-none"
+                />
+              </div>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs text-gray-500 mb-1">End time</label>
-            <input
-              type="time"
-              value={activeSub ? (activeSub.endTime ?? "") : entry.endTime}
-              onChange={(e) =>
-                activeSub
-                  ? updateSubEntry(activeSub.id, { endTime: e.target.value })
-                  : update("endTime", e.target.value)
-              }
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 appearance-none"
-            />
-          </div>
-          <div className="w-20 shrink-0">
-            <label className="block text-xs text-gray-500 mb-1">Hrs</label>
+          <div className="w-28">
+            <label className="block text-xs text-gray-500 mb-1">Hours (manual)</label>
             <input
               type="number"
               min="0"
@@ -396,7 +417,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                   onChange({ ...entry, manualHours: val });
                 }
               }}
-              className="w-full border border-gray-300 rounded-lg px-2 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 text-center"
+              className="w-full border border-gray-300 rounded-lg px-2 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-navy-400 text-center"
             />
           </div>
         </div>
@@ -411,7 +432,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
               key={t.id}
               type="button"
               onClick={() => addSubEntry(t.slug)}
-              className="text-xs text-gray-500 border border-dashed border-gray-300 rounded-full px-2.5 py-0.5 hover:border-blue-400 hover:text-blue-600 transition-colors"
+              className="text-xs text-gray-500 border border-dashed border-gray-300 rounded-full px-2.5 py-0.5 hover:border-navy-400 hover:text-navy-600 transition-colors"
             >
               + {t.name}
             </button>
@@ -436,9 +457,9 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
               <button
                 type="button"
                 onClick={() => removePhoto(url)}
-                className="absolute -top-1.5 -right-1.5 bg-white border border-gray-200 rounded-full w-5 h-5 flex items-center justify-center text-xs text-gray-400 hover:text-red-500 leading-none shadow-sm"
+                className="absolute -top-1.5 -right-1.5 bg-white border border-gray-200 rounded-full w-5 h-5 flex items-center justify-center text-gray-400 hover:text-red-500 shadow-sm"
               >
-                ×
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="7" y2="7"/><line x1="7" y1="1" x2="1" y2="7"/></svg>
               </button>
             </div>
           ))}
@@ -446,7 +467,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex items-center gap-1.5 px-3 py-2 border border-dashed border-gray-300 rounded-lg text-xs text-gray-400 hover:text-blue-500 hover:border-blue-400 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 border border-dashed border-gray-300 rounded-lg text-xs text-gray-400 hover:text-navy-500 hover:border-navy-400 transition-colors disabled:opacity-50"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
