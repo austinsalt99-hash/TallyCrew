@@ -38,6 +38,7 @@ export async function POST(request: Request) {
       total: body.total ?? 0,
       notes: body.notes ?? null,
       status: body.status ?? "draft",
+      column_config: body.column_config ?? [],
     })
     .select()
     .single();

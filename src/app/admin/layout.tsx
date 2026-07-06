@@ -4,6 +4,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import AdminBottomNav from "@/components/AdminBottomNav";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
+import DevAccountSwitcher from "@/components/DevAccountSwitcher";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -22,9 +23,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {!isDashboard && (
         <header className="hidden md:flex bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm px-4 py-3 items-center justify-between">
           <Image src="/tally-wordmark.png" alt="TallyCrew" width={160} height={38} />
-          <button onClick={handleSignOut} className="text-xs text-gray-500 hover:text-gray-900 transition-colors">
-            Sign out
-          </button>
+          <div className="flex items-center gap-3">
+            <DevAccountSwitcher />
+            <button onClick={handleSignOut} className="text-xs text-gray-500 hover:text-gray-900 transition-colors">
+              Sign out
+            </button>
+          </div>
         </header>
       )}
       <main className="max-w-5xl mx-auto px-4 py-8" style={{ paddingBottom: "calc(7rem + env(safe-area-inset-bottom))" }}>{children}</main>

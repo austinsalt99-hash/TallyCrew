@@ -129,7 +129,7 @@ export default function DashboardView({ userName }: { userName: string }) {
 
       {/* Header — banner image or gradient fallback */}
       <div
-        className="px-5 pt-14 pb-14 relative overflow-hidden"
+        className="px-5 pt-14 pb-20 relative overflow-hidden"
         style={bannerUrl
           ? { backgroundImage: `url(${bannerUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
           : { background: `linear-gradient(155deg, ${NAVY_DARK} 0%, ${ORANGE} 100%)` }
@@ -144,8 +144,8 @@ export default function DashboardView({ userName }: { userName: string }) {
         </div>
       </div>
 
-      {/* Week summary card — floats over header */}
-      <div className="-mt-8 mx-4 bg-white rounded-2xl shadow-xl p-4 relative z-10">
+      {/* Week summary card — sits below header with small gap so banner is visible */}
+      <div className="mt-4 mx-4 bg-white rounded-2xl shadow-xl p-4 relative z-10">
 
         {/* Total + days */}
         <div className="flex items-baseline justify-between mb-3">

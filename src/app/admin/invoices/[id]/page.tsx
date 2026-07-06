@@ -84,6 +84,12 @@ export default function InvoiceDetailPage() {
           {invoice.status}
         </span>
         <div className="flex-1" />
+        <Link
+          href={`/admin/invoices/${id}/edit`}
+          className="text-sm border border-navy-400 text-navy-600 hover:bg-navy-50 rounded-lg px-3 py-1.5 font-semibold"
+        >
+          ✏ Edit Invoice
+        </Link>
         {invoice.status !== "draft" && (
           <button
             onClick={() => setStatus("draft")}

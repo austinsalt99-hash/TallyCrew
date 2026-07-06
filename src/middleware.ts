@@ -33,6 +33,7 @@ export async function middleware(request: NextRequest) {
   const isPublic =
     pathname.startsWith("/login") ||
     pathname.startsWith("/register") ||
+    pathname.startsWith("/auth/") ||
     pathname.startsWith("/api/");
 
   // Not logged in → send to login (except public routes)

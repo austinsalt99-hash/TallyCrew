@@ -24,6 +24,7 @@ function greet(name: string): string {
 export default function AdminDashboardView({ userName }: { userName: string }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -35,9 +36,14 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
   });
 
   useEffect(() => {
-    fetch("/api/announcements")
-      .then((r) => r.json())
-      .then((data) => setAnnouncements(Array.isArray(data) ? data : []))
+    Promise.all([
+      fetch("/api/announcements").then((r) => r.json()),
+      fetch("/api/company", { credentials: "include" }).then((r) => r.json()),
+    ])
+      .then(([annData, companyData]) => {
+        setAnnouncements(Array.isArray(annData) ? annData : []);
+        setBannerUrl(companyData?.banner_url ?? null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -75,24 +81,29 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
   return (
     <div>
 
-      {/* Gradient header — 100vw + calc(50% - 50vw) escapes max-w-5xl and px-4 to go truly full-bleed */}
+      {/* Header — banner image or gradient fallback, 100vw escapes max-w-5xl and px-4 */}
       <div
-        className="px-5 pt-14 md:pt-8 pb-14 relative overflow-hidden"
+        className="px-5 pt-14 md:pt-8 pb-20 relative overflow-hidden"
         style={{
-          background: `linear-gradient(155deg, ${NAVY_DARK} 0%, ${ORANGE} 100%)`,
+          ...(bannerUrl
+            ? { backgroundImage: `url(${bannerUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
+            : { background: `linear-gradient(155deg, ${NAVY_DARK} 0%, ${ORANGE} 100%)` }),
           width: "100vw",
           marginLeft: "calc(50% - 50vw)",
           marginTop: "-2rem",
         }}
       >
+        {bannerUrl && (
+          <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(10,17,114,0.55) 0%, rgba(10,17,114,0.35) 100%)" }} />
+        )}
         <div className="relative z-10">
-          <p className="text-sm text-white/60 font-medium tracking-wide">{todayLabel}</p>
+          <p className="text-sm text-white/70 font-medium tracking-wide">{todayLabel}</p>
           <h1 className="text-[26px] font-bold text-white mt-1 leading-tight">{greet(userName)}</h1>
         </div>
       </div>
 
-      {/* Quick access card — overlaps gradient, same treatment as employee week summary */}
-      <div className="-mt-8 bg-white rounded-2xl shadow-xl p-4 relative z-10">
+      {/* Quick access card — sits below header with small gap so banner is visible */}
+      <div className="mt-4 bg-white rounded-2xl shadow-xl p-4 relative z-10">
         <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Quick Access</h2>
         <div className="grid grid-cols-2 gap-3">
           <Link

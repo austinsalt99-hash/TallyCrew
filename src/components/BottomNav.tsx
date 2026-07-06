@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import DevAccountSwitcher from "@/components/DevAccountSwitcher";
 
 const tabs = [
   {
@@ -72,6 +73,9 @@ export default function BottomNav() {
           </svg>
           <span className="text-gray-800 font-medium text-sm whitespace-nowrap">Admin</span>
         </Link>
+        <div className="px-5 py-2.5">
+          <DevAccountSwitcher />
+        </div>
       </div>
 
       {/* Bottom nav bar */}
