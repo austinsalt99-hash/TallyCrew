@@ -1,4 +1,3 @@
-// src/app/admin/calendar/components/PlanEventModal.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -31,6 +30,7 @@ export default function PlanEventModal({ open, onClose, onSave, initialType, ini
 
   useEffect(() => {
     if (!open) return;
+    setSaving(false);
     if (editEvent) {
       setForm({
         title: editEvent.title,
@@ -53,17 +53,24 @@ export default function PlanEventModal({ open, onClose, onSave, initialType, ini
   async function handleSave() {
     if (!form.title.trim() || !form.date) return;
     setSaving(true);
-    const method = editEvent ? "PUT" : "POST";
-    const body = editEvent ? { id: editEvent.id, ...form } : form;
-    const res = await fetch("/api/admin/plan-events", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(body),
-    });
-    const saved = await res.json();
-    onSave(saved);
-    setSaving(false);
+    try {
+      const method = editEvent ? "PUT" : "POST";
+      const body = editEvent ? { id: editEvent.id, ...form } : form;
+      const res = await fetch("/api/admin/plan-events", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        setSaving(false);
+        return;
+      }
+      const saved = await res.json();
+      onSave(saved);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const typeConfig = EVENT_TYPES[form.event_type];
