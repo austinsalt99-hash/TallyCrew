@@ -1,6 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import CrewBoard from "./components/CrewBoard";
+import WorkloadView from "./components/WorkloadView";
+import AvailabilityGrid from "./components/AvailabilityGrid";
+import MyPlanView from "./components/MyPlanView";
+import { ALL_TYPE_CONFIGS, PlanEvent, UnifiedEventType } from "./constants/eventTypes";
+import ScheduleSidebar from "./components/ScheduleSidebar";
+import PlanEventModal from "./components/PlanEventModal";
 
 interface JobEvent {
   id: string;
@@ -13,6 +20,30 @@ interface JobEvent {
   end_time: string;
   assigned_to: string;
   is_verified: boolean;
+}
+
+interface UnifiedEvent {
+  id: string;
+  source: "job" | "plan";
+  type: UnifiedEventType;
+  date: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  // job-only
+  client?: string;
+  location?: string;
+  assigned_to?: string;
+  is_verified?: boolean;
+  // plan-only
+  description?: string;
+}
+
+interface Worker {
+  id: string;
+  full_name: string;
+  role: string;
+  hourly_wage?: number | null;
 }
 
 interface BillableSubEntry {
@@ -60,7 +91,8 @@ interface LinkedSubmission {
   billable_entries: LinkedBillableEntry[];
 }
 
-type CalView = "month" | "week" | "day";
+type CalTab = "schedule" | "crew" | "availability" | "workload" | "plan";
+type CalView = "month" | "week" | "day" | "list";
 
 function getDisplayItems(entry: LinkedBillableEntry, generalHrs: string): DisplayItem[] {
   const items: DisplayItem[] = [];
@@ -169,6 +201,24 @@ function dayDiff(a: Date, b: Date): number {
   return Math.round((da.getTime() - db.getTime()) / 86400000);
 }
 
+function generateRecurrenceDates(startDate: string, recurrence: string, until: string): string[] {
+  const dates: string[] = [];
+  const [y, m, d] = startDate.split("-").map(Number);
+  const [uy, um, ud] = until.split("-").map(Number);
+  const untilDate = new Date(uy, um - 1, ud);
+  let current = new Date(y, m - 1, d);
+  while (current <= untilDate && dates.length < 365) {
+    dates.push(fmt(current));
+    const next = new Date(current);
+    if (recurrence === "daily") next.setDate(next.getDate() + 1);
+    else if (recurrence === "weekly") next.setDate(next.getDate() + 7);
+    else if (recurrence === "biweekly") next.setDate(next.getDate() + 14);
+    else if (recurrence === "monthly") next.setMonth(next.getMonth() + 1);
+    current = next;
+  }
+  return dates;
+}
+
 const EMPTY_FORM = {
   date: "",
   title: "",
@@ -179,6 +229,8 @@ const EMPTY_FORM = {
   end_time: "",
   assigned_to: "",
   is_verified: true as boolean,
+  recurrence: "" as "" | "daily" | "weekly" | "biweekly" | "monthly",
+  repeat_until: "",
 };
 
 const START_HOUR = 6;
@@ -211,7 +263,7 @@ function fmt(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
-function layoutEvents(evs: JobEvent[]): { ev: JobEvent; col: number; totalCols: number }[] {
+function layoutEvents(evs: UnifiedEvent[]): { ev: UnifiedEvent; col: number; totalCols: number }[] {
   const sorted = [...evs].sort((a, b) => toDecimalHour(a.start_time) - toDecimalHour(b.start_time));
   const cols = new Array(sorted.length).fill(0);
   for (let i = 0; i < sorted.length; i++) {
@@ -260,7 +312,16 @@ function toDecimalHour(t: string): number {
   return h + m / 60;
 }
 
+const CAL_TAB_LABELS: Record<CalTab, string> = {
+  schedule: "Schedule",
+  crew: "Crew Board",
+  availability: "Availability",
+  workload: "Workload",
+  plan: "My Plan",
+};
+
 export default function AdminCalendar() {
+  const [calTab, setCalTab] = useState<CalTab>("schedule");
   const [weekOffset, setWeekOffset] = useState(0);
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -268,6 +329,7 @@ export default function AdminCalendar() {
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<JobEvent | null>(null);
+  const [panelForm, setPanelForm] = useState(EMPTY_FORM);
   const [linkedLogs, setLinkedLogs] = useState<LinkedSubmission[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState<string[]>([]);
@@ -280,6 +342,19 @@ export default function AdminCalendar() {
   const [dayOffset, setDayOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
 
+  const [filterEmployee, setFilterEmployee] = useState("");
+  const [filterStatus, setFilterStatus] = useState<"all" | "verified" | "unverified">("all");
+  const [planEvents, setPlanEvents] = useState<PlanEvent[]>([]);
+  const [visibleTypes, setVisibleTypes] = useState<Set<string>>(
+    new Set(["job", "draft-job", "meeting", "site-visit", "task", "reminder", "note"])
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [planModalType, setPlanModalType] = useState<string>("task");
+  const [planModalDate, setPlanModalDate] = useState<string>("");
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const isDraggingRef = useRef(false);
+
   const weekDates = getWeekDates(weekOffset);
   const from = fmt(weekDates[0]);
   const to = fmt(weekDates[6]);
@@ -290,7 +365,7 @@ export default function AdminCalendar() {
   const monthDays = getMonthDays(monthOffset);
 
   let fetchFrom: string, fetchTo: string;
-  if (calView === "week") {
+  if (calView === "week" || calView === "list") {
     fetchFrom = from; fetchTo = to;
   } else if (calView === "day") {
     fetchFrom = fetchTo = fmt(dayDate);
@@ -299,14 +374,50 @@ export default function AdminCalendar() {
     fetchTo = fmt(monthDays[monthDays.length - 1]);
   }
 
+  const workerNames = workers.filter((w) => w.role === "worker").map((w) => w.full_name);
+  const isPanelDirty = !!selectedEvent && JSON.stringify(panelForm) !== JSON.stringify(eventToForm(selectedEvent));
+
+  const filteredJobEvents = events.filter((ev) => {
+    if (filterEmployee && !ev.assigned_to?.toLowerCase().includes(filterEmployee.toLowerCase())) return false;
+    if (filterStatus === "verified" && ev.is_verified === false) return false;
+    if (filterStatus === "unverified" && ev.is_verified !== false) return false;
+    return true;
+  });
+
+  const unifiedEvents: UnifiedEvent[] = [
+    ...filteredJobEvents.map((ev): UnifiedEvent => ({
+      id: ev.id,
+      source: "job",
+      type: ev.is_verified === false ? "draft-job" : "job",
+      date: ev.date,
+      title: ev.title,
+      start_time: ev.start_time ?? "",
+      end_time: ev.end_time ?? "",
+      client: ev.client,
+      location: ev.location,
+      assigned_to: ev.assigned_to,
+      is_verified: ev.is_verified,
+    })),
+    ...planEvents.map((ev): UnifiedEvent => ({
+      id: ev.id,
+      source: "plan",
+      type: ev.event_type,
+      date: ev.date,
+      title: ev.title,
+      start_time: ev.start_time ?? "",
+      end_time: ev.end_time ?? "",
+      description: ev.description,
+    })),
+  ].filter((ev) => visibleTypes.has(ev.type));
+
   function goBack() {
-    if (calView === "week") setWeekOffset((o) => o - 1);
+    if (calView === "week" || calView === "list") setWeekOffset((o) => o - 1);
     else if (calView === "day") setDayOffset((o) => o - 1);
     else setMonthOffset((o) => o - 1);
   }
 
   function goForward() {
-    if (calView === "week") setWeekOffset((o) => o + 1);
+    if (calView === "week" || calView === "list") setWeekOffset((o) => o + 1);
     else if (calView === "day") setDayOffset((o) => o + 1);
     else setMonthOffset((o) => o + 1);
   }
@@ -315,6 +426,25 @@ export default function AdminCalendar() {
     setWeekOffset(0);
     setDayOffset(0);
     setMonthOffset(0);
+  }
+
+  function handleQuickAdd(type: string) {
+    if (type === "job") {
+      openNew(calView === "day" ? fmt(dayDate) : "");
+    } else {
+      setPlanModalType(type);
+      setPlanModalDate(calView === "day" ? fmt(dayDate) : fmt(new Date()));
+      setPlanModalOpen(true);
+    }
+  }
+
+  function handleToggleType(type: string) {
+    setVisibleTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
   }
 
   const showTodayBtn = weekOffset !== 0 || dayOffset !== 0 || monthOffset !== 0;
@@ -335,10 +465,24 @@ export default function AdminCalendar() {
   }
 
   useEffect(() => {
+    if (calTab !== "schedule") return;
     fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`)
       .then((r) => r.json())
       .then((data) => setEvents(Array.isArray(data) ? data : []));
-  }, [fetchFrom, fetchTo]);
+  }, [fetchFrom, fetchTo, calTab]);
+
+  useEffect(() => {
+    if (calTab !== "schedule") return;
+    fetch(`/api/admin/plan-events?from=${fetchFrom}&to=${fetchTo}`, { credentials: "include" })
+      .then((r) => { if (!r.ok) return []; return r.json(); })
+      .then((data) => setPlanEvents(Array.isArray(data) ? data : []));
+  }, [fetchFrom, fetchTo, calTab]);
+
+  useEffect(() => {
+    fetch("/api/admin/workers", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setWorkers(Array.isArray(data) ? data : []));
+  }, []);
 
   useEffect(() => {
     setExpandedLogs([]);
@@ -354,14 +498,15 @@ export default function AdminCalendar() {
     setExpandedLogs((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   }
 
-  function openNew(date = "", startTime = "") {
-    setForm({ ...EMPTY_FORM, date, start_time: startTime, is_verified: true });
+  function openNew(date = "", startTime = "", assignedTo = "") {
+    setForm({ ...EMPTY_FORM, date, start_time: startTime, assigned_to: assignedTo, is_verified: true });
     setEditId(null);
     setShowForm(true);
   }
 
-  function openEdit(ev: JobEvent) {
-    setForm({
+  function eventToForm(ev: JobEvent) {
+    return {
+      ...EMPTY_FORM,
       date: ev.date,
       title: ev.title,
       client: ev.client ?? "",
@@ -371,12 +516,28 @@ export default function AdminCalendar() {
       end_time: ev.end_time ?? "",
       assigned_to: ev.assigned_to ?? "",
       is_verified: ev.is_verified !== false,
-    });
-    setEditId(ev.id);
-    setShowForm(true);
+    };
+  }
+
+  async function selectEvent(ev: UnifiedEvent) {
+    if (ev.source !== "job") return;
+    const jobEv = ev as unknown as JobEvent;
+    if (selectedEvent && selectedEvent.id !== ev.id && isPanelDirty) {
+      await handleSavePanel(false);
+    }
+    setSelectedEvent(jobEv);
+    setPanelForm(eventToForm(jobEv));
+  }
+
+  async function closePanel() {
+    if (selectedEvent && isPanelDirty) {
+      await handleSavePanel(false);
+    }
+    setSelectedEvent(null);
   }
 
   function handleGridClick(dateStr: string, e: React.MouseEvent<HTMLDivElement>) {
+    if (isDraggingRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const relY = e.clientY - rect.top;
     const decimalHour = relY / HOUR_HEIGHT + START_HOUR;
@@ -387,17 +548,80 @@ export default function AdminCalendar() {
     openNew(dateStr, `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
   }
 
+  function handleDragStart(e: React.DragEvent, ev: UnifiedEvent) {
+    isDraggingRef.current = true;
+    e.dataTransfer.setData("eventId", ev.id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  async function handleDrop(dateStr: string, e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const eventId = e.dataTransfer.getData("eventId");
+    if (!eventId) { isDraggingRef.current = false; return; }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    const decimalHour = Math.max(START_HOUR, Math.min(relY / HOUR_HEIGHT + START_HOUR, END_HOUR - 0.5));
+    const hour = Math.floor(decimalHour);
+    const rawMin = Math.round(((decimalHour - hour) * 60) / 15) * 15;
+    const h = rawMin >= 60 ? hour + 1 : hour;
+    const m = rawMin >= 60 ? 0 : rawMin;
+    const newStartTime = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev) { isDraggingRef.current = false; return; }
+
+    let newEndTime = ev.end_time;
+    if (ev.start_time && ev.end_time) {
+      const duration = toDecimalHour(ev.end_time) - toDecimalHour(ev.start_time);
+      const newEndDecimal = toDecimalHour(newStartTime) + duration;
+      const newEndH = Math.floor(newEndDecimal);
+      const newEndM = Math.round((newEndDecimal - newEndH) * 60);
+      newEndTime = `${String(Math.min(newEndH, 23)).padStart(2, "0")}:${String(Math.min(newEndM, 59)).padStart(2, "0")}`;
+    }
+
+    setEvents((prev) => prev.map((e) =>
+      e.id === eventId ? { ...e, date: dateStr, start_time: newStartTime, end_time: newEndTime ?? e.end_time } : e
+    ));
+
+    await fetch("/api/events", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id: eventId, date: dateStr, start_time: newStartTime, end_time: newEndTime }),
+    });
+
+    setTimeout(() => { isDraggingRef.current = false; }, 100);
+  }
+
   async function handleSave() {
     if (!form.title || !form.date) return;
     setSaving(true);
-    const method = editId ? "PUT" : "POST";
-    const body = editId ? { id: editId, ...form } : form;
-    await fetch("/api/events", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(body),
-    });
+
+    if (!editId && form.recurrence && form.repeat_until) {
+      const dates = generateRecurrenceDates(form.date, form.recurrence, form.repeat_until);
+      const { recurrence: _r, repeat_until: _u, ...basePayload } = form;
+      for (const d of dates) {
+        await fetch("/api/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ ...basePayload, date: d }),
+        });
+      }
+    } else {
+      const { recurrence: _r, repeat_until: _u, ...payload } = form;
+      const method = editId ? "PUT" : "POST";
+      const body = editId ? { id: editId, ...payload } : payload;
+      await fetch("/api/events", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+    }
+
     const res = await fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`);
     setEvents(await res.json());
     setShowForm(false);
@@ -416,15 +640,25 @@ export default function AdminCalendar() {
     setSelectedEvent(null);
   }
 
-  async function handleVerify(id: string) {
+  async function handleSavePanel(markVerified = false) {
+    if (!selectedEvent) return;
+    setSaving(true);
+    const { recurrence: _r, repeat_until: _u, ...payload } = panelForm;
+    const body = { id: selectedEvent.id, ...payload, ...(markVerified ? { is_verified: true } : {}) };
     await fetch("/api/events", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ id, is_verified: true }),
+      body: JSON.stringify(body),
     });
-    setEvents((prev) => prev.map((e) => e.id === id ? { ...e, is_verified: true } : e));
-    setSelectedEvent((prev) => prev?.id === id ? { ...prev, is_verified: true } : prev);
+    const res = await fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`);
+    const data = await res.json();
+    const list: JobEvent[] = Array.isArray(data) ? data : [];
+    setEvents(list);
+    const fresh = list.find((e) => e.id === selectedEvent.id) ?? null;
+    setSelectedEvent(fresh);
+    if (fresh) setPanelForm(eventToForm(fresh));
+    setSaving(false);
   }
 
   function handleVoiceToggle() {
@@ -470,6 +704,7 @@ export default function AdminCalendar() {
         const parsed = await res.json();
         if (parsed.error) throw new Error(parsed.error);
         setForm({
+          ...EMPTY_FORM,
           date: parsed.date ?? "",
           title: parsed.title ?? "",
           client: parsed.client ?? "",
@@ -527,7 +762,7 @@ export default function AdminCalendar() {
           </div>
           {dates.map((date) => {
             const dateStr = fmt(date);
-            const dayEvents = events.filter((e) => e.date === dateStr && e.start_time);
+            const dayEvents = unifiedEvents.filter((e) => e.date === dateStr && e.start_time);
             const isToday = dateStr === todayStr;
             return (
               <div
@@ -535,6 +770,8 @@ export default function AdminCalendar() {
                 className={`flex-1 relative border-l border-gray-100 cursor-crosshair ${isToday ? "bg-navy-50/20" : ""}`}
                 style={{ height: totalHeight }}
                 onClick={(e) => handleGridClick(dateStr, e)}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                onDrop={(e) => handleDrop(dateStr, e)}
               >
                 {HOUR_LABELS.map((_, i) => (
                   <div key={i} className="absolute left-0 right-0 border-t border-gray-100" style={{ top: i * HOUR_HEIGHT }} />
@@ -554,14 +791,16 @@ export default function AdminCalendar() {
                   return (
                     <div
                       key={ev.id}
-                      className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 cursor-pointer transition-all ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-90"}`}
+                      draggable
+                      className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 cursor-grab active:cursor-grabbing transition-all ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-90"}`}
                       style={{
                         top: top + 2, height,
                         left: `calc(${leftPct}% + 2px)`,
                         width: `calc(${widthPct}% - 4px)`,
                         backgroundColor: isUnverified ? "#9ca3af" : "#3b82f6",
                       }}
-                      onClick={(e) => { e.stopPropagation(); setSelectedEvent(ev); }}
+                      onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, ev); }}
+                      onClick={(e) => { e.stopPropagation(); if (!isDraggingRef.current) selectEvent(ev); }}
                     >
                       <p className="text-white text-xs font-bold leading-tight truncate">{ev.title}</p>
                       {ev.client && height > 38 && <p className="text-white/80 text-xs truncate">{ev.client}</p>}
@@ -582,386 +821,588 @@ export default function AdminCalendar() {
     );
   }
 
-  return (
-    <div>
-      {/* Top bar */}
-      <div className="mb-3">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={goBack}
-              className="w-9 h-9 rounded-full border border-gray-300 hover:bg-gray-100 flex items-center justify-center text-gray-600 text-xl"
-            >‹</button>
-            <h1 className="text-xl font-bold text-gray-900">{getNavLabel()}</h1>
-            <button
-              onClick={goForward}
-              className="w-9 h-9 rounded-full border border-gray-300 hover:bg-gray-100 flex items-center justify-center text-gray-600 text-xl"
-            >›</button>
-            {showTodayBtn && (
-              <button onClick={goToday} className="text-sm font-semibold text-navy-600 underline">
-                Today
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleVoiceToggle}
-              disabled={parsing}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                listening
-                  ? "bg-red-500 hover:bg-red-600 text-white"
-                  : parsing
-                  ? "border border-gray-200 text-gray-400 cursor-not-allowed"
-                  : "border border-gray-300 text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                <line x1="12" y1="19" x2="12" y2="23"/>
-                <line x1="8" y1="23" x2="16" y2="23"/>
-              </svg>
-              {listening ? "Stop" : parsing ? "Parsing…" : "Voice"}
-            </button>
-            <button
-              onClick={() => openNew(calView === "day" ? fmt(dayDate) : "")}
-              className="bg-navy-600 hover:bg-navy-700 text-white font-semibold px-4 py-2 rounded-xl text-sm"
-            >
-              + Add Job
-            </button>
-          </div>
+  function renderListView() {
+    const dateGroups: Record<string, UnifiedEvent[]> = {};
+    for (const ev of unifiedEvents) {
+      if (!dateGroups[ev.date]) dateGroups[ev.date] = [];
+      dateGroups[ev.date].push(ev);
+    }
+    const sortedDates = Object.keys(dateGroups).sort();
+
+    if (sortedDates.length === 0) {
+      return (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 text-center">
+          <p className="text-sm text-gray-400">No jobs scheduled for this period.</p>
         </div>
+      );
+    }
 
-        {/* View toggle */}
-        <div className="flex bg-gray-100 rounded-xl p-1">
-          {(["month", "week", "day"] as CalView[]).map((v) => (
-            <button
-              key={v}
-              onClick={() => setCalView(v)}
-              className={`flex-1 py-1.5 text-xs font-semibold rounded-lg capitalize transition-colors ${
-                calView === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {v.charAt(0).toUpperCase() + v.slice(1)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Voice status bar */}
-      {(listening || parsing) && (
-        <div className="mb-4 px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 flex items-center gap-3">
-          <div className={`w-2 h-2 rounded-full shrink-0 ${listening ? "bg-red-500 animate-pulse" : "bg-navy-500 animate-pulse"}`} />
-          <p className="text-sm text-gray-600 flex-1 italic truncate">
-            {parsing ? "Parsing with AI…" : transcript ? `"${transcript}"` : "Listening… speak now"}
-          </p>
-        </div>
-      )}
-
-      {/* Calendar + Details split layout */}
-      <div className={`flex flex-col ${selectedEvent ? "md:flex-row md:gap-4 md:items-start" : ""}`}>
-
-        {/* Calendar section */}
-        <div className={selectedEvent ? "md:w-1/2" : ""}>
-
-          {/* MONTH VIEW */}
-          {calView === "month" && (
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="grid grid-cols-7 border-b border-gray-200">
-                {DAY_NAMES.map((d) => (
-                  <div key={d} className="py-2 text-center text-xs font-semibold text-gray-400">{d}</div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7">
-                {(() => {
-                  const displayedMonth = new Date(
-                    new Date().getFullYear(), new Date().getMonth() + monthOffset, 1
-                  ).getMonth();
-                  return monthDays.map((date, idx) => {
-                    const dateStr = fmt(date);
-                    const isCurrentMonth = date.getMonth() === displayedMonth;
-                    const isToday = dateStr === todayStr;
-                    const dayEvents = events.filter((e) => e.date === dateStr);
-                    return (
-                      <div
-                        key={dateStr}
-                        onClick={() => { setDayOffset(dayDiff(date, new Date())); setCalView("day"); }}
-                        className={`min-h-[72px] p-1 border-t border-gray-100 cursor-pointer active:bg-gray-100 hover:bg-gray-50 transition-colors ${
-                          !isCurrentMonth ? "bg-gray-50/60" : ""
-                        } ${idx % 7 !== 6 ? "border-r border-gray-100" : ""}`}
-                      >
-                        <div className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full mb-1 ${
-                          isToday ? "bg-navy-600 text-white" : isCurrentMonth ? "text-gray-800" : "text-gray-300"
-                        }`}>
-                          {date.getDate()}
-                        </div>
-                        {dayEvents.slice(0, 2).map((ev) => (
-                          <div
-                            key={ev.id}
-                            onClick={(e) => { e.stopPropagation(); setSelectedEvent(ev); }}
-                            className="text-[9px] leading-tight text-white px-1 py-0.5 rounded mb-0.5 truncate"
-                            style={{ backgroundColor: ev.is_verified === false ? "#9ca3af" : "#3b82f6" }}
-                          >
-                            {ev.title}
-                          </div>
-                        ))}
-                        {dayEvents.length > 2 && (
-                          <div className="text-[9px] text-gray-400 px-0.5">+{dayEvents.length - 2}</div>
-                        )}
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
+    return (
+      <div className="space-y-3">
+        {sortedDates.map((dateStr) => (
+          <div key={dateStr} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">{formatDate(dateStr)}</p>
             </div>
-          )}
-
-          {/* WEEK VIEW */}
-          {calView === "week" && (
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <div style={{ minWidth: 640 }}>
-                  <div className="flex border-b border-gray-200" style={{ paddingLeft: 56 }}>
-                    {weekDates.map((date, i) => {
-                      const dateStr = fmt(date);
-                      const isToday = dateStr === todayStr;
-                      return (
-                        <div key={dateStr} className={`flex-1 py-3 text-center border-l border-gray-100 ${isToday ? "bg-navy-50" : ""}`}>
-                          <div className={`text-xs font-semibold uppercase tracking-wider ${isToday ? "text-navy-500" : "text-gray-400"}`}>
-                            {DAY_NAMES[i]}
-                          </div>
-                          <div className={`text-2xl font-extrabold leading-tight mt-0.5 ${isToday ? "text-navy-600" : "text-gray-800"}`}>
-                            {date.getDate()}
-                          </div>
-                          <div className={`text-xs mt-0.5 ${isToday ? "text-navy-400" : "text-gray-400"}`}>
-                            {MONTHS[date.getMonth()]}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {renderTimeGrid(weekDates)}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* DAY VIEW */}
-          {calView === "day" && (
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-              {(() => {
-                const dateStr = fmt(dayDate);
-                const isToday = dateStr === todayStr;
-                return (
-                  <>
-                    <div className={`py-3 text-center border-b border-gray-200 ${isToday ? "bg-navy-50" : ""}`}>
-                      <div className={`text-xs font-semibold uppercase tracking-wider ${isToday ? "text-navy-500" : "text-gray-400"}`}>
-                        {dayDate.toLocaleDateString("en-US", { weekday: "long" })}
-                      </div>
-                      <div className={`text-2xl font-extrabold leading-tight mt-0.5 ${isToday ? "text-navy-600" : "text-gray-800"}`}>
-                        {dayDate.getDate()}
-                      </div>
-                      <div className={`text-xs mt-0.5 ${isToday ? "text-navy-400" : "text-gray-400"}`}>
-                        {MONTHS[dayDate.getMonth()]} {dayDate.getFullYear()}
-                      </div>
-                    </div>
-                    {renderTimeGrid([dayDate])}
-                  </>
-                );
-              })()}
-            </div>
-          )}
-
-        </div>
-
-        {/* Details panel */}
-        {selectedEvent && (
-          <div className="mt-4 md:mt-0 md:w-1/2 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-
-            {selectedEvent.is_verified === false && (
-              <div className="px-5 py-3 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="12" y1="8" x2="12" y2="12"/>
-                  <line x1="12" y1="16" x2="12.01" y2="16"/>
-                </svg>
-                <p className="text-xs font-semibold text-amber-700">Unverified AI draft — review details before confirming</p>
-              </div>
-            )}
-
-            <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
-              <div>
-                <p className="text-xs font-semibold text-navy-600 uppercase tracking-wide mb-0.5">Job Details</p>
-                <h2 className="text-lg font-bold text-gray-900 leading-snug">{selectedEvent.title}</h2>
-              </div>
-              <button
-                onClick={() => setSelectedEvent(null)}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 flex-shrink-0 mt-0.5"
-              >
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="12" y2="12"/><line x1="12" y1="1" x2="1" y2="12"/></svg>
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              {selectedEvent.date && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Date</p>
-                  <p className="text-sm text-gray-800">{formatDate(selectedEvent.date)}</p>
-                </div>
-              )}
-              {(selectedEvent.start_time || selectedEvent.end_time) && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Time</p>
-                  <p className="text-sm text-gray-800">
-                    {formatTime(selectedEvent.start_time)}{selectedEvent.end_time ? ` – ${formatTime(selectedEvent.end_time)}` : ""}
-                  </p>
-                </div>
-              )}
-              {selectedEvent.client && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Client</p>
-                  <p className="text-sm text-gray-800">{selectedEvent.client}</p>
-                </div>
-              )}
-              {selectedEvent.location && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Location</p>
-                  <p className="text-sm text-gray-800">{selectedEvent.location}</p>
-                </div>
-              )}
-              {selectedEvent.assigned_to && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Assigned to</p>
-                  <p className="text-sm text-gray-800">{selectedEvent.assigned_to}</p>
-                </div>
-              )}
-              {selectedEvent.description && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Notes</p>
-                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{selectedEvent.description}</p>
-                </div>
-              )}
-
-              <div className="border-t border-gray-100 pt-4">
-                {(() => {
-                  const totalDecimal = linkedLogs.reduce((sum, log) => {
-                    const e = log.billable_entries.find((e) => e.linkedEventId === selectedEvent.id);
-                    return sum + calcHrsDecimal(e?.startTime, e?.endTime, e?.manualHours);
-                  }, 0);
-                  const totalStr = fmtDecimalHrs(totalDecimal);
+            <div className="divide-y divide-gray-100">
+              {dateGroups[dateStr]
+                .sort((a, b) => toDecimalHour(a.start_time) - toDecimalHour(b.start_time))
+                .map((ev) => {
+                  const isSelected = selectedEvent?.id === ev.id;
+                  const isUnverified = ev.is_verified === false;
                   return (
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs font-semibold text-navy-600 uppercase tracking-wide">Linked Hour Logs</p>
-                      {!loadingLogs && totalStr && (
-                        <span className="text-xs font-semibold text-navy-700 bg-navy-50 px-2 py-0.5 rounded-full">
-                          {totalStr} total
-                        </span>
+                    <div
+                      key={ev.id}
+                      onClick={() => (isSelected ? closePanel() : selectEvent(ev))}
+                      className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"}`}
+                    >
+                      <div
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: isUnverified ? "#9ca3af" : "#3b82f6" }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{ev.title}</p>
+                          {isUnverified && (
+                            <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">Draft</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {ev.start_time && (
+                            <span className="text-xs text-gray-400">
+                              {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
+                            </span>
+                          )}
+                          {ev.client && <span className="text-xs text-gray-400">· {ev.client}</span>}
+                          {ev.assigned_to && <span className="text-xs text-gray-400">· {ev.assigned_to}</span>}
+                        </div>
+                      </div>
+                      {ev.location && (
+                        <span className="text-xs text-gray-400 shrink-0 hidden sm:block truncate max-w-[120px]">{ev.location}</span>
                       )}
                     </div>
                   );
-                })()}
-                {loadingLogs ? (
-                  <p className="text-xs text-gray-400">Loading…</p>
-                ) : linkedLogs.length === 0 ? (
-                  <p className="text-xs text-gray-400">No employee logs linked to this job yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {linkedLogs.map((log) => {
-                      const entry = log.billable_entries.find((e) => e.linkedEventId === selectedEvent.id);
-                      if (!entry) return null;
-                      const hrs = calcHrs(entry.startTime, entry.endTime, entry.manualHours);
-                      const items = getDisplayItems(entry, hrs);
-                      const isExpanded = expandedLogs.includes(log.id);
-                      const hasDetails = items.length > 0;
-                      return (
-                        <div key={log.id} className="bg-gray-50 rounded-xl overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={() => hasDetails && toggleLog(log.id)}
-                            className={`w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors ${hasDetails ? "hover:bg-gray-100 cursor-pointer" : "cursor-default"}`}
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-sm font-semibold text-gray-900 truncate">{log.employee_name}</span>
-                              <span className="text-xs text-gray-400 shrink-0">{fmtShortDate(log.date)}</span>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {hrs && <span className="text-xs font-semibold text-navy-600">{hrs}</span>}
-                              {hasDetails && <span className="text-gray-400 text-[10px]">{isExpanded ? "▲" : "▼"}</span>}
-                            </div>
-                          </button>
-                          {isExpanded && (
-                            <div className="px-3 pb-3 pt-2 space-y-1.5 border-t border-gray-200">
-                              {items.map((item, ii) => (
-                                <div key={ii} className="flex items-start gap-2">
-                                  <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${item.slug === "standard" ? "bg-navy-100 text-navy-700" : "bg-indigo-100 text-indigo-700"}`}>
-                                    {item.slug === "standard" ? "General" : slugLabel(item.slug)}
-                                    {item.hrs ? ` · ${item.hrs}` : ""}
-                                  </span>
-                                  <span className="text-xs text-gray-600">
-                                    {item.slug === "standard"
-                                      ? [item.client, item.description].filter(Boolean).join(" — ")
-                                      : (item.fields ?? []).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", ")}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                })}
             </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
-            <div className="flex gap-2 px-5 py-4 border-t border-gray-100">
-              {selectedEvent.is_verified === false ? (
-                <>
-                  <button
-                    onClick={() => handleVerify(selectedEvent.id)}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors"
-                  >
-                    Verify
-                  </button>
-                  <button
-                    onClick={() => { openEdit(selectedEvent); setSelectedEvent(null); }}
-                    className="flex-1 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-xl py-2.5 text-sm font-semibold transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(selectedEvent.id)}
-                    className="px-4 border border-red-200 text-red-500 hover:bg-red-50 rounded-xl py-2.5 text-sm font-semibold transition-colors"
-                  >
-                    Delete
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => { openEdit(selectedEvent); setSelectedEvent(null); }}
-                    className="flex-1 bg-navy-600 hover:bg-navy-700 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(selectedEvent.id)}
-                    className="px-5 border border-red-200 text-red-500 hover:bg-red-50 rounded-xl py-2.5 text-sm font-semibold transition-colors"
-                  >
-                    Delete
-                  </button>
-                </>
-              )}
-            </div>
+  function renderDetailsPanel() {
+    if (!selectedEvent) return null;
+    return (
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full">
+        {selectedEvent.is_verified === false && (
+          <div className="px-5 py-3 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <p className="text-xs font-semibold text-amber-700">Unverified AI draft — review details before confirming</p>
           </div>
         )}
 
+        <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100 gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <p className="text-xs font-semibold text-navy-600 uppercase tracking-wide">Job Details</p>
+              {saving && <span className="text-xs text-gray-400">Saving…</span>}
+            </div>
+            <input
+              type="text"
+              value={panelForm.title}
+              onChange={(e) => setPanelForm({ ...panelForm, title: e.target.value })}
+              placeholder="Job title"
+              className="w-full text-lg font-bold text-gray-900 leading-snug border-0 p-0 focus:outline-none focus:ring-0 bg-transparent"
+            />
+          </div>
+          <button
+            onClick={closePanel}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 flex-shrink-0 mt-0.5"
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="12" y2="12"/><line x1="12" y1="1" x2="1" y2="12"/></svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Date</label>
+            <input
+              type="date"
+              value={panelForm.date}
+              onChange={(e) => setPanelForm({ ...panelForm, date: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Start time</label>
+              <input
+                type="time"
+                value={panelForm.start_time}
+                onChange={(e) => setPanelForm({ ...panelForm, start_time: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">End time</label>
+              <input
+                type="time"
+                value={panelForm.end_time}
+                onChange={(e) => setPanelForm({ ...panelForm, end_time: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Client</label>
+            <input
+              type="text"
+              value={panelForm.client}
+              onChange={(e) => setPanelForm({ ...panelForm, client: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Location</label>
+            <input
+              type="text"
+              value={panelForm.location}
+              onChange={(e) => setPanelForm({ ...panelForm, location: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Assigned to</label>
+            <input
+              type="text"
+              placeholder="Employee name(s)"
+              value={panelForm.assigned_to}
+              list="worker-names-list-panel"
+              onChange={(e) => setPanelForm({ ...panelForm, assigned_to: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+            />
+            <datalist id="worker-names-list-panel">
+              {workerNames.map((name) => <option key={name} value={name} />)}
+            </datalist>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Notes</label>
+            <textarea
+              rows={3}
+              value={panelForm.description}
+              onChange={(e) => setPanelForm({ ...panelForm, description: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 resize-none"
+            />
+          </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            {(() => {
+              const totalDecimal = linkedLogs.reduce((sum, log) => {
+                const e = log.billable_entries.find((e) => e.linkedEventId === selectedEvent.id);
+                return sum + calcHrsDecimal(e?.startTime, e?.endTime, e?.manualHours);
+              }, 0);
+              const totalStr = fmtDecimalHrs(totalDecimal);
+              return (
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-navy-600 uppercase tracking-wide">Linked Hour Logs</p>
+                  {!loadingLogs && totalStr && (
+                    <span className="text-xs font-semibold text-navy-700 bg-navy-50 px-2 py-0.5 rounded-full">
+                      {totalStr} total
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+            {loadingLogs ? (
+              <p className="text-xs text-gray-400">Loading…</p>
+            ) : linkedLogs.length === 0 ? (
+              <p className="text-xs text-gray-400">No employee logs linked to this job yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {linkedLogs.map((log) => {
+                  const entry = log.billable_entries.find((e) => e.linkedEventId === selectedEvent.id);
+                  if (!entry) return null;
+                  const hrs = calcHrs(entry.startTime, entry.endTime, entry.manualHours);
+                  const items = getDisplayItems(entry, hrs);
+                  const isExpanded = expandedLogs.includes(log.id);
+                  const hasDetails = items.length > 0;
+                  return (
+                    <div key={log.id} className="bg-gray-50 rounded-xl overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => hasDetails && toggleLog(log.id)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors ${hasDetails ? "hover:bg-gray-100 cursor-pointer" : "cursor-default"}`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm font-semibold text-gray-900 truncate">{log.employee_name}</span>
+                          <span className="text-xs text-gray-400 shrink-0">{fmtShortDate(log.date)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {hrs && <span className="text-xs font-semibold text-navy-600">{hrs}</span>}
+                          {hasDetails && <span className="text-gray-400 text-[10px]">{isExpanded ? "▲" : "▼"}</span>}
+                        </div>
+                      </button>
+                      {isExpanded && (
+                        <div className="px-3 pb-3 pt-2 space-y-1.5 border-t border-gray-200">
+                          {items.map((item, ii) => (
+                            <div key={ii} className="flex items-start gap-2">
+                              <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${item.slug === "standard" ? "bg-navy-100 text-navy-700" : "bg-indigo-100 text-indigo-700"}`}>
+                                {item.slug === "standard" ? "General" : slugLabel(item.slug)}
+                                {item.hrs ? ` · ${item.hrs}` : ""}
+                              </span>
+                              <span className="text-xs text-gray-600">
+                                {item.slug === "standard"
+                                  ? [item.client, item.description].filter(Boolean).join(" — ")
+                                  : (item.fields ?? []).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", ")}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2 px-5 py-4 border-t border-gray-100">
+          {selectedEvent.is_verified === false && (
+            <button
+              onClick={() => handleSavePanel(true)}
+              disabled={saving}
+              className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors"
+            >
+              Verify
+            </button>
+          )}
+          <button
+            onClick={() => handleDelete(selectedEvent.id)}
+            className={`border border-red-200 text-red-500 hover:bg-red-50 rounded-xl py-2.5 text-sm font-semibold transition-colors ${selectedEvent.is_verified === false ? "px-4" : "flex-1"}`}
+          >
+            Delete
+          </button>
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Main section tab bar */}
+      <div className="flex bg-gray-100 rounded-2xl p-1 mb-4">
+        {(["schedule", "crew", "availability", "workload", "plan"] as CalTab[]).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => { setCalTab(tab); closePanel(); }}
+            className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-colors ${
+              calTab === tab ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <span className="hidden sm:inline">{CAL_TAB_LABELS[tab]}</span>
+            <span className="sm:hidden">{tab === "crew" ? "Crew" : tab === "availability" ? "Avail." : tab === "plan" ? "Plan" : CAL_TAB_LABELS[tab]}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── SCHEDULE TAB ── */}
+      {calTab === "schedule" && (
+        <div>
+          <div className="mb-3 space-y-2">
+            {/* Nav + action buttons */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={goBack}
+                  className="w-9 h-9 rounded-full border border-gray-300 hover:bg-gray-100 flex items-center justify-center text-gray-600 text-xl"
+                >‹</button>
+                <h1 className="text-xl font-bold text-gray-900">{getNavLabel()}</h1>
+                <button
+                  onClick={goForward}
+                  className="w-9 h-9 rounded-full border border-gray-300 hover:bg-gray-100 flex items-center justify-center text-gray-600 text-xl"
+                >›</button>
+                {showTodayBtn && (
+                  <button onClick={goToday} className="text-sm font-semibold text-navy-600 underline">
+                    Today
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleVoiceToggle}
+                  disabled={parsing}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                    listening
+                      ? "bg-red-500 hover:bg-red-600 text-white"
+                      : parsing
+                      ? "border border-gray-200 text-gray-400 cursor-not-allowed"
+                      : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                  </svg>
+                  {listening ? "Stop" : parsing ? "Parsing…" : "Voice"}
+                </button>
+                <button
+                  onClick={() => openNew(calView === "day" ? fmt(dayDate) : "")}
+                  className="bg-navy-600 hover:bg-navy-700 text-white font-semibold px-4 py-2 rounded-xl text-sm"
+                >
+                  + Add Job
+                </button>
+              </div>
+            </div>
+
+            {/* View toggle */}
+            <div className="flex bg-gray-100 rounded-xl p-1">
+              {(["month", "week", "day", "list"] as CalView[]).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setCalView(v)}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg capitalize transition-colors ${
+                    calView === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            {/* Filter bar */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={filterEmployee}
+                onChange={(e) => setFilterEmployee(e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-navy-400 max-w-[160px]"
+              >
+                <option value="">All Employees</option>
+                {workerNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                {(["all", "verified", "unverified"] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setFilterStatus(s)}
+                    className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                      filterStatus === s ? "bg-navy-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
+                    }`}
+                  >
+                    {s === "all" ? "All" : s === "verified" ? "Active" : "Drafts"}
+                  </button>
+                ))}
+              </div>
+              {(filterEmployee || filterStatus !== "all") && (
+                <button
+                  onClick={() => { setFilterEmployee(""); setFilterStatus("all"); }}
+                  className="text-xs text-gray-400 hover:text-gray-600 font-medium"
+                >
+                  Clear
+                </button>
+              )}
+              {unifiedEvents.length !== events.length && (
+                <span className="text-xs text-gray-400">{unifiedEvents.length} of {events.length} jobs</span>
+              )}
+            </div>
+          </div>
+
+          {/* Voice status bar */}
+          {(listening || parsing) && (
+            <div className="mb-4 px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 flex items-center gap-3">
+              <div className={`w-2 h-2 rounded-full shrink-0 ${listening ? "bg-red-500 animate-pulse" : "bg-navy-500 animate-pulse"}`} />
+              <p className="text-sm text-gray-600 flex-1 italic truncate">
+                {parsing ? "Parsing with AI…" : transcript ? `"${transcript}"` : "Listening… speak now"}
+              </p>
+            </div>
+          )}
+
+          {/* Calendar + Details split layout */}
+          <div className={`flex flex-col ${selectedEvent ? "md:flex-row md:gap-4 md:items-start" : ""}`}>
+            <div className={selectedEvent ? "md:w-1/2" : ""}>
+
+              {/* MONTH VIEW */}
+              {calView === "month" && (
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="grid grid-cols-7 border-b border-gray-200">
+                    {DAY_NAMES.map((d) => (
+                      <div key={d} className="py-2 text-center text-xs font-semibold text-gray-400">{d}</div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7">
+                    {(() => {
+                      const displayedMonth = new Date(
+                        new Date().getFullYear(), new Date().getMonth() + monthOffset, 1
+                      ).getMonth();
+                      return monthDays.map((date, idx) => {
+                        const dateStr = fmt(date);
+                        const isCurrentMonth = date.getMonth() === displayedMonth;
+                        const isToday = dateStr === todayStr;
+                        const dayEvents = unifiedEvents.filter((e) => e.date === dateStr);
+                        return (
+                          <div
+                            key={dateStr}
+                            onClick={() => { setDayOffset(dayDiff(date, new Date())); setCalView("day"); }}
+                            className={`min-h-[72px] p-1 border-t border-gray-100 cursor-pointer active:bg-gray-100 hover:bg-gray-50 transition-colors ${
+                              !isCurrentMonth ? "bg-gray-50/60" : ""
+                            } ${idx % 7 !== 6 ? "border-r border-gray-100" : ""}`}
+                          >
+                            <div className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full mb-1 ${
+                              isToday ? "bg-navy-600 text-white" : isCurrentMonth ? "text-gray-800" : "text-gray-300"
+                            }`}>
+                              {date.getDate()}
+                            </div>
+                            {dayEvents.slice(0, 2).map((ev) => (
+                              <div
+                                key={ev.id}
+                                onClick={(e) => { e.stopPropagation(); selectEvent(ev); }}
+                                className="text-[9px] leading-tight text-white px-1 py-0.5 rounded mb-0.5 truncate"
+                                style={{ backgroundColor: ev.is_verified === false ? "#9ca3af" : "#3b82f6" }}
+                              >
+                                {ev.title}
+                              </div>
+                            ))}
+                            {dayEvents.length > 2 && (
+                              <div className="text-[9px] text-gray-400 px-0.5">+{dayEvents.length - 2}</div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* WEEK VIEW */}
+              {calView === "week" && (
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <div style={{ minWidth: 640 }}>
+                      <div className="flex border-b border-gray-200" style={{ paddingLeft: 56 }}>
+                        {weekDates.map((date, i) => {
+                          const dateStr = fmt(date);
+                          const isToday = dateStr === todayStr;
+                          return (
+                            <div key={dateStr} className={`flex-1 py-3 text-center border-l border-gray-100 ${isToday ? "bg-navy-50" : ""}`}>
+                              <div className={`text-xs font-semibold uppercase tracking-wider ${isToday ? "text-navy-500" : "text-gray-400"}`}>
+                                {DAY_NAMES[i]}
+                              </div>
+                              <div className={`text-2xl font-extrabold leading-tight mt-0.5 ${isToday ? "text-navy-600" : "text-gray-800"}`}>
+                                {date.getDate()}
+                              </div>
+                              <div className={`text-xs mt-0.5 ${isToday ? "text-navy-400" : "text-gray-400"}`}>
+                                {MONTHS[date.getMonth()]}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {renderTimeGrid(weekDates)}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* DAY VIEW */}
+              {calView === "day" && (
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  {(() => {
+                    const dateStr = fmt(dayDate);
+                    const isToday = dateStr === todayStr;
+                    return (
+                      <>
+                        <div className={`py-3 text-center border-b border-gray-200 ${isToday ? "bg-navy-50" : ""}`}>
+                          <div className={`text-xs font-semibold uppercase tracking-wider ${isToday ? "text-navy-500" : "text-gray-400"}`}>
+                            {dayDate.toLocaleDateString("en-US", { weekday: "long" })}
+                          </div>
+                          <div className={`text-2xl font-extrabold leading-tight mt-0.5 ${isToday ? "text-navy-600" : "text-gray-800"}`}>
+                            {dayDate.getDate()}
+                          </div>
+                          <div className={`text-xs mt-0.5 ${isToday ? "text-navy-400" : "text-gray-400"}`}>
+                            {MONTHS[dayDate.getMonth()]} {dayDate.getFullYear()}
+                          </div>
+                        </div>
+                        {renderTimeGrid([dayDate])}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* LIST VIEW */}
+              {calView === "list" && renderListView()}
+            </div>
+
+            {/* Details panel (side panel on schedule tab) */}
+            {selectedEvent && (
+              <div className="mt-4 md:mt-0 md:w-1/2">
+                {renderDetailsPanel()}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── CREW BOARD TAB ── */}
+      {calTab === "crew" && (
+        <CrewBoard
+          onAddJob={(date, assignedTo) => openNew(date, "", assignedTo)}
+          onSelectEvent={(ev) => {
+            const jobEv = ev as JobEvent;
+            const unified: UnifiedEvent = {
+              id: jobEv.id,
+              source: "job",
+              type: jobEv.is_verified === false ? "draft-job" : "job",
+              date: jobEv.date,
+              title: jobEv.title,
+              start_time: jobEv.start_time ?? "",
+              end_time: jobEv.end_time ?? "",
+              client: jobEv.client,
+              location: jobEv.location,
+              assigned_to: jobEv.assigned_to,
+              is_verified: jobEv.is_verified,
+            };
+            selectEvent(unified);
+          }}
+        />
+      )}
+
+      {/* ── AVAILABILITY TAB ── */}
+      {calTab === "availability" && <AvailabilityGrid />}
+
+      {/* ── WORKLOAD TAB ── */}
+      {calTab === "workload" && <WorkloadView />}
+
+      {/* ── MY PLAN TAB ── */}
+      {calTab === "plan" && <MyPlanView />}
+
+      {/* Details modal for non-schedule tabs */}
+      {selectedEvent && calTab !== "schedule" && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-40 p-0 sm:p-4"
+          onClick={closePanel}
+        >
+          <div
+            className="w-full sm:max-w-md max-h-[85vh] overflow-auto rounded-t-2xl sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {renderDetailsPanel()}
+          </div>
+        </div>
+      )}
 
       {/* Add / Edit modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-lg font-bold text-gray-900">{editId ? "Edit Job" : "Add Job"}</h2>
 
             {!form.is_verified && (
@@ -1008,23 +1449,74 @@ export default function AdminCalendar() {
               </div>
               <div className="col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">Assigned to</label>
-                <input type="text" placeholder="Employee name(s)" value={form.assigned_to} onChange={(e) => setForm({ ...form, assigned_to: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
+                <input
+                  type="text"
+                  placeholder="Employee name(s)"
+                  value={form.assigned_to}
+                  list="worker-names-list"
+                  onChange={(e) => setForm({ ...form, assigned_to: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+                />
+                <datalist id="worker-names-list">
+                  {workerNames.map((name) => <option key={name} value={name} />)}
+                </datalist>
               </div>
               <div className="col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">Notes</label>
                 <textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 resize-none" />
               </div>
+
+              {/* Recurring options (new jobs only) */}
+              {!editId && (
+                <>
+                  <div className="col-span-2">
+                    <label className="block text-xs text-gray-500 mb-1">Repeats</label>
+                    <select
+                      value={form.recurrence}
+                      onChange={(e) => setForm({ ...form, recurrence: e.target.value as typeof form.recurrence })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
+                    >
+                      <option value="">Does not repeat</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="biweekly">Every 2 weeks</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                  {form.recurrence && (
+                    <div className="col-span-2">
+                      <label className="block text-xs text-gray-500 mb-1">Repeat until *</label>
+                      <input
+                        type="date"
+                        value={form.repeat_until}
+                        min={form.date}
+                        onChange={(e) => setForm({ ...form, repeat_until: e.target.value })}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+                      />
+                      {form.date && form.repeat_until && form.recurrence && (
+                        <p className="text-xs text-navy-600 mt-1 font-medium">
+                          Creates {generateRecurrenceDates(form.date, form.recurrence, form.repeat_until).length} job{generateRecurrenceDates(form.date, form.recurrence, form.repeat_until).length !== 1 ? "s" : ""}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="flex gap-3 pt-1">
               <button onClick={() => setShowForm(false)} className="flex-1 border border-gray-300 rounded-xl py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving || !form.title || !form.date}
-                className="flex-1 bg-navy-600 hover:bg-navy-700 disabled:bg-navy-400 text-white rounded-xl py-2.5 text-sm font-bold">
-                {saving ? "Saving…" : form.is_verified ? "Save" : "Save as Draft"}
+              <button
+                onClick={handleSave}
+                disabled={saving || !form.title || !form.date || (!!form.recurrence && !form.repeat_until)}
+                className="flex-1 bg-navy-600 hover:bg-navy-700 disabled:bg-navy-400 text-white rounded-xl py-2.5 text-sm font-bold"
+              >
+                {saving ? "Saving…" : form.recurrence && form.repeat_until
+                  ? `Create ${generateRecurrenceDates(form.date || "2000-01-01", form.recurrence, form.repeat_until).length} Jobs`
+                  : form.is_verified ? "Save" : "Save as Draft"}
               </button>
             </div>
           </div>
