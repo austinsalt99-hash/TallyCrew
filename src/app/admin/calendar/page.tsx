@@ -312,6 +312,30 @@ function toDecimalHour(t: string): number {
   return h + m / 60;
 }
 
+function getEventStyle(type: string): { color: string; bg: string } {
+  return ALL_TYPE_CONFIGS[type] ?? { color: "#3b82f6", bg: "#eff6ff" };
+}
+
+// SVG path data for type icons (12×12 viewport)
+const TYPE_ICON_PATHS: Record<string, string> = {
+  job:          "M2 7h20v14H2zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
+  "draft-job":  "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2",
+  meeting:      "M3 4h18v18H3zM16 2v4M8 2v4M3 10h18",
+  "site-visit": "M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z M12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+  task:         "M9 11l3 3L22 4 M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
+  reminder:     "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0",
+  note:         "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8",
+};
+
+function EventTypeIcon({ type, color }: { type: string; color: string }) {
+  const paths = TYPE_ICON_PATHS[type]?.split(" M ").flatMap((p, i) => i === 0 ? [p] : ["M " + p]) ?? [];
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+      {paths.map((d, i) => <path key={i} d={d} />)}
+    </svg>
+  );
+}
+
 const CAL_TAB_LABELS: Record<CalTab, string> = {
   schedule: "Schedule",
   crew: "Crew Board",
@@ -785,31 +809,45 @@ export default function AdminCalendar() {
                   const top = (clampedStart - START_HOUR) * HOUR_HEIGHT;
                   const height = Math.max((clampedEnd - clampedStart) * HOUR_HEIGHT - 4, 22);
                   const isSelected = selectedEvent?.id === ev.id;
-                  const isUnverified = ev.is_verified === false;
                   const leftPct = (col / totalCols) * 100;
                   const widthPct = (1 / totalCols) * 100;
+                  const { color, bg } = getEventStyle(ev.type);
                   return (
                     <div
                       key={ev.id}
-                      draggable
-                      className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 cursor-grab active:cursor-grabbing transition-all ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-90"}`}
+                      draggable={ev.source === "job"}
+                      className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 transition-all border-l-4 ${ev.source === "job" ? "cursor-grab active:cursor-grabbing" : "cursor-default"} ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-95"}`}
                       style={{
                         top: top + 2, height,
                         left: `calc(${leftPct}% + 2px)`,
                         width: `calc(${widthPct}% - 4px)`,
-                        backgroundColor: isUnverified ? "#9ca3af" : "#3b82f6",
+                        backgroundColor: bg,
+                        borderLeftColor: color,
                       }}
-                      onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, ev); }}
-                      onClick={(e) => { e.stopPropagation(); if (!isDraggingRef.current) selectEvent(ev); }}
+                      onDragStart={ev.source === "job" ? (e) => { e.stopPropagation(); handleDragStart(e, ev); } : undefined}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!isDraggingRef.current && ev.source === "job") {
+                          const original = events.find((j) => j.id === ev.id);
+                          if (original) selectEvent(ev);
+                        }
+                      }}
                     >
-                      <p className="text-white text-xs font-bold leading-tight truncate">{ev.title}</p>
-                      {ev.client && height > 38 && <p className="text-white/80 text-xs truncate">{ev.client}</p>}
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <EventTypeIcon type={ev.type} color={color} />
+                        <p className="text-xs font-bold leading-tight truncate" style={{ color }}>{ev.title}</p>
+                      </div>
+                      {ev.client && height > 38 && (
+                        <p className="text-xs truncate" style={{ color, opacity: 0.7 }}>{ev.client}</p>
+                      )}
                       {height > 54 && ev.start_time && (
-                        <p className="text-white/70 text-xs">
+                        <p className="text-xs" style={{ color, opacity: 0.6 }}>
                           {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
                         </p>
                       )}
-                      {isUnverified && height > 30 && <p className="text-white/70 text-[10px] font-medium mt-0.5">Unverified</p>}
+                      {ev.type === "draft-job" && height > 30 && (
+                        <p className="text-[10px] font-medium mt-0.5" style={{ color, opacity: 0.7 }}>Draft</p>
+                      )}
                     </div>
                   );
                 })}
@@ -849,21 +887,24 @@ export default function AdminCalendar() {
                 .sort((a, b) => toDecimalHour(a.start_time) - toDecimalHour(b.start_time))
                 .map((ev) => {
                   const isSelected = selectedEvent?.id === ev.id;
-                  const isUnverified = ev.is_verified === false;
                   return (
                     <div
                       key={ev.id}
-                      onClick={() => (isSelected ? closePanel() : selectEvent(ev))}
-                      className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"}`}
+                      onClick={() => {
+                        if (ev.source !== "job") return;
+                        const original = events.find((j) => j.id === ev.id);
+                        if (original) isSelected ? closePanel() : selectEvent(ev);
+                      }}
+                      className={`flex items-center gap-3 px-4 py-3 transition-colors ${ev.source === "job" ? "cursor-pointer" : "cursor-default"} ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"}`}
                     >
                       <div
                         className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: isUnverified ? "#9ca3af" : "#3b82f6" }}
+                        style={{ backgroundColor: getEventStyle(ev.type).color }}
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-gray-900 truncate">{ev.title}</p>
-                          {isUnverified && (
+                          {ev.type === "draft-job" && (
                             <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">Draft</span>
                           )}
                         </div>
@@ -873,8 +914,14 @@ export default function AdminCalendar() {
                               {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
                             </span>
                           )}
-                          {ev.client && <span className="text-xs text-gray-400">· {ev.client}</span>}
-                          {ev.assigned_to && <span className="text-xs text-gray-400">· {ev.assigned_to}</span>}
+                          {ev.source === "plan" ? (
+                            <span className="text-xs text-gray-400 capitalize">{ALL_TYPE_CONFIGS[ev.type]?.label}</span>
+                          ) : (
+                            <>
+                              {ev.client && <span className="text-xs text-gray-400">· {ev.client}</span>}
+                              {ev.assigned_to && <span className="text-xs text-gray-400">· {ev.assigned_to}</span>}
+                            </>
+                          )}
                         </div>
                       </div>
                       {ev.location && (
@@ -1238,16 +1285,25 @@ export default function AdminCalendar() {
                             }`}>
                               {date.getDate()}
                             </div>
-                            {dayEvents.slice(0, 2).map((ev) => (
-                              <div
-                                key={ev.id}
-                                onClick={(e) => { e.stopPropagation(); selectEvent(ev); }}
-                                className="text-[9px] leading-tight text-white px-1 py-0.5 rounded mb-0.5 truncate"
-                                style={{ backgroundColor: ev.is_verified === false ? "#9ca3af" : "#3b82f6" }}
-                              >
-                                {ev.title}
-                              </div>
-                            ))}
+                            {dayEvents.slice(0, 2).map((ev) => {
+                              const { color, bg } = getEventStyle(ev.type);
+                              return (
+                                <div
+                                  key={ev.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (ev.source === "job") {
+                                      const original = events.find((j) => j.id === ev.id);
+                                      if (original) selectEvent(ev);
+                                    }
+                                  }}
+                                  className="flex items-center gap-0.5 text-[9px] leading-tight px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer"
+                                  style={{ backgroundColor: bg, borderLeft: `2px solid ${color}` }}
+                                >
+                                  <span className="truncate font-medium" style={{ color }}>{ev.title}</span>
+                                </div>
+                              );
+                            })}
                             {dayEvents.length > 2 && (
                               <div className="text-[9px] text-gray-400 px-0.5">+{dayEvents.length - 2}</div>
                             )}
