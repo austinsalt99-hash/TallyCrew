@@ -1176,43 +1176,6 @@ export default function AdminCalendar() {
               ))}
             </div>
 
-            {/* Filter bar */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <select
-                value={filterEmployee}
-                onChange={(e) => setFilterEmployee(e.target.value)}
-                className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-navy-400 max-w-[160px]"
-              >
-                <option value="">All Employees</option>
-                {workerNames.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-                {(["all", "verified", "unverified"] as const).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setFilterStatus(s)}
-                    className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                      filterStatus === s ? "bg-navy-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
-                    }`}
-                  >
-                    {s === "all" ? "All" : s === "verified" ? "Active" : "Drafts"}
-                  </button>
-                ))}
-              </div>
-              {(filterEmployee || filterStatus !== "all") && (
-                <button
-                  onClick={() => { setFilterEmployee(""); setFilterStatus("all"); }}
-                  className="text-xs text-gray-400 hover:text-gray-600 font-medium"
-                >
-                  Clear
-                </button>
-              )}
-              {unifiedEvents.length !== events.length && (
-                <span className="text-xs text-gray-400">{unifiedEvents.length} of {events.length} jobs</span>
-              )}
-            </div>
           </div>
 
           {/* Voice status bar */}
@@ -1225,9 +1188,24 @@ export default function AdminCalendar() {
             </div>
           )}
 
-          {/* Calendar + Details split layout */}
-          <div className={`flex flex-col ${selectedEvent ? "md:flex-row md:gap-4 md:items-start" : ""}`}>
-            <div className={selectedEvent ? "md:w-1/2" : ""}>
+          {/* Sidebar + Calendar + Details */}
+          <div className="flex gap-3 items-start">
+            <ScheduleSidebar
+              visibleTypes={visibleTypes}
+              onToggleType={handleToggleType}
+              filterEmployee={filterEmployee}
+              onEmployeeFilterChange={setFilterEmployee}
+              filterStatus={filterStatus}
+              onStatusFilterChange={setFilterStatus}
+              workerNames={workerNames}
+              onQuickAdd={handleQuickAdd}
+              isCollapsed={sidebarCollapsed}
+              onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
+            />
+            <div className="flex-1 min-w-0">
+              {/* Calendar + Details split layout */}
+              <div className={`flex flex-col ${selectedEvent ? "md:flex-row md:gap-4 md:items-start" : ""}`}>
+                <div className={selectedEvent ? "md:w-1/2" : ""}>
 
               {/* MONTH VIEW */}
               {calView === "month" && (
@@ -1341,12 +1319,14 @@ export default function AdminCalendar() {
               {calView === "list" && renderListView()}
             </div>
 
-            {/* Details panel (side panel on schedule tab) */}
-            {selectedEvent && (
-              <div className="mt-4 md:mt-0 md:w-1/2">
-                {renderDetailsPanel()}
+                {/* Details panel (side panel on schedule tab) */}
+                {selectedEvent && (
+                  <div className="mt-4 md:mt-0 md:w-1/2">
+                    {renderDetailsPanel()}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}
@@ -1398,6 +1378,18 @@ export default function AdminCalendar() {
           </div>
         </div>
       )}
+
+      {/* Plan event quick-add modal (for Schedule tab Quick Add) */}
+      <PlanEventModal
+        open={planModalOpen}
+        onClose={() => setPlanModalOpen(false)}
+        onSave={(saved) => {
+          setPlanEvents((prev) => [...prev, saved]);
+          setPlanModalOpen(false);
+        }}
+        initialType={planModalType as import("./constants/eventTypes").EventType}
+        initialDate={planModalDate}
+      />
 
       {/* Add / Edit modal */}
       {showForm && (
