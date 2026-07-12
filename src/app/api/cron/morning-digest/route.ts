@@ -29,8 +29,7 @@ function getTodayInTimezone(timezone: string): string {
 function formatTime(time: string | null): string {
   if (!time) return "";
   const [h, m] = time.split(":").map(Number);
-  const d = new Date();
-  d.setHours(h, m, 0, 0);
+  const d = new Date(2000, 0, 1, h, m, 0, 0);
   return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
@@ -99,8 +98,12 @@ export async function GET(request: Request) {
       });
       if (overflow > 0) parts.push(`…and ${overflow} more`);
 
-      await sendToUser(worker.id, "Your jobs for today", parts.join(", "));
-      sent++;
+      try {
+        await sendToUser(worker.id, "Your jobs for today", parts.join(", "));
+        sent++;
+      } catch (err) {
+        console.error("[cron] sendToUser error:", err);
+      }
     }
   }
 
