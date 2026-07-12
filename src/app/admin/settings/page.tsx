@@ -91,6 +91,9 @@ export default function AdminSettingsPage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [companyTimezone, setCompanyTimezone] = useState("America/Toronto");
+  const [tzSaving, setTzSaving] = useState(false);
+  const [tzSaved, setTzSaved] = useState(false);
 
   // Crop state
   const [stage, setStage] = useState<UploadStage>("idle");
@@ -110,7 +113,7 @@ export default function AdminSettingsPage() {
         .from("profiles").select("full_name, role, company_id, created_at").eq("id", user.id).single();
       if (!profileData) { setLoading(false); return; }
       const { data: company } = await supabase
-        .from("companies").select("name, banner_url").eq("id", profileData.company_id).single();
+        .from("companies").select("name, banner_url, timezone").eq("id", profileData.company_id).single();
       setProfile({
         email: user.email ?? "",
         fullName: profileData.full_name,
@@ -122,6 +125,7 @@ export default function AdminSettingsPage() {
         }),
       });
       setBannerUrl(company?.banner_url ?? null);
+      setCompanyTimezone(company?.timezone ?? "America/Toronto");
       setLoading(false);
     }
     load();
@@ -208,11 +212,76 @@ export default function AdminSettingsPage() {
 
   // ── Section: General ──────────────────────────────────────────────────────
   if (activeSection === "general") {
+    const TIMEZONE_OPTIONS = [
+      { label: "Newfoundland (NST/NDT)", value: "America/St_Johns" },
+      { label: "Atlantic (AST/ADT)", value: "America/Halifax" },
+      { label: "Eastern (EST/EDT)", value: "America/Toronto" },
+      { label: "Central (CST/CDT)", value: "America/Winnipeg" },
+      { label: "Mountain (MST/MDT)", value: "America/Edmonton" },
+      { label: "Pacific (PST/PDT)", value: "America/Vancouver" },
+      { label: "Alaska (AKST/AKDT)", value: "America/Anchorage" },
+      { label: "Hawaii (HST)", value: "Pacific/Honolulu" },
+      { label: "Eastern US (EST/EDT)", value: "America/New_York" },
+      { label: "Central US (CST/CDT)", value: "America/Chicago" },
+      { label: "Mountain US (MST/MDT)", value: "America/Denver" },
+      { label: "Pacific US (PST/PDT)", value: "America/Los_Angeles" },
+      { label: "UTC", value: "UTC" },
+      { label: "London (GMT/BST)", value: "Europe/London" },
+      { label: "Paris (CET/CEST)", value: "Europe/Paris" },
+      { label: "Dubai (GST)", value: "Asia/Dubai" },
+      { label: "Singapore (SGT)", value: "Asia/Singapore" },
+      { label: "Sydney (AEST/AEDT)", value: "Australia/Sydney" },
+    ];
+
+    async function saveTimezone() {
+      setTzSaving(true);
+      setTzSaved(false);
+      try {
+        const res = await fetch("/api/company", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ timezone: companyTimezone }),
+        });
+        if (res.ok) setTzSaved(true);
+      } finally {
+        setTzSaving(false);
+      }
+    }
+
     return (
       <div className="max-w-lg mx-auto">
-        <BackHeader title="General" onBack={() => setActiveSection(null)} />
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-          <p className="text-sm text-gray-400">More options coming soon.</p>
+        <BackHeader title="General" onBack={() => { setTzSaved(false); setActiveSection(null); }} />
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-900 mb-0.5">Company Timezone</p>
+            <p className="text-xs text-gray-400">Used to schedule the 7:00 AM daily job digest notification.</p>
+          </div>
+          <select
+            value={companyTimezone}
+            onChange={(e) => { setCompanyTimezone(e.target.value); setTzSaved(false); }}
+            className="w-full border border-gray-300 rounded-xl px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {TIMEZONE_OPTIONS.map((tz) => (
+              <option key={tz.value} value={tz.value}>{tz.label}</option>
+            ))}
+          </select>
+          {tzSaved && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="7.5" cy="7.5" r="6.5"/><polyline points="4.5,7.5 6.5,9.5 10.5,5.5"/>
+              </svg>
+              <p className="text-xs text-green-700 font-medium">Timezone saved.</p>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={saveTimezone}
+            disabled={tzSaving}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-xl py-3 text-sm transition-colors"
+          >
+            {tzSaving ? "Saving…" : "Save Timezone"}
+          </button>
         </div>
       </div>
     );

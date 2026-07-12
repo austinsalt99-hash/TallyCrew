@@ -8,7 +8,7 @@ export async function GET() {
 
   const { data } = await supabase
     .from("companies")
-    .select("name, banner_url")
+    .select("name, banner_url, timezone")
     .eq("id", profile.company_id)
     .single();
 
@@ -22,11 +22,17 @@ export async function PATCH(req: Request) {
   if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
-  const { banner_url } = body;
+  const updates: Record<string, unknown> = {};
+  if (body.banner_url !== undefined) updates.banner_url = body.banner_url;
+  if (body.timezone !== undefined) updates.timezone = body.timezone;
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
 
   const { error } = await supabase
     .from("companies")
-    .update({ banner_url })
+    .update(updates)
     .eq("id", profile.company_id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
