@@ -66,6 +66,27 @@ function NavRow({ icon, iconBg, label, description, onClick }: {
 
 const BANNER_ASPECT = 3;
 
+const TIMEZONE_OPTIONS = [
+  { label: "Newfoundland (NST/NDT)", value: "America/St_Johns" },
+  { label: "Atlantic (AST/ADT)", value: "America/Halifax" },
+  { label: "Eastern (EST/EDT)", value: "America/Toronto" },
+  { label: "Central (CST/CDT)", value: "America/Winnipeg" },
+  { label: "Mountain (MST/MDT)", value: "America/Edmonton" },
+  { label: "Pacific (PST/PDT)", value: "America/Vancouver" },
+  { label: "Alaska (AKST/AKDT)", value: "America/Anchorage" },
+  { label: "Hawaii (HST)", value: "Pacific/Honolulu" },
+  { label: "Eastern US (EST/EDT)", value: "America/New_York" },
+  { label: "Central US (CST/CDT)", value: "America/Chicago" },
+  { label: "Mountain US (MST/MDT)", value: "America/Denver" },
+  { label: "Pacific US (PST/PDT)", value: "America/Los_Angeles" },
+  { label: "UTC", value: "UTC" },
+  { label: "London (GMT/BST)", value: "Europe/London" },
+  { label: "Paris (CET/CEST)", value: "Europe/Paris" },
+  { label: "Dubai (GST)", value: "Asia/Dubai" },
+  { label: "Singapore (SGT)", value: "Asia/Singapore" },
+  { label: "Sydney (AEST/AEDT)", value: "Australia/Sydney" },
+];
+
 function initCrop(width: number, height: number): Crop {
   return centerCrop(
     makeAspectCrop({ unit: "%", width: 100 }, BANNER_ASPECT, width, height),
@@ -152,6 +173,22 @@ export default function AdminSettingsPage() {
     setCrop(initCrop(width, height));
   }, []);
 
+  async function saveTimezone() {
+    setTzSaving(true);
+    setTzSaved(false);
+    try {
+      const res = await fetch("/api/company", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ timezone: companyTimezone }),
+      });
+      if (res.ok) setTzSaved(true);
+    } finally {
+      setTzSaving(false);
+    }
+  }
+
   async function handleUpload() {
     if (!completedCrop || !imgRef.current || !srcUrl) return;
     setStage("uploading");
@@ -212,43 +249,6 @@ export default function AdminSettingsPage() {
 
   // ── Section: General ──────────────────────────────────────────────────────
   if (activeSection === "general") {
-    const TIMEZONE_OPTIONS = [
-      { label: "Newfoundland (NST/NDT)", value: "America/St_Johns" },
-      { label: "Atlantic (AST/ADT)", value: "America/Halifax" },
-      { label: "Eastern (EST/EDT)", value: "America/Toronto" },
-      { label: "Central (CST/CDT)", value: "America/Winnipeg" },
-      { label: "Mountain (MST/MDT)", value: "America/Edmonton" },
-      { label: "Pacific (PST/PDT)", value: "America/Vancouver" },
-      { label: "Alaska (AKST/AKDT)", value: "America/Anchorage" },
-      { label: "Hawaii (HST)", value: "Pacific/Honolulu" },
-      { label: "Eastern US (EST/EDT)", value: "America/New_York" },
-      { label: "Central US (CST/CDT)", value: "America/Chicago" },
-      { label: "Mountain US (MST/MDT)", value: "America/Denver" },
-      { label: "Pacific US (PST/PDT)", value: "America/Los_Angeles" },
-      { label: "UTC", value: "UTC" },
-      { label: "London (GMT/BST)", value: "Europe/London" },
-      { label: "Paris (CET/CEST)", value: "Europe/Paris" },
-      { label: "Dubai (GST)", value: "Asia/Dubai" },
-      { label: "Singapore (SGT)", value: "Asia/Singapore" },
-      { label: "Sydney (AEST/AEDT)", value: "Australia/Sydney" },
-    ];
-
-    async function saveTimezone() {
-      setTzSaving(true);
-      setTzSaved(false);
-      try {
-        const res = await fetch("/api/company", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ timezone: companyTimezone }),
-        });
-        if (res.ok) setTzSaved(true);
-      } finally {
-        setTzSaving(false);
-      }
-    }
-
     return (
       <div className="max-w-lg mx-auto">
         <BackHeader title="General" onBack={() => { setTzSaved(false); setActiveSection(null); }} />
