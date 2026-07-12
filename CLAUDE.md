@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Skill Mode
+
+By default — skip ALL skill invocations (brainstorming, systematic-debugging, verification-before-completion, etc.) and respond or act directly.
+
+If a message starts with `big:` — use the full skills workflow (brainstorming, planning, verification, etc.) for that request.
+
 ## Commands
 
 ```bash
