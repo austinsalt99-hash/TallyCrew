@@ -32,12 +32,17 @@ export default function LoginPage() {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, company_id")
       .eq("id", user.id)
       .single();
 
     router.push(profile?.role === "admin" ? "/admin/dashboard" : "/");
     router.refresh();
+
+    if (profile?.company_id) {
+      const { identifyUser } = await import("@/lib/notifications");
+      identifyUser(user.id, profile.company_id).catch(console.error);
+    }
   };
 
   return (
