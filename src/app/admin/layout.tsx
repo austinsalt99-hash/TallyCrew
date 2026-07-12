@@ -13,6 +13,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const handleSignOut = async () => {
     const supabase = createSupabaseBrowser();
+    const { clearUser } = await import("@/lib/notifications");
+    await clearUser().catch(console.error);
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();
