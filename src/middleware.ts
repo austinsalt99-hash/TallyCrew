@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isSubscriptionActive } from "@/lib/subscription";
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -56,11 +57,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Admin routes require admin role
+  // Admin routes require admin role + active subscription
   if (pathname.startsWith("/admin") && user) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, company_id")
       .eq("id", user.id)
       .single();
 
@@ -68,6 +69,29 @@ export async function middleware(request: NextRequest) {
       const url = request.nextUrl.clone();
       url.pathname = "/";
       return NextResponse.redirect(url);
+    }
+
+    // Skip subscription check on the billing page itself so locked-out admins can still reach it
+    const isBillingPage = pathname === "/admin/billing";
+    if (!isBillingPage && profile.company_id) {
+      const { data: company } = await supabase
+        .from("companies")
+        .select("stripe_customer_id, subscription_status, subscription_period_end")
+        .eq("id", profile.company_id)
+        .single();
+
+      // Only gate companies that have gone through Stripe (grandfathered = no customer ID)
+      if (company?.stripe_customer_id) {
+        const allowed = isSubscriptionActive(
+          company.subscription_status ?? null,
+          company.subscription_period_end ?? null
+        );
+        if (!allowed) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/billing";
+          return NextResponse.redirect(url);
+        }
+      }
     }
   }
 

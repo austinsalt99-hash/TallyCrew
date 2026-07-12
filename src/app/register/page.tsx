@@ -64,7 +64,7 @@ export default function RegisterPage() {
       return;
     }
 
-    router.push("/admin/dashboard");
+    router.push("/billing");
     router.refresh();
   };
 
