@@ -2,21 +2,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendToUser } from "@/lib/onesignal";
 
-function getHourInTimezone(timezone: string): number {
-  try {
-    return parseInt(
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: timezone,
-        hour: "numeric",
-        hour12: false,
-      }).format(new Date()),
-      10
-    );
-  } catch {
-    return -1;
-  }
-}
-
 function getTodayInTimezone(timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
@@ -54,9 +39,7 @@ export async function GET(request: Request) {
   let sent = 0;
 
   for (const company of companies) {
-    const timezone = company.timezone ?? "America/Toronto";
-
-    if (getHourInTimezone(timezone) !== 7) continue;
+    const timezone = company.timezone ?? "America/Vancouver";
 
     const today = getTodayInTimezone(timezone);
 
