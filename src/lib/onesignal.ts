@@ -8,7 +8,7 @@ async function send(payload: Record<string, unknown>): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Basic ${REST_KEY}`,
+        Authorization: `Key ${REST_KEY}`,
       },
       body: JSON.stringify({ app_id: APP_ID, ...payload }),
     });
