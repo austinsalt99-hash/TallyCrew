@@ -25,8 +25,8 @@ export default async function AdminBillingPage({
   let interval: string | null = null;
   if (company?.stripe_subscription_id) {
     try {
-      const { stripe } = await import("@/lib/stripe");
-      const sub = await stripe.subscriptions.retrieve(company.stripe_subscription_id, {
+      const { getStripe } = await import("@/lib/stripe");
+      const sub = await getStripe().subscriptions.retrieve(company.stripe_subscription_id, {
         expand: ["items.data.price"],
       });
       const price = sub.items.data[0]?.price;
