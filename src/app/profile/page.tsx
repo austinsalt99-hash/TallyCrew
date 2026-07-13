@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import BottomNav from "@/components/BottomNav";
 import DesktopHeader from "@/components/DesktopHeader";
@@ -25,6 +26,15 @@ function Field({ label, value }: { label: string; value: string }) {
 export default function ProfilePage() {
   const [data, setData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  async function handleSignOut() {
+    const supabase = createSupabaseBrowser();
+    const { clearUser } = await import("@/lib/notifications");
+    await clearUser().catch(console.error);
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
 
   useEffect(() => {
     async function load() {
@@ -92,6 +102,14 @@ export default function ProfilePage() {
               <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#F4A823" }}>Company</p>
               <Field label="Company name" value={data.companyName} />
             </div>
+
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="w-full bg-white border border-red-200 text-red-600 font-semibold rounded-2xl py-3.5 text-sm hover:bg-red-50 transition-colors"
+            >
+              Sign Out
+            </button>
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
