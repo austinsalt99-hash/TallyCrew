@@ -3,7 +3,7 @@ import "./globals.css";
 import NativeAppInit from "@/components/NativeAppInit";
 
 export const metadata: Metadata = {
-  title: "TallyCrew Daily Hours",
+  title: "TallyCrew",
   description: "Daily hour log for TallyCrew",
 };
 
