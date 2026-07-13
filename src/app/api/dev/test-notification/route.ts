@@ -14,28 +14,6 @@ export async function GET(request: Request) {
   const REST_KEY = process.env.ONESIGNAL_REST_API_KEY;
   if (!APP_ID || !REST_KEY) return NextResponse.json({ error: "Missing env vars" });
 
-  const { searchParams } = new URL(request.url);
-  const notifId = searchParams.get("check");
-
-  // Check existing notification status
-  if (notifId) {
-    const res = await fetch(`https://onesignal.com/api/v1/notifications/${notifId}?app_id=${APP_ID}`, {
-      headers: { Authorization: `Key ${REST_KEY}` },
-    });
-    const json = await res.json();
-    return NextResponse.json({
-      id: json.id,
-      successful: json.successful,
-      failed: json.failed,
-      errored: json.errored,
-      converted: json.converted,
-      remaining: json.remaining,
-      errors: json.errors,
-      platform_delivery_stats: json.platform_delivery_stats,
-    });
-  }
-
-  // Send direct notification and return ID to check
   const playersRes = await fetch(`https://onesignal.com/api/v1/players?app_id=${APP_ID}&limit=1`, {
     headers: { Authorization: `Key ${REST_KEY}` },
   });
@@ -56,20 +34,12 @@ export async function GET(request: Request) {
   const sendJson = await sendRes.json();
   const id = sendJson.id;
 
-  // Wait 3 seconds then check status
-  await sleep(3000);
+  await sleep(5000);
 
   const checkRes = await fetch(`https://onesignal.com/api/v1/notifications/${id}?app_id=${APP_ID}`, {
     headers: { Authorization: `Key ${REST_KEY}` },
   });
   const checkJson = await checkRes.json();
 
-  return NextResponse.json({
-    notification_id: id,
-    successful: checkJson.successful,
-    failed: checkJson.failed,
-    errored: checkJson.errored,
-    errors: checkJson.errors,
-    platform_delivery_stats: checkJson.platform_delivery_stats,
-  });
+  return NextResponse.json(checkJson);
 }
