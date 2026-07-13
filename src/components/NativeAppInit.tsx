@@ -6,9 +6,9 @@ import { createSupabaseBrowser } from "@/lib/supabase-browser";
 
 export default function NativeAppInit() {
   useEffect(() => {
-    initNativeApp();
+    async function init() {
+      await initNativeApp();
 
-    async function tryIdentify() {
       const supabase = createSupabaseBrowser();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -21,7 +21,7 @@ export default function NativeAppInit() {
       const { identifyUser } = await import("@/lib/notifications");
       await identifyUser(user.id, profile.company_id);
     }
-    tryIdentify().catch(console.error);
+    init().catch(console.error);
   }, []);
 
   return null;
