@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createSupabaseServer();
   const { user, profile } = await getSessionUser(supabase);
   if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -13,12 +13,23 @@ export async function GET() {
     return NextResponse.json({ error: "Missing env vars", APP_ID: !!APP_ID, REST_KEY: !!REST_KEY });
   }
 
-  const payload = {
-    app_id: APP_ID,
-    filters: [{ field: "tag", key: "company_id", relation: "=", value: profile.company_id }],
-    headings: { en: "Test notification" },
-    contents: { en: `Sent to company ${profile.company_id}` },
-  };
+  const { searchParams } = new URL(request.url);
+  const mode = searchParams.get("mode") ?? "tagged";
+
+  const payload =
+    mode === "all"
+      ? {
+          app_id: APP_ID,
+          included_segments: ["Total Subscriptions"],
+          headings: { en: "Test (all subscribers)" },
+          contents: { en: "If you see this, delivery works!" },
+        }
+      : {
+          app_id: APP_ID,
+          filters: [{ field: "tag", key: "company_id", relation: "=", value: profile.company_id }],
+          headings: { en: "Test (by company tag)" },
+          contents: { en: `company_id: ${profile.company_id}` },
+        };
 
   const res = await fetch("https://onesignal.com/api/v1/notifications", {
     method: "POST",
@@ -30,5 +41,5 @@ export async function GET() {
   });
 
   const json = await res.json();
-  return NextResponse.json({ status: res.status, response: json, company_id: profile.company_id });
+  return NextResponse.json({ mode, status: res.status, response: json, company_id: profile.company_id });
 }
