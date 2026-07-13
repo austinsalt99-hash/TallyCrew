@@ -14,32 +14,36 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const mode = searchParams.get("mode") ?? "tagged";
+  const mode = searchParams.get("mode") ?? "subscribers";
 
-  const payload =
-    mode === "all"
-      ? {
-          app_id: APP_ID,
-          included_segments: ["Total Subscriptions"],
-          headings: { en: "Test (all subscribers)" },
-          contents: { en: "If you see this, delivery works!" },
-        }
-      : {
-          app_id: APP_ID,
-          filters: [{ field: "tag", key: "company_id", relation: "=", value: profile.company_id }],
-          headings: { en: "Test (by company tag)" },
-          contents: { en: `company_id: ${profile.company_id}` },
-        };
+  if (mode === "subscribers") {
+    const res = await fetch(`https://onesignal.com/api/v1/players?app_id=${APP_ID}&limit=10`, {
+      headers: { Authorization: `Key ${REST_KEY}` },
+    });
+    const json = await res.json();
+    const simplified = (json.players ?? []).map((p: Record<string, unknown>) => ({
+      id: p.id,
+      device_type: p.device_type, // 0=iOS, 1=Android, 11=Chrome web
+      identifier: p.identifier ? "HAS_TOKEN" : "NO_TOKEN",
+      tags: p.tags,
+      external_user_id: p.external_user_id,
+      last_active: p.last_active,
+      invalid_identifier: p.invalid_identifier,
+    }));
+    return NextResponse.json({ total: json.total_count, players: simplified });
+  }
 
+  // Send to all
   const res = await fetch("https://onesignal.com/api/v1/notifications", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Key ${REST_KEY}`,
-    },
-    body: JSON.stringify(payload),
+    headers: { "Content-Type": "application/json", Authorization: `Key ${REST_KEY}` },
+    body: JSON.stringify({
+      app_id: APP_ID,
+      included_segments: ["Total Subscriptions"],
+      headings: { en: "Test" },
+      contents: { en: "Test notification" },
+    }),
   });
-
   const json = await res.json();
-  return NextResponse.json({ mode, status: res.status, response: json, company_id: profile.company_id });
+  return NextResponse.json({ status: res.status, response: json });
 }
