@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import DevAccountSwitcher from "@/components/DevAccountSwitcher";
+import { createSupabaseBrowser } from "@/lib/supabase-browser";
 
 const tabs = [
   {
@@ -44,7 +45,32 @@ const tabs = [
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [isDev, setIsDev] = useState(false);
+
+  useEffect(() => {
+    async function loadProfile() {
+      const supabase = createSupabaseBrowser();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_dev")
+        .eq("id", user.id)
+        .single();
+      if (profile?.is_dev) setIsDev(true);
+    }
+    loadProfile();
+  }, []);
+
+  async function handleSignOut() {
+    const supabase = createSupabaseBrowser();
+    const { clearUser } = await import("@/lib/notifications");
+    await clearUser().catch(console.error);
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
 
   return (
     <>
@@ -65,17 +91,34 @@ export default function BottomNav() {
           </svg>
           <span className="text-gray-800 font-medium text-sm whitespace-nowrap">Settings</span>
         </Link>
+        {isDev && (
+          <>
+            <div className="mx-5 border-t border-gray-100" />
+            <Link href="/admin" onClick={() => setMoreOpen(false)}
+              className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <span className="text-gray-800 font-medium text-sm whitespace-nowrap">Admin</span>
+            </Link>
+            <div className="px-5 py-2.5">
+              <DevAccountSwitcher />
+            </div>
+          </>
+        )}
         <div className="mx-5 border-t border-gray-100" />
-        <Link href="/admin" onClick={() => setMoreOpen(false)}
-          className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        <button
+          type="button"
+          onClick={() => { setMoreOpen(false); handleSignOut(); }}
+          className="flex items-center gap-3 px-5 py-3.5 hover:bg-red-50 active:bg-red-100 w-full text-left"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
           </svg>
-          <span className="text-gray-800 font-medium text-sm whitespace-nowrap">Admin</span>
-        </Link>
-        <div className="px-5 py-2.5">
-          <DevAccountSwitcher />
-        </div>
+          <span className="text-red-600 font-medium text-sm whitespace-nowrap">Sign Out</span>
+        </button>
       </div>
 
       {/* Bottom nav bar */}
