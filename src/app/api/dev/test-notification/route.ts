@@ -14,36 +14,47 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const mode = searchParams.get("mode") ?? "subscribers";
+  const mode = searchParams.get("mode") ?? "direct";
 
-  if (mode === "subscribers") {
-    const res = await fetch(`https://onesignal.com/api/v1/players?app_id=${APP_ID}&limit=10`, {
-      headers: { Authorization: `Key ${REST_KEY}` },
-    });
-    const json = await res.json();
-    const simplified = (json.players ?? []).map((p: Record<string, unknown>) => ({
-      id: p.id,
-      device_type: p.device_type, // 0=iOS, 1=Android, 11=Chrome web
-      identifier: p.identifier ? "HAS_TOKEN" : "NO_TOKEN",
-      tags: p.tags,
-      external_user_id: p.external_user_id,
-      last_active: p.last_active,
-      invalid_identifier: p.invalid_identifier,
-    }));
-    return NextResponse.json({ total: json.total_count, players: simplified });
-  }
+  // Fetch the first subscriber's player ID
+  const playersRes = await fetch(`https://onesignal.com/api/v1/players?app_id=${APP_ID}&limit=1`, {
+    headers: { Authorization: `Key ${REST_KEY}` },
+  });
+  const playersJson = await playersRes.json();
+  const player = playersJson.players?.[0];
 
-  // Send to all
+  if (!player) return NextResponse.json({ error: "No subscribers found" });
+
+  const payload =
+    mode === "external"
+      ? {
+          app_id: APP_ID,
+          include_external_user_ids: [player.external_user_id],
+          channel_for_external_user_ids: "push",
+          headings: { en: "Direct test (external ID)" },
+          contents: { en: "Testing by external user ID" },
+        }
+      : {
+          app_id: APP_ID,
+          include_player_ids: [player.id],
+          headings: { en: "Direct test (player ID)" },
+          contents: { en: "Testing by OneSignal player ID" },
+        };
+
   const res = await fetch("https://onesignal.com/api/v1/notifications", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Key ${REST_KEY}` },
-    body: JSON.stringify({
-      app_id: APP_ID,
-      included_segments: ["Total Subscriptions"],
-      headings: { en: "Test" },
-      contents: { en: "Test notification" },
-    }),
+    body: JSON.stringify(payload),
   });
+
   const json = await res.json();
-  return NextResponse.json({ status: res.status, response: json });
+  return NextResponse.json({
+    mode,
+    player_id: player.id,
+    external_user_id: player.external_user_id,
+    device_type: player.device_type,
+    invalid_identifier: player.invalid_identifier,
+    status: res.status,
+    response: json,
+  });
 }
