@@ -21,6 +21,12 @@ export async function GET(request: Request) {
   const player = playersJson.players?.[0];
   if (!player) return NextResponse.json({ error: "No subscribers" });
 
+  // Fetch full player details to check token type
+  const playerDetailRes = await fetch(`https://onesignal.com/api/v1/players/${player.id}?app_id=${APP_ID}`, {
+    headers: { Authorization: `Key ${REST_KEY}` },
+  });
+  const playerDetail = await playerDetailRes.json();
+
   const sendRes = await fetch("https://onesignal.com/api/v1/notifications", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Key ${REST_KEY}` },
@@ -41,5 +47,15 @@ export async function GET(request: Request) {
   });
   const checkJson = await checkRes.json();
 
-  return NextResponse.json(checkJson);
+  return NextResponse.json({
+    player: {
+      id: playerDetail.id,
+      device_type: playerDetail.device_type,
+      test_type: playerDetail.test_type, // 0=production, 1=sandbox
+      invalid_identifier: playerDetail.invalid_identifier,
+      tags: playerDetail.tags,
+      sdk: playerDetail.sdk,
+    },
+    notification: checkJson,
+  });
 }
