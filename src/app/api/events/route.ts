@@ -23,8 +23,14 @@ export async function GET(request: Request) {
     .eq("company_id", profile.company_id)
     .order("date")
     .order("start_time");
-  if (from) query = query.gte("date", from);
-  if (to) query = query.lte("date", to);
+  // Fetch events that overlap the requested range, including multi-day events
+  if (from && to) {
+    query = query.lte("date", to).or(`end_date.gte.${from},date.gte.${from}`);
+  } else if (from) {
+    query = query.gte("date", from);
+  } else if (to) {
+    query = query.lte("date", to);
+  }
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -37,9 +43,10 @@ export async function POST(request: Request) {
   if (authErr || !profile) return NextResponse.json({ error: authErr }, { status });
 
   const body = await request.json();
+  const cleanBody = { ...body, start_time: body.start_time || null, end_time: body.end_time || null, end_date: body.end_date || null };
   const { data, error } = await supabase
     .from("job_events")
-    .insert({ ...body, company_id: profile.company_id })
+    .insert({ ...cleanBody, company_id: profile.company_id })
     .select()
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -52,9 +59,10 @@ export async function PUT(request: Request) {
   if (authErr || !profile) return NextResponse.json({ error: authErr }, { status });
 
   const { id, ...updates } = await request.json();
+  const cleanUpdates = { ...updates, start_time: updates.start_time || null, end_time: updates.end_time || null, end_date: updates.end_date || null };
   const { data, error } = await supabase
     .from("job_events")
-    .update(updates)
+    .update(cleanUpdates)
     .eq("id", id)
     .eq("company_id", profile.company_id)
     .select()

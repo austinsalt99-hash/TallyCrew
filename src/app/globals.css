@@ -5,3 +5,10 @@
 .pb-safe {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
+
+/* Push all content below the fixed mobile top bar */
+@media (max-width: 767px) {
+  body {
+    padding-top: calc(env(safe-area-inset-top) + 44px);
+  }
+}

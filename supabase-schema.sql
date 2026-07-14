@@ -430,7 +430,55 @@ CREATE POLICY announcements_admin_delete ON announcements FOR DELETE
 
 
 -- -------------------------------------------------------------
--- 13. STORAGE BUCKETS
+-- 13. REMINDERS
+--     Admin-created timed reminders. Fires as push notifications
+--     on a recurring schedule (days_of_week + send_time).
+--     target_type='all' → all workers; 'specific' → target_user_ids only.
+--     last_sent_date prevents duplicate sends within the same day.
+-- -------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS reminders (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id      UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  created_by      UUID        NOT NULL REFERENCES profiles(id),
+  title           TEXT        NOT NULL,
+  body            TEXT,
+  target_type     TEXT        NOT NULL DEFAULT 'all' CHECK (target_type IN ('all', 'specific')),
+  target_user_ids UUID[],
+  send_time       TEXT        NOT NULL,
+  days_of_week    INT[]       NOT NULL,
+  active          BOOLEAN     NOT NULL DEFAULT TRUE,
+  last_sent_date  TEXT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+
+-- Admins see all reminders for their company
+CREATE POLICY reminders_admin_read ON reminders FOR SELECT
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+-- Workers see only active reminders targeted at them
+CREATE POLICY reminders_worker_read ON reminders FOR SELECT
+  USING (
+    company_id = get_my_company_id()
+    AND get_my_role() = 'worker'
+    AND active = TRUE
+    AND (target_type = 'all' OR auth.uid() = ANY(target_user_ids))
+  );
+
+CREATE POLICY reminders_admin_insert ON reminders FOR INSERT
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY reminders_admin_update ON reminders FOR UPDATE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY reminders_admin_delete ON reminders FOR DELETE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+
+-- -------------------------------------------------------------
+-- 14. STORAGE BUCKETS
 --     job-photos:     photos attached to billable job entries
 --     company-banners: custom dashboard banner images (admin upload)
 --

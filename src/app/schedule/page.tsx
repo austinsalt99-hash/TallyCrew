@@ -7,6 +7,7 @@ import DesktopHeader from "@/components/DesktopHeader";
 interface JobEvent {
   id: string;
   date: string;
+  end_date?: string;
   title: string;
   client: string;
   location: string;
@@ -100,6 +101,11 @@ function formatDate(d: string) {
   return new Date(year, month - 1, day).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 }
 
+function eventSpansDate(ev: JobEvent, dateStr: string): boolean {
+  const evEnd = ev.end_date || ev.date;
+  return dateStr >= ev.date && dateStr <= evEnd;
+}
+
 function layoutEvents(evs: JobEvent[]): { ev: JobEvent; col: number; totalCols: number }[] {
   const sorted = [...evs].sort((a, b) => toDecimalHour(a.start_time) - toDecimalHour(b.start_time));
   const cols = new Array(sorted.length).fill(0);
@@ -138,12 +144,18 @@ export default function SchedulePage() {
   const [calView, setCalView] = useState<CalView>("week");
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<JobEvent | null>(null);
+  const [myName, setMyName] = useState<string>("");
 
   const weekDates = getWeekDates(weekOffset);
   const dayDate = getDayDate(dayOffset);
   const monthDays = getMonthDays(monthOffset);
   const todayStr = fmt(new Date());
   const totalHeight = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
+
+  // Filter to only show jobs assigned to this employee (or unassigned jobs)
+  const displayEvents = myName
+    ? events.filter(e => !e.assigned_to?.trim() || e.assigned_to.toLowerCase().includes(myName.toLowerCase()))
+    : events;
 
   let fetchFrom: string, fetchTo: string;
   if (calView === "week") {
@@ -189,73 +201,123 @@ export default function SchedulePage() {
   }
 
   useEffect(() => {
+    fetch("/api/me")
+      .then(r => r.json())
+      .then(d => { if (d?.full_name) setMyName(d.full_name); });
+  }, []);
+
+  useEffect(() => {
     fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`)
       .then((r) => r.json())
       .then((data) => setEvents(Array.isArray(data) ? data : []));
   }, [fetchFrom, fetchTo]);
 
   function renderTimeGrid(dates: Date[]) {
+    // Compute all-day events per date (no start_time, may span multiple days)
+    const allDayByDate = new Map<string, JobEvent[]>();
+    let hasAnyAllDay = false;
+    for (const date of dates) {
+      const dateStr = fmt(date);
+      const evs = displayEvents.filter(e => !e.start_time && eventSpansDate(e, dateStr));
+      allDayByDate.set(dateStr, evs);
+      if (evs.length > 0) hasAnyAllDay = true;
+    }
+
     return (
-      <div className={`overflow-y-auto ${selectedEvent ? "max-h-60 md:max-h-[520px]" : "md:max-h-[520px]"}`}>
-        <div className="flex" style={{ height: totalHeight }}>
-          <div className="relative flex-shrink-0" style={{ width: 56 }}>
-            {HOUR_LABELS.map((label, i) => (
-              <div key={i} className="absolute right-0 pr-2 flex items-start" style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}>
-                <span className="text-xs text-gray-400 mt-1 leading-none">{label}</span>
-              </div>
-            ))}
-          </div>
-          {dates.map((date) => {
-            const dateStr = fmt(date);
-            const dayEvents = events.filter((e) => e.date === dateStr && e.start_time);
-            const isToday = dateStr === todayStr;
-            return (
-              <div
-                key={dateStr}
-                className={`flex-1 relative border-l border-gray-100 ${isToday ? "bg-green-50/30" : ""}`}
-                style={{ height: totalHeight }}
-              >
-                {HOUR_LABELS.map((_, i) => (
-                  <div key={i} className="absolute left-0 right-0 border-t border-gray-100" style={{ top: i * HOUR_HEIGHT }} />
-                ))}
-                {layoutEvents(dayEvents).map(({ ev, col, totalCols }) => {
-                  const startH = toDecimalHour(ev.start_time);
-                  const endH = ev.end_time ? toDecimalHour(ev.end_time) : startH + 1;
-                  const clampedStart = Math.max(startH, START_HOUR);
-                  const clampedEnd = Math.min(endH, END_HOUR);
-                  if (clampedEnd <= clampedStart) return null;
-                  const top = (clampedStart - START_HOUR) * HOUR_HEIGHT;
-                  const height = Math.max((clampedEnd - clampedStart) * HOUR_HEIGHT - 4, 22);
-                  const isSelected = selectedEvent?.id === ev.id;
-                  const leftPct = (col / totalCols) * 100;
-                  const widthPct = (1 / totalCols) * 100;
-                  return (
+      <>
+        {/* All-day events strip */}
+        {hasAnyAllDay && (
+          <div className="flex border-b border-gray-100 bg-gray-50/40" style={{ paddingLeft: 56 }}>
+            {dates.map(date => {
+              const dateStr = fmt(date);
+              const evs = allDayByDate.get(dateStr) ?? [];
+              const isToday = dateStr === todayStr;
+              return (
+                <div key={dateStr} className={`flex-1 min-h-[26px] p-0.5 border-l border-gray-100 ${isToday ? "bg-green-50/40" : ""}`}>
+                  {evs.map(ev => (
                     <div
                       key={ev.id}
-                      className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 cursor-pointer transition-all ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-90"}`}
-                      style={{
-                        top: top + 2, height,
-                        left: `calc(${leftPct}% + 2px)`,
-                        width: `calc(${widthPct}% - 4px)`,
-                        backgroundColor: ORANGE,
-                      }}
+                      className="text-[9px] font-semibold text-white px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer leading-tight"
+                      style={{ backgroundColor: ORANGE }}
                       onClick={() => setSelectedEvent(ev)}
                     >
-                      <p className="text-white text-xs font-bold leading-tight truncate">{ev.title}</p>
-                      {ev.client && height > 38 && <p className="text-white/80 text-xs truncate">{ev.client}</p>}
-                      {height > 54 && ev.start_time && (
-                        <p className="text-white/70 text-xs">
-                          {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
-                        </p>
-                      )}
+                      {ev.title}
                     </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* Time grid */}
+        <div
+          className={`overflow-y-auto ${selectedEvent ? "max-h-60 md:max-h-[520px]" : "md:max-h-[520px]"}`}
+          style={{ overflowX: "clip" as any }}
+        >
+          <div className="flex" style={{ height: totalHeight }}>
+            {/* Sticky time column */}
+            <div
+              className="relative flex-shrink-0 bg-white"
+              style={{ width: 56, position: "sticky", left: 0, zIndex: 10 }}
+            >
+              {HOUR_LABELS.map((label, i) => (
+                <div key={i} className="absolute right-0 pr-2 flex items-start" style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}>
+                  <span className="text-xs text-gray-400 mt-1 leading-none">{label}</span>
+                </div>
+              ))}
+            </div>
+            {dates.map((date) => {
+              const dateStr = fmt(date);
+              const dayEvents = displayEvents.filter((e) => e.date === dateStr && e.start_time);
+              const isToday = dateStr === todayStr;
+              return (
+                <div
+                  key={dateStr}
+                  className={`flex-1 relative border-l border-gray-100 ${isToday ? "bg-green-50/30" : ""}`}
+                  style={{ height: totalHeight }}
+                >
+                  {HOUR_LABELS.map((_, i) => (
+                    <div key={i} className="absolute left-0 right-0 border-t border-gray-100" style={{ top: i * HOUR_HEIGHT }} />
+                  ))}
+                  {layoutEvents(dayEvents).map(({ ev, col, totalCols }) => {
+                    const startH = toDecimalHour(ev.start_time);
+                    const endH = ev.end_time ? toDecimalHour(ev.end_time) : startH + 1;
+                    const clampedStart = Math.max(startH, START_HOUR);
+                    const clampedEnd = Math.min(endH, END_HOUR);
+                    if (clampedEnd <= clampedStart) return null;
+                    const top = (clampedStart - START_HOUR) * HOUR_HEIGHT;
+                    const height = Math.max((clampedEnd - clampedStart) * HOUR_HEIGHT - 4, 22);
+                    const isSelected = selectedEvent?.id === ev.id;
+                    const leftPct = (col / totalCols) * 100;
+                    const widthPct = (1 / totalCols) * 100;
+                    return (
+                      <div
+                        key={ev.id}
+                        className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 cursor-pointer transition-all ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-90"}`}
+                        style={{
+                          top: top + 2, height,
+                          left: `calc(${leftPct}% + 2px)`,
+                          width: `calc(${widthPct}% - 4px)`,
+                          backgroundColor: ORANGE,
+                        }}
+                        onClick={() => setSelectedEvent(ev)}
+                      >
+                        <p className="text-white text-xs font-bold leading-tight truncate">{ev.title}</p>
+                        {ev.client && height > 38 && <p className="text-white/80 text-xs truncate">{ev.client}</p>}
+                        {height > 54 && ev.start_time && (
+                          <p className="text-white/70 text-xs">
+                            {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -320,7 +382,7 @@ export default function SchedulePage() {
                       const dateStr = fmt(date);
                       const isCurrentMonth = date.getMonth() === displayedMonth;
                       const isToday = dateStr === todayStr;
-                      const dayEvents = events.filter((e) => e.date === dateStr);
+                      const dayEvents = displayEvents.filter(e => eventSpansDate(e, dateStr));
                       return (
                         <div
                           key={dateStr}
@@ -432,6 +494,9 @@ export default function SchedulePage() {
                   <div>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Date</p>
                     <p className="text-sm text-gray-800">{formatDate(selectedEvent.date)}</p>
+                    {selectedEvent.end_date && selectedEvent.end_date !== selectedEvent.date && (
+                      <p className="text-sm text-gray-600 mt-0.5">through {formatDate(selectedEvent.end_date)}</p>
+                    )}
                   </div>
                 )}
                 {(selectedEvent.start_time || selectedEvent.end_time) && (

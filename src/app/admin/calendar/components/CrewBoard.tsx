@@ -17,6 +17,7 @@ import {
 interface JobEvent {
   id: string;
   date: string;
+  end_date?: string;
   title: string;
   client: string;
   location: string;
@@ -366,7 +367,11 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
   const crew = workers.filter((w) => w.role === "worker");
 
   function getEventsForWorkerDay(workerName: string, dateStr: string): JobEvent[] {
-    return events.filter((ev) => ev.date === dateStr && isAssignedTo(ev, workerName));
+    return events.filter((ev) => {
+      if (!isAssignedTo(ev, workerName)) return false;
+      const evEnd = ev.end_date || ev.date;
+      return dateStr >= ev.date && dateStr <= evEnd;
+    });
   }
 
   function getUnassignedEvents(dateStr: string): JobEvent[] {
@@ -375,7 +380,8 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
       ...crew.map((w) => w.full_name),
     ];
     return events.filter((ev) => {
-      if (ev.date !== dateStr) return false;
+      const evEnd = ev.end_date || ev.date;
+      if (!(dateStr >= ev.date && dateStr <= evEnd)) return false;
       if (!ev.assigned_to?.trim()) return true;
       return !allNamed.some((name) => isAssignedTo(ev, name));
     });

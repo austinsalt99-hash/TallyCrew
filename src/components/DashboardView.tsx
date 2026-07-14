@@ -7,6 +7,7 @@ const NAVY = "#0A1172";
 const NAVY_DARK = "#060b47";
 const ORANGE = "#F4A823";
 const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
+const DAY_FULL = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const CHART_MAX_H = 36;
 
 interface JobEvent {
@@ -33,6 +34,32 @@ interface Announcement {
   body: string | null;
   pinned: boolean;
   created_at: string;
+}
+
+interface Reminder {
+  id: string;
+  title: string;
+  body: string | null;
+  send_time: string;
+  days_of_week: number[];
+}
+
+function fmt12(time: string): string {
+  const [h] = time.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${h12} ${ampm}`;
+}
+
+function fmtDays(days: number[]): string {
+  if (days.length === 7) return "Every day";
+  if (days.length === 5 && [1, 2, 3, 4, 5].every((d) => days.includes(d))) return "Weekdays";
+  if (days.length === 2 && days.includes(0) && days.includes(6)) return "Weekends";
+  return days
+    .slice()
+    .sort((a, b) => a - b)
+    .map((d) => DAY_FULL[d])
+    .join(", ");
 }
 
 function fmtDate(d: Date): string {
@@ -84,6 +111,7 @@ export default function DashboardView({ userName }: { userName: string }) {
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [submissions, setSubmissions] = useState<DaySubmission[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -100,12 +128,14 @@ export default function DashboardView({ userName }: { userName: string }) {
       fetch(`/api/events?from=${todayStr}&to=${todayStr}`).then((r) => r.json()),
       fetch(`/api/submissions/employee?from=${weekFrom}&to=${weekTo}`, { credentials: "include" }).then((r) => r.json()),
       fetch("/api/announcements").then((r) => r.json()),
+      fetch("/api/reminders").then((r) => r.json()),
       fetch("/api/company", { credentials: "include" }).then((r) => r.json()),
     ])
-      .then(([evData, subData, annData, companyData]) => {
+      .then(([evData, subData, annData, remData, companyData]) => {
         setEvents(Array.isArray(evData) ? evData : []);
         setSubmissions(Array.isArray(subData) ? subData : []);
         setAnnouncements(Array.isArray(annData) ? annData : []);
+        setReminders(Array.isArray(remData) ? remData : []);
         setBannerUrl(companyData?.banner_url ?? null);
       })
       .catch(() => {})
@@ -239,6 +269,36 @@ export default function DashboardView({ userName }: { userName: string }) {
                       {a.body && (
                         <p className="text-xs text-gray-500 mt-1 leading-relaxed">{a.body}</p>
                       )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Reminders */}
+        {(loading || reminders.length > 0) && (
+          <section>
+            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Reminders</h2>
+            {loading ? (
+              <div className="space-y-2">
+                <div className="h-14 bg-gray-100 rounded-2xl animate-pulse" />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {reminders.map((r) => (
+                  <div key={r.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="h-0.5" style={{ backgroundColor: NAVY }} />
+                    <div className="p-4">
+                      <p className="font-semibold text-gray-900 text-sm leading-snug">{r.title}</p>
+                      {r.body && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{r.body}</p>}
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${NAVY}15`, color: NAVY }}>
+                          {fmt12(r.send_time)}
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-medium">{fmtDays(r.days_of_week)}</span>
+                      </div>
                     </div>
                   </div>
                 ))}

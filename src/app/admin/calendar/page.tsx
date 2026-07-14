@@ -12,6 +12,7 @@ import PlanEventModal from "./components/PlanEventModal";
 interface JobEvent {
   id: string;
   date: string;
+  end_date?: string;
   title: string;
   client: string;
   location: string;
@@ -27,6 +28,7 @@ interface UnifiedEvent {
   source: "job" | "plan";
   type: UnifiedEventType;
   date: string;
+  end_date?: string;
   title: string;
   start_time: string;
   end_time: string;
@@ -221,6 +223,7 @@ function generateRecurrenceDates(startDate: string, recurrence: string, until: s
 
 const EMPTY_FORM = {
   date: "",
+  end_date: "",
   title: "",
   client: "",
   location: "",
@@ -377,6 +380,8 @@ export default function AdminCalendar() {
   const [planModalType, setPlanModalType] = useState<string>("task");
   const [planModalDate, setPlanModalDate] = useState<string>("");
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [formWorkerOpen, setFormWorkerOpen] = useState(false);
+  const [panelWorkerOpen, setPanelWorkerOpen] = useState(false);
   const isDraggingRef = useRef(false);
 
   const weekDates = getWeekDates(weekOffset);
@@ -414,6 +419,7 @@ export default function AdminCalendar() {
       source: "job",
       type: ev.is_verified === false ? "draft-job" : "job",
       date: ev.date,
+      end_date: ev.end_date,
       title: ev.title,
       start_time: ev.start_time ?? "",
       end_time: ev.end_time ?? "",
@@ -532,6 +538,7 @@ export default function AdminCalendar() {
     return {
       ...EMPTY_FORM,
       date: ev.date,
+      end_date: ev.end_date ?? "",
       title: ev.title,
       client: ev.client ?? "",
       location: ev.location ?? "",
@@ -623,6 +630,9 @@ export default function AdminCalendar() {
     if (!form.title || !form.date) return;
     setSaving(true);
 
+    function clean<T extends { start_time: string; end_time: string; end_date: string }>(p: T) {
+      return { ...p, start_time: p.start_time || null, end_time: p.end_time || null, end_date: p.end_date || null };
+    }
     if (!editId && form.recurrence && form.repeat_until) {
       const dates = generateRecurrenceDates(form.date, form.recurrence, form.repeat_until);
       const { recurrence: _r, repeat_until: _u, ...basePayload } = form;
@@ -631,13 +641,13 @@ export default function AdminCalendar() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ ...basePayload, date: d }),
+          body: JSON.stringify(clean({ ...basePayload, date: d })),
         });
       }
     } else {
       const { recurrence: _r, repeat_until: _u, ...payload } = form;
       const method = editId ? "PUT" : "POST";
-      const body = editId ? { id: editId, ...payload } : payload;
+      const body = editId ? { id: editId, ...clean(payload) } : clean(payload);
       await fetch("/api/events", {
         method,
         headers: { "Content-Type": "application/json" },
@@ -668,7 +678,8 @@ export default function AdminCalendar() {
     if (!selectedEvent) return;
     setSaving(true);
     const { recurrence: _r, repeat_until: _u, ...payload } = panelForm;
-    const body = { id: selectedEvent.id, ...payload, ...(markVerified ? { is_verified: true } : {}) };
+    const cleanedPayload = { ...payload, start_time: payload.start_time || null, end_time: payload.end_time || null, end_date: payload.end_date || null };
+    const body = { id: selectedEvent.id, ...cleanedPayload, ...(markVerified ? { is_verified: true } : {}) };
     await fetch("/api/events", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -774,88 +785,142 @@ export default function AdminCalendar() {
   }
 
   function renderTimeGrid(dates: Date[]) {
+    // All-day events (no start_time) per date, including multi-day job spans
+    const allDayByDate = new Map<string, UnifiedEvent[]>();
+    let hasAnyAllDay = false;
+    for (const date of dates) {
+      const dateStr = fmt(date);
+      const evs = unifiedEvents.filter(e => {
+        if (e.start_time) return false;
+        if (e.source === "job") {
+          const evEnd = e.end_date || e.date;
+          return dateStr >= e.date && dateStr <= evEnd;
+        }
+        return e.date === dateStr;
+      });
+      allDayByDate.set(dateStr, evs);
+      if (evs.length > 0) hasAnyAllDay = true;
+    }
+
     return (
-      <div className={`overflow-y-auto ${selectedEvent ? "max-h-60 md:max-h-[520px]" : "max-h-[520px]"}`}>
-        <div className="flex" style={{ height: totalHeight }}>
-          <div className="relative flex-shrink-0" style={{ width: 56 }}>
-            {HOUR_LABELS.map((label, i) => (
-              <div key={i} className="absolute right-0 pr-2 flex items-start" style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}>
-                <span className="text-xs text-gray-400 mt-1 leading-none">{label}</span>
-              </div>
-            ))}
-          </div>
-          {dates.map((date) => {
-            const dateStr = fmt(date);
-            const dayEvents = unifiedEvents.filter((e) => e.date === dateStr && e.start_time);
-            const isToday = dateStr === todayStr;
-            return (
-              <div
-                key={dateStr}
-                className={`flex-1 relative border-l border-gray-100 cursor-crosshair ${isToday ? "bg-navy-50/20" : ""}`}
-                style={{ height: totalHeight }}
-                onClick={(e) => handleGridClick(dateStr, e)}
-                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                onDrop={(e) => handleDrop(dateStr, e)}
-              >
-                {HOUR_LABELS.map((_, i) => (
-                  <div key={i} className="absolute left-0 right-0 border-t border-gray-100" style={{ top: i * HOUR_HEIGHT }} />
-                ))}
-                {layoutEvents(dayEvents).map(({ ev, col, totalCols }) => {
-                  const startH = toDecimalHour(ev.start_time);
-                  const endH = ev.end_time ? toDecimalHour(ev.end_time) : startH + 1;
-                  const clampedStart = Math.max(startH, START_HOUR);
-                  const clampedEnd = Math.min(endH, END_HOUR);
-                  if (clampedEnd <= clampedStart) return null;
-                  const top = (clampedStart - START_HOUR) * HOUR_HEIGHT;
-                  const height = Math.max((clampedEnd - clampedStart) * HOUR_HEIGHT - 4, 22);
-                  const isSelected = selectedEvent?.id === ev.id;
-                  const leftPct = (col / totalCols) * 100;
-                  const widthPct = (1 / totalCols) * 100;
-                  const { color, bg } = getEventStyle(ev.type);
-                  return (
-                    <div
-                      key={ev.id}
-                      draggable={ev.source === "job"}
-                      className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 transition-all border-l-4 ${ev.source === "job" ? "cursor-grab active:cursor-grabbing" : "cursor-default"} ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-95"}`}
-                      style={{
-                        top: top + 2, height,
-                        left: `calc(${leftPct}% + 2px)`,
-                        width: `calc(${widthPct}% - 4px)`,
-                        backgroundColor: bg,
-                        borderLeftColor: color,
-                      }}
-                      onDragStart={ev.source === "job" ? (e) => { e.stopPropagation(); handleDragStart(e, ev); } : undefined}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!isDraggingRef.current && ev.source === "job") {
-                          const original = events.find((j) => j.id === ev.id);
-                          if (original) selectEvent(ev);
-                        }
-                      }}
-                    >
-                      <div className="flex items-center gap-1 mb-0.5">
-                        <EventTypeIcon type={ev.type} color={color} />
-                        <p className="text-xs font-bold leading-tight truncate" style={{ color }}>{ev.title}</p>
+      <>
+        {/* All-day events strip */}
+        {hasAnyAllDay && (
+          <div className="flex border-b border-gray-100 bg-gray-50/40" style={{ paddingLeft: 56 }}>
+            {dates.map(date => {
+              const dateStr = fmt(date);
+              const evs = allDayByDate.get(dateStr) ?? [];
+              const isToday = dateStr === todayStr;
+              return (
+                <div key={dateStr} className={`flex-1 min-h-[26px] p-0.5 border-l border-gray-100 ${isToday ? "bg-navy-50/30" : ""}`}>
+                  {evs.map(ev => {
+                    const { color, bg } = getEventStyle(ev.type);
+                    return (
+                      <div
+                        key={ev.id}
+                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer leading-tight border-l-2"
+                        style={{ backgroundColor: bg, borderLeftColor: color, color }}
+                        onClick={() => { if (ev.source === "job") { const orig = events.find(j => j.id === ev.id); if (orig) selectEvent(ev); } }}
+                      >
+                        {ev.title}
                       </div>
-                      {ev.client && height > 38 && (
-                        <p className="text-xs truncate" style={{ color, opacity: 0.7 }}>{ev.client}</p>
-                      )}
-                      {height > 54 && ev.start_time && (
-                        <p className="text-xs" style={{ color, opacity: 0.6 }}>
-                          {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
-                        </p>
-                      )}
-                      {ev.type === "draft-job" && height > 30 && (
-                        <p className="text-[10px] font-medium mt-0.5" style={{ color, opacity: 0.7 }}>Draft</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* Time grid */}
+        <div
+          className={`overflow-y-auto ${selectedEvent ? "max-h-60 md:max-h-[520px]" : "max-h-[520px]"}`}
+          style={{ overflowX: "clip" as any }}
+        >
+          <div className="flex" style={{ height: totalHeight }}>
+            {/* Sticky time column */}
+            <div
+              className="relative flex-shrink-0 bg-white"
+              style={{ width: 56, position: "sticky", left: 0, zIndex: 10 }}
+            >
+              {HOUR_LABELS.map((label, i) => (
+                <div key={i} className="absolute right-0 pr-2 flex items-start" style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}>
+                  <span className="text-xs text-gray-400 mt-1 leading-none">{label}</span>
+                </div>
+              ))}
+            </div>
+            {dates.map((date) => {
+              const dateStr = fmt(date);
+              const dayEvents = unifiedEvents.filter((e) => e.date === dateStr && e.start_time);
+              const isToday = dateStr === todayStr;
+              return (
+                <div
+                  key={dateStr}
+                  className={`flex-1 relative border-l border-gray-100 cursor-crosshair ${isToday ? "bg-navy-50/20" : ""}`}
+                  style={{ height: totalHeight }}
+                  onClick={(e) => handleGridClick(dateStr, e)}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                  onDrop={(e) => handleDrop(dateStr, e)}
+                >
+                  {HOUR_LABELS.map((_, i) => (
+                    <div key={i} className="absolute left-0 right-0 border-t border-gray-100" style={{ top: i * HOUR_HEIGHT }} />
+                  ))}
+                  {layoutEvents(dayEvents).map(({ ev, col, totalCols }) => {
+                    const startH = toDecimalHour(ev.start_time);
+                    const endH = ev.end_time ? toDecimalHour(ev.end_time) : startH + 1;
+                    const clampedStart = Math.max(startH, START_HOUR);
+                    const clampedEnd = Math.min(endH, END_HOUR);
+                    if (clampedEnd <= clampedStart) return null;
+                    const top = (clampedStart - START_HOUR) * HOUR_HEIGHT;
+                    const height = Math.max((clampedEnd - clampedStart) * HOUR_HEIGHT - 4, 22);
+                    const isSelected = selectedEvent?.id === ev.id;
+                    const leftPct = (col / totalCols) * 100;
+                    const widthPct = (1 / totalCols) * 100;
+                    const { color, bg } = getEventStyle(ev.type);
+                    return (
+                      <div
+                        key={ev.id}
+                        draggable={ev.source === "job"}
+                        className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 transition-all border-l-4 ${ev.source === "job" ? "cursor-grab active:cursor-grabbing" : "cursor-default"} ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-95"}`}
+                        style={{
+                          top: top + 2, height,
+                          left: `calc(${leftPct}% + 2px)`,
+                          width: `calc(${widthPct}% - 4px)`,
+                          backgroundColor: bg,
+                          borderLeftColor: color,
+                        }}
+                        onDragStart={ev.source === "job" ? (e) => { e.stopPropagation(); handleDragStart(e, ev); } : undefined}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isDraggingRef.current && ev.source === "job") {
+                            const original = events.find((j) => j.id === ev.id);
+                            if (original) selectEvent(ev);
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <EventTypeIcon type={ev.type} color={color} />
+                          <p className="text-xs font-bold leading-tight truncate" style={{ color }}>{ev.title}</p>
+                        </div>
+                        {ev.client && height > 38 && (
+                          <p className="text-xs truncate" style={{ color, opacity: 0.7 }}>{ev.client}</p>
+                        )}
+                        {height > 54 && ev.start_time && (
+                          <p className="text-xs" style={{ color, opacity: 0.6 }}>
+                            {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
+                          </p>
+                        )}
+                        {ev.type === "draft-job" && height > 30 && (
+                          <p className="text-[10px] font-medium mt-0.5" style={{ color, opacity: 0.7 }}>Draft</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -984,6 +1049,16 @@ export default function AdminCalendar() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
             />
           </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">End date <span className="font-normal text-gray-400 normal-case">(optional)</span></label>
+            <input
+              type="date"
+              value={panelForm.end_date}
+              min={panelForm.date}
+              onChange={(e) => setPanelForm({ ...panelForm, end_date: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+            />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Start time</label>
@@ -1024,17 +1099,41 @@ export default function AdminCalendar() {
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Assigned to</label>
-            <input
-              type="text"
-              placeholder="Employee name(s)"
-              value={panelForm.assigned_to}
-              list="worker-names-list-panel"
-              onChange={(e) => setPanelForm({ ...panelForm, assigned_to: e.target.value })}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
-            />
-            <datalist id="worker-names-list-panel">
-              {workerNames.map((name) => <option key={name} value={name} />)}
-            </datalist>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setPanelWorkerOpen(o => !o)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-left focus:outline-none focus:ring-2 focus:ring-navy-400 flex items-center justify-between"
+              >
+                <span className={panelForm.assigned_to ? "text-gray-900" : "text-gray-400"}>
+                  {panelForm.assigned_to || "Select workers…"}
+                </span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {panelWorkerOpen && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                  {workerNames.map(name => {
+                    const checked = panelForm.assigned_to.split(", ").filter(Boolean).includes(name);
+                    return (
+                      <label key={name} className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            const current = panelForm.assigned_to.split(", ").filter(Boolean);
+                            const next = checked ? current.filter(n => n !== name) : [...current, name];
+                            setPanelForm({ ...panelForm, assigned_to: next.join(", ") });
+                          }}
+                          className="w-4 h-4 rounded accent-navy-600"
+                        />
+                        <span className="text-sm text-gray-700">{name}</span>
+                      </label>
+                    );
+                  })}
+                  {workerNames.length === 0 && <p className="text-xs text-gray-400 px-3 py-2">No workers added yet</p>}
+                </div>
+              )}
+            </div>
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Notes</label>
@@ -1271,7 +1370,13 @@ export default function AdminCalendar() {
                         const dateStr = fmt(date);
                         const isCurrentMonth = date.getMonth() === displayedMonth;
                         const isToday = dateStr === todayStr;
-                        const dayEvents = unifiedEvents.filter((e) => e.date === dateStr);
+                        const dayEvents = unifiedEvents.filter(e => {
+                        if (e.source === "job") {
+                          const evEnd = e.end_date || e.date;
+                          return dateStr >= e.date && dateStr <= evEnd;
+                        }
+                        return e.date === dateStr;
+                      });
                         return (
                           <div
                             key={dateStr}
@@ -1475,6 +1580,12 @@ export default function AdminCalendar() {
                 <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
               </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">End date <span className="font-normal text-gray-400">(optional — for multi-day jobs)</span></label>
+                <input type="date" value={form.end_date} min={form.date}
+                  onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
+              </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Client</label>
                 <input type="text" value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })}
@@ -1497,17 +1608,41 @@ export default function AdminCalendar() {
               </div>
               <div className="col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">Assigned to</label>
-                <input
-                  type="text"
-                  placeholder="Employee name(s)"
-                  value={form.assigned_to}
-                  list="worker-names-list"
-                  onChange={(e) => setForm({ ...form, assigned_to: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
-                />
-                <datalist id="worker-names-list">
-                  {workerNames.map((name) => <option key={name} value={name} />)}
-                </datalist>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setFormWorkerOpen(o => !o)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-left focus:outline-none focus:ring-2 focus:ring-navy-400 flex items-center justify-between"
+                  >
+                    <span className={form.assigned_to ? "text-gray-900" : "text-gray-400"}>
+                      {form.assigned_to || "Select workers…"}
+                    </span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  {formWorkerOpen && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                      {workerNames.map(name => {
+                        const checked = form.assigned_to.split(", ").filter(Boolean).includes(name);
+                        return (
+                          <label key={name} className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                const current = form.assigned_to.split(", ").filter(Boolean);
+                                const next = checked ? current.filter(n => n !== name) : [...current, name];
+                                setForm({ ...form, assigned_to: next.join(", ") });
+                              }}
+                              className="w-4 h-4 rounded accent-navy-600"
+                            />
+                            <span className="text-sm text-gray-700">{name}</span>
+                          </label>
+                        );
+                      })}
+                      {workerNames.length === 0 && <p className="text-xs text-gray-400 px-3 py-2">No workers added yet</p>}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">Notes</label>

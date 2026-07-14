@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import NativeAppInit from "@/components/NativeAppInit";
+import MobileTopBar from "@/components/MobileTopBar";
 
 export const metadata: Metadata = {
   title: "TallyCrew",
@@ -22,6 +23,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="bg-gray-100 min-h-screen">
         <NativeAppInit />
+        <MobileTopBar />
         {children}
       </body>
     </html>
