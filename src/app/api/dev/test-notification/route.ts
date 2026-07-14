@@ -27,7 +27,8 @@ export async function GET(request: Request) {
   });
   const playerDetail = await playerDetailRes.json();
 
-  const companyId = playerDetail.tags?.company_id;
+  const tagCompanyId = playerDetail.tags?.company_id;
+  const sessionCompanyId = profile.company_id;
 
   // Test 1: direct by player ID
   const directRes = await fetch("https://onesignal.com/api/v1/notifications", {
@@ -42,13 +43,13 @@ export async function GET(request: Request) {
   });
   const directId = (await directRes.json()).id;
 
-  // Test 2: filter by company_id tag (same as sendToCompany)
+  // Test 2: filter by company_id tag using SESSION company_id (exactly like announcement route)
   const filterRes = await fetch("https://onesignal.com/api/v1/notifications", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Key ${REST_KEY}` },
     body: JSON.stringify({
       app_id: APP_ID,
-      filters: [{ field: "tag", key: "company_id", relation: "=", value: companyId }],
+      filters: [{ field: "tag", key: "company_id", relation: "=", value: sessionCompanyId }],
       headings: { en: "Filter test" },
       contents: { en: "Testing delivery (filter)" },
     }),
@@ -70,10 +71,12 @@ export async function GET(request: Request) {
   ]);
 
   return NextResponse.json({
+    session_company_id: sessionCompanyId,
     player: {
       id: playerDetail.id,
       test_type: playerDetail.test_type,
-      tags: playerDetail.tags,
+      tag_company_id: tagCompanyId,
+      ids_match: tagCompanyId === sessionCompanyId,
     },
     direct: { successful: directCheck.successful, failed: directCheck.failed, errored: directCheck.errored },
     filter: { successful: filterCheck.successful, failed: filterCheck.failed, errored: filterCheck.errored, errors: filterCheck.errors },
