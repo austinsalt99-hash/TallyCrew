@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const { sendToCompany } = await import("@/lib/onesignal");
-  sendToCompany(
+  await sendToCompany(
     profile.company_id,
     data.title,
     data.body ?? "New announcement"
