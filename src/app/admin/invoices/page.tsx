@@ -57,7 +57,7 @@ export default function InvoicesPage() {
       </div>
 
       {/* Status filter tabs */}
-      <div className="flex gap-1 mb-4 bg-white rounded-xl border border-gray-200 p-1 w-fit">
+      <div className="flex gap-1 mb-4 bg-white rounded-xl border border-gray-200 p-1 w-full md:w-fit overflow-x-auto">
         {TABS.map((tab) => {
           const count = tab.value === "all"
             ? invoices.length
@@ -97,7 +97,34 @@ export default function InvoicesPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
+          {/* Mobile: card list */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {visible.map((inv) => (
+              <div
+                key={inv.id}
+                className="px-4 py-3.5 active:bg-gray-50 cursor-pointer"
+                onClick={() => { window.location.href = `/admin/invoices/${inv.id}`; }}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-gray-900 text-sm">{inv.client_name}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${statusBadge[inv.status] ?? statusBadge.draft}`}>
+                    {inv.status}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">
+                    {inv.invoice_number} · {inv.date_from} – {inv.date_to}
+                  </span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    ${Number(inv.total).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop: table (unchanged) */}
+          <table className="hidden md:table w-full text-sm">
             <thead className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
               <tr>
                 <th className="px-5 py-3 text-left">Invoice #</th>

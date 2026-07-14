@@ -208,22 +208,22 @@ export default function Dashboard() {
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Hour Logs</h1>
 
-      <div className="flex gap-3 mb-6 flex-wrap">
+      <div className="flex flex-col md:flex-row gap-3 mb-6">
         <input
           type="date"
           value={filterDate}
           onChange={(e) => setFilterDate(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+          className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 w-full md:w-auto"
         />
         <input
           type="text"
           placeholder="Filter by employee name"
           value={filterName}
           onChange={(e) => setFilterName(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 w-48"
+          className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 w-full md:w-48"
         />
         {(filterDate || filterName) && (
-          <button onClick={() => { setFilterDate(""); setFilterName(""); }} className="text-sm text-navy-600 underline">
+          <button onClick={() => { setFilterDate(""); setFilterName(""); }} className="text-sm text-navy-600 underline self-start md:self-center">
             Clear filters
           </button>
         )}

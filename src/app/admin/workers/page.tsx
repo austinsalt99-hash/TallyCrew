@@ -49,7 +49,7 @@ function WageCell({ worker, onSave }: { worker: Profile; onSave: (id: string, wa
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setValue(worker.hourly_wage != null ? String(worker.hourly_wage) : ""); setEditing(false); } }}
         placeholder="0.00"
-        className="w-20 border border-navy-300 rounded px-2 py-0.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-navy-400"
+        className="w-20 border border-navy-300 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-navy-400"
       />
     );
   }
@@ -160,24 +160,43 @@ export default function WorkersPage() {
           <p className="px-5 py-4 text-sm text-gray-400">No workers yet. Generate an invite code below.</p>
         ) : (
           <div className="divide-y divide-gray-100">
-            {/* Header row */}
-            <div className="px-5 py-2 grid grid-cols-[1fr_auto_auto] gap-4 items-center">
+            {/* Desktop header row */}
+            <div className="hidden md:grid px-5 py-2 grid-cols-[1fr_auto_auto] gap-4 items-center">
               <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Name</span>
               <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Hourly Wage</span>
               <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Role</span>
             </div>
             {workers.map((w) => (
-              <div key={w.id} className="px-5 py-3 grid grid-cols-[1fr_auto_auto] gap-4 items-center">
-                <div>
-                  <p className="font-semibold text-gray-900 text-sm">{w.full_name}</p>
+              <div key={w.id}>
+                {/* Mobile card */}
+                <div className="md:hidden px-4 py-3.5 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-gray-900">{w.full_name}</p>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      w.role === "admin" ? "bg-navy-100 text-navy-700" : "bg-gray-100 text-gray-600"
+                    }`}>
+                      {w.role}
+                    </span>
+                  </div>
                   <p className="text-xs text-gray-400">Joined {formatDate(w.created_at)}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-gray-500">Hourly wage:</span>
+                    <WageCell worker={w} onSave={saveWage} />
+                  </div>
                 </div>
-                <WageCell worker={w} onSave={saveWage} />
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                  w.role === "admin" ? "bg-navy-100 text-navy-700" : "bg-gray-100 text-gray-600"
-                }`}>
-                  {w.role}
-                </span>
+                {/* Desktop grid row */}
+                <div className="hidden md:grid px-5 py-3 grid-cols-[1fr_auto_auto] gap-4 items-center">
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">{w.full_name}</p>
+                    <p className="text-xs text-gray-400">Joined {formatDate(w.created_at)}</p>
+                  </div>
+                  <WageCell worker={w} onSave={saveWage} />
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                    w.role === "admin" ? "bg-navy-100 text-navy-700" : "bg-gray-100 text-gray-600"
+                  }`}>
+                    {w.role}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

@@ -51,5 +51,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TallyCrew uses your photo library to let you upload a company banner image.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>TallyCrew uses your camera to let you take a photo for your company banner.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>TallyCrew may use your location to support job scheduling features.</string>
 </dict>
 </plist>

@@ -167,7 +167,7 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
               placeholder="Title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
               style={{ "--tw-ring-color": NAVY } as React.CSSProperties}
             />
             <textarea
@@ -175,7 +175,7 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={3}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:border-transparent"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:border-transparent"
               style={{ "--tw-ring-color": NAVY } as React.CSSProperties}
             />
             <div className="flex items-center justify-between">
@@ -195,7 +195,7 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
               <button
                 onClick={handlePost}
                 disabled={saving || !title.trim()}
-                className="text-sm font-semibold px-4 py-1.5 rounded-lg text-white disabled:opacity-40 transition-opacity"
+                className="text-sm font-semibold px-4 py-2.5 md:py-1.5 rounded-lg text-white disabled:opacity-40 transition-opacity"
                 style={{ backgroundColor: NAVY }}
               >
                 {saving ? "Posting…" : "Post"}

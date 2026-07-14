@@ -244,7 +244,7 @@ export default function LogConfigPage() {
         </div>
         <button
           onClick={() => setShowFormPreview(true)}
-          className="shrink-0 text-sm font-semibold text-navy-600 border border-navy-300 hover:bg-navy-50 rounded-lg px-3 py-1.5 transition-colors"
+          className="shrink-0 text-sm font-semibold text-navy-600 border border-navy-300 hover:bg-navy-50 rounded-lg px-3 py-2.5 md:py-1.5 transition-colors"
         >
           Preview Form
         </button>
@@ -285,7 +285,7 @@ export default function LogConfigPage() {
               <button
                 type="button"
                 onClick={() => setOpenMenu(openMenu === type.id ? null : type.id)}
-                className="w-8 h-8 flex items-center justify-center text-xl font-bold text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                className="w-11 h-11 md:w-8 md:h-8 flex items-center justify-center text-xl font-bold text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
               >
                 ⋮
               </button>
@@ -310,7 +310,7 @@ export default function LogConfigPage() {
                 <button
                   type="button"
                   onClick={() => setPreviewType(type)}
-                  className="text-xs border border-navy-300 text-navy-600 rounded-lg px-3 py-1 hover:bg-navy-50 transition-colors"
+                  className="text-xs border border-navy-300 text-navy-600 rounded-lg px-3 py-2 md:py-1 hover:bg-navy-50 transition-colors"
                 >
                   Preview
                 </button>
