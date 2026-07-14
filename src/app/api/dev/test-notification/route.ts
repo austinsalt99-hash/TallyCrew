@@ -27,35 +27,55 @@ export async function GET(request: Request) {
   });
   const playerDetail = await playerDetailRes.json();
 
-  const sendRes = await fetch("https://onesignal.com/api/v1/notifications", {
+  const companyId = playerDetail.tags?.company_id;
+
+  // Test 1: direct by player ID
+  const directRes = await fetch("https://onesignal.com/api/v1/notifications", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Key ${REST_KEY}` },
     body: JSON.stringify({
       app_id: APP_ID,
       include_player_ids: [player.id],
       headings: { en: "Direct test" },
-      contents: { en: "Testing delivery" },
+      contents: { en: "Testing delivery (direct)" },
     }),
   });
-  const sendJson = await sendRes.json();
-  const id = sendJson.id;
+  const directId = (await directRes.json()).id;
+
+  // Test 2: filter by company_id tag (same as sendToCompany)
+  const filterRes = await fetch("https://onesignal.com/api/v1/notifications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Key ${REST_KEY}` },
+    body: JSON.stringify({
+      app_id: APP_ID,
+      filters: [{ field: "tag", key: "company_id", relation: "=", value: companyId }],
+      headings: { en: "Filter test" },
+      contents: { en: "Testing delivery (filter)" },
+    }),
+  });
+  const filterSendJson = await filterRes.json();
+  const filterId = filterSendJson.id;
 
   await sleep(5000);
 
-  const checkRes = await fetch(`https://onesignal.com/api/v1/notifications/${id}?app_id=${APP_ID}`, {
-    headers: { Authorization: `Key ${REST_KEY}` },
-  });
-  const checkJson = await checkRes.json();
+  const [directCheck, filterCheck] = await Promise.all([
+    fetch(`https://onesignal.com/api/v1/notifications/${directId}?app_id=${APP_ID}`, {
+      headers: { Authorization: `Key ${REST_KEY}` },
+    }).then(r => r.json()),
+    filterId
+      ? fetch(`https://onesignal.com/api/v1/notifications/${filterId}?app_id=${APP_ID}`, {
+          headers: { Authorization: `Key ${REST_KEY}` },
+        }).then(r => r.json())
+      : Promise.resolve(filterSendJson),
+  ]);
 
   return NextResponse.json({
     player: {
       id: playerDetail.id,
-      device_type: playerDetail.device_type,
-      test_type: playerDetail.test_type, // 0=production, 1=sandbox
-      invalid_identifier: playerDetail.invalid_identifier,
+      test_type: playerDetail.test_type,
       tags: playerDetail.tags,
-      sdk: playerDetail.sdk,
     },
-    notification: checkJson,
+    direct: { successful: directCheck.successful, failed: directCheck.failed, errored: directCheck.errored },
+    filter: { successful: filterCheck.successful, failed: filterCheck.failed, errored: filterCheck.errored, errors: filterCheck.errors },
   });
 }
