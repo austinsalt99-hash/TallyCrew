@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 
 interface AccountProfile {
   id: string;
@@ -36,6 +37,7 @@ export default function DevAccountSwitcher() {
   }, []);
 
   if (!data || data.profiles.length <= 1) return null;
+  if (Capacitor.isNativePlatform()) return null;
 
   const current = data.profiles.find((p) => p.id === data.currentUserId);
   const others = data.profiles.filter((p) => p.id !== data.currentUserId);
