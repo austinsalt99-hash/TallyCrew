@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
+import SiriToken from "@/lib/siriPlugin";
 
-type Section = "profile" | "general" | "appearance";
+type Section = "profile" | "general" | "appearance" | "siri";
 type UploadStage = "idle" | "cropping" | "uploading";
 
 interface ProfileData {
@@ -116,6 +118,11 @@ export default function AdminSettingsPage() {
   const [tzSaving, setTzSaving] = useState(false);
   const [tzSaved, setTzSaved] = useState(false);
 
+  // Siri Shortcuts
+  const [siriEnabled, setSiriEnabled] = useState(false);
+  const [siriBusy, setSiriBusy] = useState(false);
+  const [siriError, setSiriError] = useState<string | null>(null);
+
   // Crop state
   const [stage, setStage] = useState<UploadStage>("idle");
   const [srcUrl, setSrcUrl] = useState<string | null>(null);
@@ -131,8 +138,9 @@ export default function AdminSettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
       const { data: profileData } = await supabase
-        .from("profiles").select("full_name, role, company_id, created_at").eq("id", user.id).single();
+        .from("profiles").select("full_name, role, company_id, created_at, siri_token_hash").eq("id", user.id).single();
       if (!profileData) { setLoading(false); return; }
+      setSiriEnabled(!!profileData.siri_token_hash);
       const { data: company } = await supabase
         .from("companies").select("name, banner_url, timezone").eq("id", profileData.company_id).single();
       setProfile({
@@ -186,6 +194,37 @@ export default function AdminSettingsPage() {
       if (res.ok) setTzSaved(true);
     } finally {
       setTzSaving(false);
+    }
+  }
+
+  async function enableSiri() {
+    setSiriBusy(true);
+    setSiriError(null);
+    try {
+      const res = await fetch("/api/admin/settings/siri-token", { method: "POST", credentials: "include" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to enable Siri Shortcuts");
+      await SiriToken.save({ token: json.token });
+      setSiriEnabled(true);
+    } catch (err) {
+      setSiriError(err instanceof Error ? err.message : "Failed to enable Siri Shortcuts");
+    } finally {
+      setSiriBusy(false);
+    }
+  }
+
+  async function disableSiri() {
+    setSiriBusy(true);
+    setSiriError(null);
+    try {
+      const res = await fetch("/api/admin/settings/siri-token", { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Failed to disable Siri Shortcuts");
+      await SiriToken.clear();
+      setSiriEnabled(false);
+    } catch (err) {
+      setSiriError(err instanceof Error ? err.message : "Failed to disable Siri Shortcuts");
+    } finally {
+      setSiriBusy(false);
     }
   }
 
@@ -409,6 +448,63 @@ export default function AdminSettingsPage() {
     );
   }
 
+  // ── Section: Siri Shortcuts ───────────────────────────────────────────────
+  if (activeSection === "siri") {
+    const isNative = Capacitor.isNativePlatform();
+    return (
+      <div className="max-w-lg mx-auto">
+        <BackHeader title="Siri Shortcuts" onBack={() => { setSiriError(null); setActiveSection(null); }} />
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-900 mb-0.5">Add jobs by voice, without opening the app</p>
+            <p className="text-xs text-gray-400">
+              Once enabled, say “Hey Siri, add to my TallyCrew calendar…” and describe the job the same
+              way you would with the Voice button on the calendar page. It’s parsed the same way and
+              saved as an unverified draft for you to review in Calendar.
+            </p>
+          </div>
+
+          {!isNative ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              <p className="text-xs text-amber-700">Open TallyCrew in the iOS app (not the browser) to enable Siri Shortcuts.</p>
+            </div>
+          ) : (
+            <>
+              {siriError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+                  <p className="text-xs text-red-600">{siriError}</p>
+                </div>
+              )}
+              {siriEnabled && (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="7.5" cy="7.5" r="6.5"/><polyline points="4.5,7.5 6.5,9.5 10.5,5.5"/>
+                  </svg>
+                  <p className="text-xs text-green-700 font-medium">Siri Shortcuts enabled on this phone.</p>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={siriEnabled ? disableSiri : enableSiri}
+                disabled={siriBusy}
+                className={`w-full font-semibold rounded-xl py-3 text-sm transition-colors disabled:opacity-50 ${
+                  siriEnabled
+                    ? "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                }`}
+              >
+                {siriBusy ? "Working…" : siriEnabled ? "Disable on this phone" : "Enable Siri Shortcuts"}
+              </button>
+              <p className="text-xs text-gray-400">
+                Enabling replaces any Siri token from another phone — each admin can have the shortcut active on one device at a time.
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ── Home: section list ────────────────────────────────────────────────────
   return (
     <div className="max-w-lg mx-auto">
@@ -430,6 +526,10 @@ export default function AdminSettingsPage() {
           <NavRow iconBg="#F4A823"
             icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>}
             label="Appearance" description="Dashboard banner, branding" onClick={() => setActiveSection("appearance")} />
+          <div className="mx-4 border-t border-gray-100" />
+          <NavRow iconBg="#0A1172"
+            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg>}
+            label="Siri Shortcuts" description="Add jobs by voice, hands-free" onClick={() => setActiveSection("siri")} />
         </div>
       )}
     </div>
