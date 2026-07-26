@@ -6,6 +6,14 @@ import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from
 import "react-image-crop/dist/ReactCrop.css";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import SiriToken from "@/lib/siriPlugin";
+import type { PayPeriodType } from "@/lib/payPeriod";
+
+const PAY_PERIOD_OPTIONS: { value: PayPeriodType; label: string }[] = [
+  { value: "weekly", label: "Weekly" },
+  { value: "biweekly", label: "Every 2 weeks" },
+  { value: "semimonthly", label: "Twice a month (1st–15th, 16th–end)" },
+  { value: "monthly", label: "Monthly" },
+];
 
 type Section = "profile" | "general" | "appearance" | "siri";
 type UploadStage = "idle" | "cropping" | "uploading";
@@ -117,6 +125,10 @@ export default function AdminSettingsPage() {
   const [companyTimezone, setCompanyTimezone] = useState("America/Toronto");
   const [tzSaving, setTzSaving] = useState(false);
   const [tzSaved, setTzSaved] = useState(false);
+  const [payPeriodType, setPayPeriodType] = useState<PayPeriodType>("biweekly");
+  const [payPeriodAnchor, setPayPeriodAnchor] = useState("2024-01-01");
+  const [paySaving, setPaySaving] = useState(false);
+  const [paySaved, setPaySaved] = useState(false);
 
   // Siri Shortcuts
   const [siriEnabled, setSiriEnabled] = useState(false);
@@ -142,7 +154,7 @@ export default function AdminSettingsPage() {
       if (!profileData) { setLoading(false); return; }
       setSiriEnabled(!!profileData.siri_token_hash);
       const { data: company } = await supabase
-        .from("companies").select("name, banner_url, timezone").eq("id", profileData.company_id).single();
+        .from("companies").select("name, banner_url, timezone, pay_period_type, pay_period_anchor").eq("id", profileData.company_id).single();
       setProfile({
         email: user.email ?? "",
         fullName: profileData.full_name,
@@ -155,6 +167,8 @@ export default function AdminSettingsPage() {
       });
       setBannerUrl(company?.banner_url ?? null);
       setCompanyTimezone(company?.timezone ?? "America/Toronto");
+      setPayPeriodType((company?.pay_period_type as PayPeriodType) ?? "biweekly");
+      setPayPeriodAnchor(company?.pay_period_anchor ?? "2024-01-01");
       setLoading(false);
     }
     load();
@@ -194,6 +208,22 @@ export default function AdminSettingsPage() {
       if (res.ok) setTzSaved(true);
     } finally {
       setTzSaving(false);
+    }
+  }
+
+  async function savePaySchedule() {
+    setPaySaving(true);
+    setPaySaved(false);
+    try {
+      const res = await fetch("/api/company", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ pay_period_type: payPeriodType, pay_period_anchor: payPeriodAnchor }),
+      });
+      if (res.ok) setPaySaved(true);
+    } finally {
+      setPaySaving(false);
     }
   }
 
@@ -320,6 +350,51 @@ export default function AdminSettingsPage() {
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-xl py-3 text-sm transition-colors"
           >
             {tzSaving ? "Saving…" : "Save Timezone"}
+          </button>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4 mt-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-900 mb-0.5">Pay Schedule</p>
+            <p className="text-xs text-gray-400">Controls the period boundaries shown on the Payroll page.</p>
+          </div>
+          <select
+            value={payPeriodType}
+            onChange={(e) => { setPayPeriodType(e.target.value as PayPeriodType); setPaySaved(false); }}
+            className="w-full border border-gray-300 rounded-xl px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {PAY_PERIOD_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          {(payPeriodType === "weekly" || payPeriodType === "biweekly") && (
+            <div>
+              <p className="text-xs text-gray-500 mb-1.5">
+                Start date of any past pay period — used to line up future {payPeriodType === "weekly" ? "weekly" : "2-week"} periods.
+              </p>
+              <input
+                type="date"
+                value={payPeriodAnchor}
+                onChange={(e) => { setPayPeriodAnchor(e.target.value); setPaySaved(false); }}
+                className="w-full border border-gray-300 rounded-xl px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
+          {paySaved && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="7.5" cy="7.5" r="6.5"/><polyline points="4.5,7.5 6.5,9.5 10.5,5.5"/>
+              </svg>
+              <p className="text-xs text-green-700 font-medium">Pay schedule saved.</p>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={savePaySchedule}
+            disabled={paySaving}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-xl py-3 text-sm transition-colors"
+          >
+            {paySaving ? "Saving…" : "Save Pay Schedule"}
           </button>
         </div>
       </div>

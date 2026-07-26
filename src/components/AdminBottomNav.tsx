@@ -82,6 +82,17 @@ const moreItems = [
     ),
   },
   {
+    href: "/admin/payroll",
+    label: "Payroll",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v10" />
+        <path d="M15 9.5c0-1.4-1.3-2.5-3-2.5s-3 1.1-3 2.5 1.3 2.2 3 2.5c1.7.3 3 1.1 3 2.5s-1.3 2.5-3 2.5-3-1.1-3-2.5" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/billing",
     label: "Billing",
     icon: (

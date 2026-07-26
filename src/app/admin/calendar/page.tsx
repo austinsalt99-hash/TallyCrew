@@ -9,6 +9,7 @@ import MyPlanView from "./components/MyPlanView";
 import { ALL_TYPE_CONFIGS, PlanEvent, UnifiedEventType } from "./constants/eventTypes";
 import ScheduleSidebar from "./components/ScheduleSidebar";
 import PlanEventModal from "./components/PlanEventModal";
+import { carveOutGeneral } from "@/lib/billableHours";
 
 interface JobEvent {
   id: string;
@@ -100,14 +101,18 @@ type CalView = "month" | "week" | "day" | "list";
 function getDisplayItems(entry: LinkedBillableEntry, generalHrs: string): DisplayItem[] {
   const items: DisplayItem[] = [];
   if (entry.subEntries != null) {
+    // Sub-entry hours (e.g. Machine Operating) are carved out of the parent
+    // General window, not additional time on top of it.
+    const generalWindow = calcHrsDecimal(entry.startTime, entry.endTime, entry.manualHours);
+    const subHoursList = entry.subEntries.map((sub) => calcHrsDecimal(sub.startTime, sub.endTime, sub.manualHours));
+    const { generalHours } = carveOutGeneral(generalWindow, subHoursList);
     if (entry.client || entry.description) {
-      items.push({ slug: "standard", hrs: generalHrs, client: entry.client, description: entry.description });
+      items.push({ slug: "standard", hrs: fmtDecimalHrs(generalHours), client: entry.client, description: entry.description });
     }
-    for (const sub of entry.subEntries) {
-      const subHrs = calcHrs(sub.startTime, sub.endTime, sub.manualHours);
+    entry.subEntries.forEach((sub, i) => {
       const fields = Object.entries(sub.customFields ?? {}).filter(([, v]) => v) as [string, string][];
-      items.push({ slug: sub.slug, hrs: subHrs, fields });
-    }
+      items.push({ slug: sub.slug, hrs: fmtDecimalHrs(subHoursList[i]), fields });
+    });
   } else {
     const activeSlug = entry.entryType ?? "standard";
     if (activeSlug === "standard") {

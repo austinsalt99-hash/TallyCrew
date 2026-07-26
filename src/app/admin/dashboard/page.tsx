@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import JobEventPicker, { type JobEvent } from "@/components/JobEventPicker";
+import { timeRangeHours, carveOutGeneral, formatHoursLabel } from "@/lib/billableHours";
 
 interface DashJobEvent extends JobEvent {
   location?: string;
@@ -84,12 +85,17 @@ function getWorkItems(entry: BillableEntry): WorkItem[] {
   // New format: subEntries array present
   if (entry.subEntries != null) {
     const items: WorkItem[] = [];
+    // Sub-entry hours (e.g. Machine Operating) are carved out of the parent
+    // General window, not additional time on top of it.
+    const generalWindow = timeRangeHours(entry.startTime, entry.endTime, entry.manualHours);
+    const subHoursList = entry.subEntries.map((sub) => timeRangeHours(sub.startTime, sub.endTime, sub.manualHours));
+    const { generalHours } = carveOutGeneral(generalWindow, subHoursList);
     if (entry.client || entry.description) {
-      items.push({ slug: "standard", hours: hoursFromData(entry.startTime, entry.endTime, entry.manualHours), client: entry.client, description: entry.description });
+      items.push({ slug: "standard", hours: formatHoursLabel(generalHours) || undefined, client: entry.client, description: entry.description });
     }
-    for (const sub of entry.subEntries) {
-      items.push({ slug: sub.slug, hours: hoursFromData(sub.startTime, sub.endTime, sub.manualHours), customFields: sub.customFields });
-    }
+    entry.subEntries.forEach((sub, i) => {
+      items.push({ slug: sub.slug, hours: formatHoursLabel(subHoursList[i]) || undefined, customFields: sub.customFields });
+    });
     return items;
   }
 

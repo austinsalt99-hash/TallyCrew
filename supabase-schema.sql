@@ -37,6 +37,13 @@ ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/Toronto';
 
+-- Pay schedule used by the admin Payroll section to compute period boundaries.
+-- pay_period_anchor is the start date of a known period; only used to derive
+-- weekly/biweekly boundaries (semimonthly/monthly are purely calendar-based).
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS pay_period_type TEXT NOT NULL DEFAULT 'biweekly'
+  CHECK (pay_period_type IN ('weekly', 'biweekly', 'semimonthly', 'monthly'));
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS pay_period_anchor DATE NOT NULL DEFAULT '2024-01-01';
+
 
 -- -------------------------------------------------------------
 -- 2. PROFILES
@@ -470,6 +477,37 @@ CREATE POLICY reminders_admin_insert ON reminders FOR INSERT
   WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
 
 CREATE POLICY reminders_admin_update ON reminders FOR UPDATE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+
+-- -------------------------------------------------------------
+-- 14. PAYROLL PERIODS
+--     Tracks which pay periods an admin has marked as paid. Hours
+--     and pay amounts themselves are computed on the fly from
+--     submissions — this table only records the paid/unpaid state
+--     for a given (company, period_start, period_end).
+-- -------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS payroll_periods (
+  id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id    UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  period_start  DATE        NOT NULL,
+  period_end    DATE        NOT NULL,
+  paid_at       TIMESTAMPTZ,
+  paid_by       UUID        REFERENCES profiles(id),
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT payroll_periods_company_range_key UNIQUE (company_id, period_start, period_end)
+);
+
+ALTER TABLE payroll_periods ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY payroll_periods_admin_read ON payroll_periods FOR SELECT
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY payroll_periods_admin_insert ON payroll_periods FOR INSERT
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY payroll_periods_admin_update ON payroll_periods FOR UPDATE
   USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
   WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
 

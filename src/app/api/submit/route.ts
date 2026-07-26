@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 import { buildEmailHtml } from "@/lib/emailTemplate";
+import { findBillableOverflow } from "@/lib/billableHours";
 import type { BillableEntryData } from "@/components/BillableEntry";
 import type { NonBillableEntryData } from "@/components/NonBillableEntry";
 import type { LogEntryType, LogEntryField, LogEntryFieldOption } from "@/types/logConfig";
@@ -79,6 +80,14 @@ export async function POST(request: Request) {
 
     if (!date) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const overflow = findBillableOverflow(billable ?? []);
+    if (overflow) {
+      return NextResponse.json(
+        { error: `Job ${overflow.entryIndex + 1}: sub-entry hours (${overflow.subTotalHours}h) exceed the ${overflow.generalHours}h logged for General time.` },
+        { status: 400 }
+      );
     }
 
     const { data: inserted, error: dbError } = await supabase
@@ -170,6 +179,14 @@ export async function PUT(request: Request) {
 
     if (!id || !date) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const overflow = findBillableOverflow(billable ?? []);
+    if (overflow) {
+      return NextResponse.json(
+        { error: `Job ${overflow.entryIndex + 1}: sub-entry hours (${overflow.subTotalHours}h) exceed the ${overflow.generalHours}h logged for General time.` },
+        { status: 400 }
+      );
     }
 
     const { error: dbError } = await supabase

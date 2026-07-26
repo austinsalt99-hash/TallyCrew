@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
+import { collectEntryHours } from "@/lib/billableHours";
 
 function calcHours(start?: string, end?: string, manual?: number | null): number {
   if (manual != null) return manual;
@@ -268,18 +269,29 @@ export async function GET(req: NextRequest) {
 
     if (isNewFormat) {
       const subEntries = (entry.subEntries as Record<string, unknown>[]) ?? [];
-      const hasGeneralData = parentHours > 0 || Object.values(parentCustomFields).some(Boolean);
-      if (hasGeneralData) {
-        result.push({ slug: "standard", customFields: parentCustomFields, hours: parentHours, employee: employeeName, date, wage });
-      }
-      for (const se of subEntries) {
-        const seSlug = se.slug as string;
-        const seTypeInfo = slugToType[seSlug];
-        const seCustomFields = (se.customFields as Record<string, string>) ?? {};
-        const ownHours = calcHours(se.startTime as string | undefined, se.endTime as string | undefined, se.manualHours as number | null | undefined);
-        const isTimedType = !seTypeInfo || seTypeInfo.timeMode !== "none";
-        const hours = ownHours > 0 ? ownHours : (isTimedType ? parentHours : 0);
-        result.push({ slug: seSlug, customFields: seCustomFields, hours, employee: employeeName, date, wage });
+      // Sub-entry hours (e.g. Machine Operating) are carved out of the parent
+      // General window, not additional time on top of it.
+      const rawHours = collectEntryHours(
+        {
+          startTime: entry.startTime as string | undefined,
+          endTime: entry.endTime as string | undefined,
+          manualHours: entry.manualHours as number | undefined,
+          customFields: parentCustomFields,
+          subEntries: subEntries.map((se) => ({
+            slug: se.slug as string,
+            startTime: se.startTime as string | undefined,
+            endTime: se.endTime as string | undefined,
+            manualHours: se.manualHours as number | undefined,
+            customFields: (se.customFields as Record<string, string>) ?? {},
+          })),
+        },
+        (slug) => {
+          const t = slugToType[slug];
+          return !t || t.timeMode !== "none";
+        }
+      );
+      for (const rh of rawHours) {
+        result.push({ slug: rh.slug, customFields: rh.customFields, hours: rh.hours, employee: employeeName, date, wage });
       }
     } else {
       const activeSlug = (entry.entryType as string) || "standard";

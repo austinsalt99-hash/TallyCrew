@@ -35,7 +35,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/register") ||
     pathname.startsWith("/auth/") ||
-    pathname.startsWith("/api/");
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/privacy") ||
+    pathname.startsWith("/terms");
 
   // Not logged in → send to login (except public routes)
   if (!user && !isPublic) {

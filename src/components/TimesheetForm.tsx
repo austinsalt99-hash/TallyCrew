@@ -6,6 +6,7 @@ import NonBillableEntry, { NonBillableEntryData } from "./NonBillableEntry";
 import JobEventPicker, { JobEvent } from "./JobEventPicker";
 import LogHistoryPanel from "./LogHistoryPanel";
 import type { LogEntryType } from "@/types/logConfig";
+import { findBillableOverflow } from "@/lib/billableHours";
 
 interface DayEntry {
   id: string;
@@ -306,6 +307,14 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (previewMode) return;
+    const overflow = findBillableOverflow(billable);
+    if (overflow) {
+      setErrorMsg(
+        `Job ${overflow.entryIndex + 1}: sub-entry hours (${overflow.subTotalHours}h) exceed the ${overflow.generalHours}h logged for General time. Adjust the times before submitting.`
+      );
+      setSubmitState("error");
+      return;
+    }
     setSubmitState("submitting");
     setErrorMsg("");
     try {
