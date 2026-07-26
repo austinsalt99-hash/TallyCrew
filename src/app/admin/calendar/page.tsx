@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { App } from "@capacitor/app";
 import CrewBoard from "./components/CrewBoard";
 import WorkloadView from "./components/WorkloadView";
 import AvailabilityGrid from "./components/AvailabilityGrid";
@@ -366,6 +367,7 @@ export default function AdminCalendar() {
   const [transcript, setTranscript] = useState("");
   const [parsing, setParsing] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const rangeRef = useRef({ fetchFrom: "", fetchTo: "" });
 
   const [calView, setCalView] = useState<CalView>("week");
   const [dayOffset, setDayOffset] = useState(0);
@@ -404,6 +406,7 @@ export default function AdminCalendar() {
     fetchFrom = fmt(monthDays[0]);
     fetchTo = fmt(monthDays[monthDays.length - 1]);
   }
+  rangeRef.current = { fetchFrom, fetchTo };
 
   const workerNames = workers.filter((w) => w.role === "worker").map((w) => w.full_name);
   const isPanelDirty = !!selectedEvent && JSON.stringify(panelForm) !== JSON.stringify(eventToForm(selectedEvent));
@@ -511,6 +514,20 @@ export default function AdminCalendar() {
 
   useEffect(() => {
     refreshDrafts();
+  }, []);
+
+  // Siri adds jobs through a background native request that the already-open
+  // WebView has no way to know about — refetch when the app regains focus,
+  // whether that's an iOS resume or the browser tab getting focus back.
+  useEffect(() => {
+    const listenerPromise = App.addListener("resume", () => {
+      refreshDrafts();
+      const { fetchFrom: from, fetchTo: to } = rangeRef.current;
+      fetch(`/api/events?from=${from}&to=${to}`)
+        .then((r) => r.json())
+        .then((data) => setEvents(Array.isArray(data) ? data : []));
+    });
+    return () => { listenerPromise.then((l) => l.remove()); };
   }, []);
 
   useEffect(() => {

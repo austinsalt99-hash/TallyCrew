@@ -63,12 +63,15 @@ struct TallyCrewShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         // jobDetails is free-text, not an AppEntity/AppEnum, so it can't be captured
         // inline in the phrase — Siri asks for it separately via requestValueDialog.
+        // Avoid the word "calendar" in these — Siri's built-in Calendar domain
+        // intercepts phrases like "add to my calendar" before they ever reach
+        // this App Shortcut, so "job" is used as the distinctive anchor instead.
         AppShortcut(
             intent: AddJobIntent(),
             phrases: [
-                "Add to my \(.applicationName) calendar",
-                "In \(.applicationName), add to my calendar",
-                "Add a job to \(.applicationName)"
+                "Add a job to \(.applicationName)",
+                "Log a job in \(.applicationName)",
+                "\(.applicationName), add a job"
             ],
             shortTitle: "Add Job",
             systemImageName: "calendar.badge.plus"
