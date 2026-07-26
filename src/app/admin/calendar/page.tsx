@@ -351,6 +351,8 @@ export default function AdminCalendar() {
   const [calTab, setCalTab] = useState<CalTab>("schedule");
   const [weekOffset, setWeekOffset] = useState(0);
   const [events, setEvents] = useState<JobEvent[]>([]);
+  const [draftEvents, setDraftEvents] = useState<JobEvent[]>([]);
+  const [draftsExpanded, setDraftsExpanded] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState<string | null>(null);
@@ -501,6 +503,16 @@ export default function AdminCalendar() {
       .then((data) => setEvents(Array.isArray(data) ? data : []));
   }, [fetchFrom, fetchTo, calTab]);
 
+  function refreshDrafts() {
+    fetch("/api/events?unverified=1", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setDraftEvents(Array.isArray(data) ? data : []));
+  }
+
+  useEffect(() => {
+    refreshDrafts();
+  }, []);
+
   useEffect(() => {
     if (calTab !== "schedule") return;
     fetch(`/api/admin/plan-events?from=${fetchFrom}&to=${fetchTo}`, { credentials: "include" })
@@ -558,6 +570,14 @@ export default function AdminCalendar() {
     }
     setSelectedEvent(jobEv);
     setPanelForm(eventToForm(jobEv));
+  }
+
+  async function selectDraftEvent(ev: JobEvent) {
+    if (selectedEvent && selectedEvent.id !== ev.id && isPanelDirty) {
+      await handleSavePanel(false);
+    }
+    setSelectedEvent(ev);
+    setPanelForm(eventToForm(ev));
   }
 
   async function closePanel() {
@@ -660,6 +680,7 @@ export default function AdminCalendar() {
     setEvents(await res.json());
     setShowForm(false);
     setSaving(false);
+    refreshDrafts();
   }
 
   async function handleDelete(id: string) {
@@ -672,6 +693,7 @@ export default function AdminCalendar() {
     });
     setEvents((prev) => prev.filter((e) => e.id !== id));
     setSelectedEvent(null);
+    refreshDrafts();
   }
 
   async function handleSavePanel(markVerified = false) {
@@ -694,6 +716,7 @@ export default function AdminCalendar() {
     setSelectedEvent(fresh);
     if (fresh) setPanelForm(eventToForm(fresh));
     setSaving(false);
+    refreshDrafts();
   }
 
   function handleVoiceToggle() {
@@ -1323,6 +1346,47 @@ export default function AdminCalendar() {
             </div>
 
           </div>
+
+          {/* Drafts — jobs added via Siri (or the Voice button) awaiting review */}
+          {draftEvents.length > 0 && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setDraftsExpanded((v) => !v)}
+                className="w-full flex items-center justify-between px-4 py-3"
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  {draftEvents.length} draft{draftEvents.length === 1 ? "" : "s"} awaiting review
+                </span>
+                <svg
+                  width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round"
+                  className={`text-amber-600 transition-transform ${draftsExpanded ? "rotate-180" : ""}`}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {draftsExpanded && (
+                <div className="border-t border-amber-200 divide-y divide-amber-100">
+                  {draftEvents.map((ev) => (
+                    <button
+                      key={ev.id}
+                      type="button"
+                      onClick={() => selectDraftEvent(ev)}
+                      className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-amber-100/60 transition-colors"
+                    >
+                      <span className="text-sm text-gray-800 font-medium truncate">{ev.title || "Untitled job"}</span>
+                      <span className="text-xs text-amber-700 shrink-0">
+                        {new Date(`${ev.date}T00:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                        {ev.start_time ? ` · ${ev.start_time}` : ""}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Voice status bar */}
           {(listening || parsing) && (

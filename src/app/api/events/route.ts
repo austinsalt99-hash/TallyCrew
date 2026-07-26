@@ -16,6 +16,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const from = searchParams.get("from");
   const to = searchParams.get("to");
+  const unverifiedOnly = searchParams.get("unverified") === "1";
 
   let query = supabase
     .from("job_events")
@@ -23,8 +24,13 @@ export async function GET(request: Request) {
     .eq("company_id", profile.company_id)
     .order("date")
     .order("start_time");
-  // Fetch events that overlap the requested range, including multi-day events
-  if (from && to) {
+
+  if (unverifiedOnly) {
+    // Drafts (e.g. from the Siri shortcut) can land on any date, so this
+    // ignores the from/to range entirely — the admin needs to see all of them.
+    query = query.eq("is_verified", false);
+  } else if (from && to) {
+    // Fetch events that overlap the requested range, including multi-day events
     query = query.lte("date", to).or(`end_date.gte.${from},date.gte.${from}`);
   } else if (from) {
     query = query.gte("date", from);

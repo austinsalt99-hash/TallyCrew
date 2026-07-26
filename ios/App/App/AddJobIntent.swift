@@ -61,11 +61,13 @@ enum AddJobIntentError: LocalizedError {
 
 struct TallyCrewShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        // jobDetails is free-text, not an AppEntity/AppEnum, so it can't be captured
+        // inline in the phrase — Siri asks for it separately via requestValueDialog.
         AppShortcut(
             intent: AddJobIntent(),
             phrases: [
-                "Add to my \(.applicationName) calendar that \(\.$jobDetails)",
-                "In \(.applicationName), add to my calendar that \(\.$jobDetails)",
+                "Add to my \(.applicationName) calendar",
+                "In \(.applicationName), add to my calendar",
                 "Add a job to \(.applicationName)"
             ],
             shortTitle: "Add Job",
