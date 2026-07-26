@@ -48,6 +48,7 @@ export default function BottomNav() {
   const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
   const [isDev, setIsDev] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     async function loadProfile() {
@@ -56,10 +57,11 @@ export default function BottomNav() {
       if (!user) return;
       const { data: profile } = await supabase
         .from("profiles")
-        .select("is_dev")
+        .select("is_dev, role")
         .eq("id", user.id)
         .single();
       if (profile?.is_dev) setIsDev(true);
+      if (profile?.role === "admin") setIsAdmin(true);
     }
     loadProfile();
   }, []);
@@ -91,7 +93,7 @@ export default function BottomNav() {
           </svg>
           <span className="text-gray-800 font-medium text-sm whitespace-nowrap">Settings</span>
         </Link>
-        {isDev && (
+        {isAdmin && (
           <>
             <div className="mx-5 border-t border-gray-100" />
             <Link href="/admin" onClick={() => setMoreOpen(false)}
@@ -101,10 +103,12 @@ export default function BottomNav() {
               </svg>
               <span className="text-gray-800 font-medium text-sm whitespace-nowrap">Admin</span>
             </Link>
-            <div className="px-5 py-2.5">
-              <DevAccountSwitcher />
-            </div>
           </>
+        )}
+        {isDev && (
+          <div className="px-5 py-2.5">
+            <DevAccountSwitcher />
+          </div>
         )}
         <div className="mx-5 border-t border-gray-100" />
         <button

@@ -53,7 +53,7 @@ export async function middleware(request: NextRequest) {
       .single();
 
     const url = request.nextUrl.clone();
-    url.pathname = profile?.role === "admin" ? "/admin/dashboard" : "/";
+    url.pathname = profile?.role === "admin" ? "/admin/home" : "/";
     return NextResponse.redirect(url);
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { App } from "@capacitor/app";
 import CrewBoard from "./components/CrewBoard";
 import WorkloadView from "./components/WorkloadView";
@@ -700,6 +700,25 @@ export default function AdminCalendar() {
     refreshDrafts();
   }
 
+  async function handleQuickVerify(id: string) {
+    await fetch("/api/events", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id, is_verified: true }),
+    });
+    const res = await fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`);
+    const data = await res.json();
+    const list: JobEvent[] = Array.isArray(data) ? data : [];
+    setEvents(list);
+    if (selectedEvent?.id === id) {
+      const fresh = list.find((e) => e.id === id) ?? null;
+      setSelectedEvent(fresh);
+      if (fresh) setPanelForm(eventToForm(fresh));
+    }
+    refreshDrafts();
+  }
+
   async function handleDelete(id: string) {
     if (!confirm("Delete this job?")) return;
     await fetch("/api/events", {
@@ -824,7 +843,7 @@ export default function AdminCalendar() {
     }
   }
 
-  function renderTimeGrid(dates: Date[]) {
+  function renderTimeGrid(dates: Date[], headerRow?: ReactNode) {
     // All-day events (no start_time) per date, including multi-day job spans
     const allDayByDate = new Map<string, UnifiedEvent[]>();
     let hasAnyAllDay = false;
@@ -844,51 +863,51 @@ export default function AdminCalendar() {
 
     return (
       <>
-        {/* All-day events strip */}
-        {hasAnyAllDay && (
-          <div className="flex border-b border-gray-100 bg-gray-50/40" style={{ paddingLeft: 56 }}>
-            {dates.map(date => {
-              const dateStr = fmt(date);
-              const evs = allDayByDate.get(dateStr) ?? [];
-              const isToday = dateStr === todayStr;
-              return (
-                <div key={dateStr} className={`flex-1 min-h-[26px] p-0.5 border-l border-gray-100 ${isToday ? "bg-navy-50/30" : ""}`}>
-                  {evs.map(ev => {
-                    const { color, bg } = getEventStyle(ev.type);
-                    return (
-                      <div
-                        key={ev.id}
-                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer leading-tight border-l-2"
-                        style={{ backgroundColor: bg, borderLeftColor: color, color }}
-                        onClick={() => { if (ev.source === "job") { const orig = events.find(j => j.id === ev.id); if (orig) selectEvent(ev); } }}
-                      >
-                        {ev.title}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
+        {/* Sticky header block — pinned during vertical scroll, scrolls horizontally with the grid */}
+        {(headerRow || hasAnyAllDay) && (
+          <div className="sticky top-0 z-30 bg-white">
+            {headerRow}
+            {/* All-day events strip */}
+            {hasAnyAllDay && (
+              <div className="flex border-b border-gray-100 bg-gray-50/40">
+                <div className="sticky left-0 z-20 flex-shrink-0 bg-gray-50/40" style={{ width: 56 }} />
+                {dates.map(date => {
+                  const dateStr = fmt(date);
+                  const evs = allDayByDate.get(dateStr) ?? [];
+                  const isToday = dateStr === todayStr;
+                  return (
+                    <div key={dateStr} className={`flex-1 min-h-[26px] p-0.5 border-l border-gray-100 ${isToday ? "bg-navy-50/30" : ""}`}>
+                      {evs.map(ev => {
+                        const { color, bg } = getEventStyle(ev.type);
+                        return (
+                          <div
+                            key={ev.id}
+                            className="text-[9px] font-semibold px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer leading-tight border-l-2"
+                            style={{ backgroundColor: bg, borderLeftColor: color, color }}
+                            onClick={() => { if (ev.source === "job") { const orig = events.find(j => j.id === ev.id); if (orig) selectEvent(ev); } }}
+                          >
+                            {ev.title}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
         {/* Time grid */}
-        <div
-          className={`overflow-y-auto ${selectedEvent ? "max-h-60 md:max-h-[520px]" : "max-h-[520px]"}`}
-          style={{ overflowX: "clip" as any }}
-        >
-          <div className="flex" style={{ height: totalHeight }}>
-            {/* Sticky time column */}
-            <div
-              className="relative flex-shrink-0 bg-white"
-              style={{ width: 56, position: "sticky", left: 0, zIndex: 10 }}
-            >
-              {HOUR_LABELS.map((label, i) => (
-                <div key={i} className="absolute right-0 pr-2 flex items-start" style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}>
-                  <span className="text-xs text-gray-400 mt-1 leading-none">{label}</span>
-                </div>
-              ))}
-            </div>
-            {dates.map((date) => {
+        <div className="flex" style={{ height: totalHeight }}>
+          {/* Sticky time column */}
+          <div className="sticky left-0 z-20 flex-shrink-0 bg-white" style={{ width: 56 }}>
+            {HOUR_LABELS.map((label, i) => (
+              <div key={i} className="absolute right-0 pr-2 flex items-start" style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}>
+                <span className="text-xs text-gray-400 mt-1 leading-none">{label}</span>
+              </div>
+            ))}
+          </div>
+          {dates.map((date) => {
               const dateStr = fmt(date);
               const dayEvents = unifiedEvents.filter((e) => e.date === dateStr && e.start_time);
               const isToday = dateStr === todayStr;
@@ -959,13 +978,13 @@ export default function AdminCalendar() {
               );
             })}
           </div>
-        </div>
       </>
     );
   }
 
   function renderListView() {
     const dateGroups: Record<string, UnifiedEvent[]> = {};
+
     for (const ev of unifiedEvents) {
       if (!dateGroups[ev.date]) dateGroups[ev.date] = [];
       dateGroups[ev.date].push(ev);
@@ -1387,18 +1406,43 @@ export default function AdminCalendar() {
               {draftsExpanded && (
                 <div className="border-t border-amber-200 divide-y divide-amber-100">
                   {draftEvents.map((ev) => (
-                    <button
-                      key={ev.id}
-                      type="button"
-                      onClick={() => selectDraftEvent(ev)}
-                      className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-amber-100/60 transition-colors"
-                    >
-                      <span className="text-sm text-gray-800 font-medium truncate">{ev.title || "Untitled job"}</span>
-                      <span className="text-xs text-amber-700 shrink-0">
-                        {new Date(`${ev.date}T00:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-                        {ev.start_time ? ` · ${ev.start_time}` : ""}
-                      </span>
-                    </button>
+                    <div key={ev.id} className="flex items-center gap-1 px-4 py-2.5 hover:bg-amber-100/60 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => selectDraftEvent(ev)}
+                        className="flex-1 min-w-0 flex items-center justify-between gap-3 text-left"
+                      >
+                        <span className="text-sm text-gray-800 font-medium truncate">{ev.title || "Untitled job"}</span>
+                        <span className="text-xs text-amber-700 shrink-0">
+                          {new Date(`${ev.date}T00:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                          {ev.start_time ? ` · ${ev.start_time}` : ""}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        title="Verify"
+                        onClick={() => handleQuickVerify(ev.id)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg text-green-600 hover:bg-green-100 shrink-0"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete"
+                        onClick={() => handleDelete(ev.id)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-100 shrink-0"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6l-1 14H6L5 6" />
+                          <path d="M10 11v6" />
+                          <path d="M14 11v6" />
+                          <path d="M9 6V4h6v2" />
+                        </svg>
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -1504,28 +1548,30 @@ export default function AdminCalendar() {
               {/* WEEK VIEW */}
               {calView === "week" && (
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
+                  <div className={`overflow-auto ${selectedEvent ? "max-h-60 md:max-h-[580px]" : "max-h-[580px]"}`}>
                     <div style={{ minWidth: 640 }}>
-                      <div className="flex border-b border-gray-200" style={{ paddingLeft: 56 }}>
-                        {weekDates.map((date, i) => {
-                          const dateStr = fmt(date);
-                          const isToday = dateStr === todayStr;
-                          return (
-                            <div key={dateStr} className={`flex-1 py-3 text-center border-l border-gray-100 ${isToday ? "bg-navy-50" : ""}`}>
-                              <div className={`text-xs font-semibold uppercase tracking-wider ${isToday ? "text-navy-500" : "text-gray-400"}`}>
-                                {DAY_NAMES[i]}
+                      {renderTimeGrid(weekDates, (
+                        <div className="flex border-b border-gray-200">
+                          <div className="sticky left-0 z-20 flex-shrink-0 bg-white" style={{ width: 56 }} />
+                          {weekDates.map((date, i) => {
+                            const dateStr = fmt(date);
+                            const isToday = dateStr === todayStr;
+                            return (
+                              <div key={dateStr} className={`flex-1 py-3 text-center border-l border-gray-100 ${isToday ? "bg-navy-50" : ""}`}>
+                                <div className={`text-xs font-semibold uppercase tracking-wider ${isToday ? "text-navy-500" : "text-gray-400"}`}>
+                                  {DAY_NAMES[i]}
+                                </div>
+                                <div className={`text-2xl font-extrabold leading-tight mt-0.5 ${isToday ? "text-navy-600" : "text-gray-800"}`}>
+                                  {date.getDate()}
+                                </div>
+                                <div className={`text-xs mt-0.5 ${isToday ? "text-navy-400" : "text-gray-400"}`}>
+                                  {MONTHS[date.getMonth()]}
+                                </div>
                               </div>
-                              <div className={`text-2xl font-extrabold leading-tight mt-0.5 ${isToday ? "text-navy-600" : "text-gray-800"}`}>
-                                {date.getDate()}
-                              </div>
-                              <div className={`text-xs mt-0.5 ${isToday ? "text-navy-400" : "text-gray-400"}`}>
-                                {MONTHS[date.getMonth()]}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {renderTimeGrid(weekDates)}
+                            );
+                          })}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -1550,7 +1596,9 @@ export default function AdminCalendar() {
                             {MONTHS[dayDate.getMonth()]} {dayDate.getFullYear()}
                           </div>
                         </div>
-                        {renderTimeGrid([dayDate])}
+                        <div className={`overflow-y-auto ${selectedEvent ? "max-h-60 md:max-h-[520px]" : "max-h-[520px]"}`}>
+                          {renderTimeGrid([dayDate])}
+                        </div>
                       </>
                     );
                   })()}
@@ -1561,14 +1609,29 @@ export default function AdminCalendar() {
               {calView === "list" && renderListView()}
             </div>
 
-                {/* Details panel (side panel on schedule tab) */}
+                {/* Details panel (side panel on schedule tab, desktop only) */}
                 {selectedEvent && (
-                  <div className="mt-4 md:mt-0 md:w-1/2">
+                  <div className="hidden md:block md:w-1/2">
                     {renderDetailsPanel()}
                   </div>
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Details bottom sheet for schedule tab (mobile only — pops up immediately instead of stacking below the calendar) */}
+      {selectedEvent && calTab === "schedule" && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/40 flex items-end justify-center z-40"
+          onClick={closePanel}
+        >
+          <div
+            className="w-full max-h-[85vh] overflow-auto rounded-t-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {renderDetailsPanel()}
           </div>
         </div>
       )}

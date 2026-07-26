@@ -9,6 +9,7 @@ export default async function Home() {
   const { user, profile } = await getSessionUser(supabase);
 
   if (!user || !profile) redirect("/login");
+  if (profile.role === "admin") redirect("/admin/home");
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">

@@ -459,7 +459,7 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
           <div className="bg-slate-50 overflow-hidden" style={{ height: EXPANDED_HEIGHT }}>
             <div className="flex h-full" style={{ minWidth: 700 }}>
               {/* Time axis */}
-              <div className="relative flex-shrink-0 border-r border-gray-200 bg-slate-100" style={{ width: 140 }}>
+              <div className="sticky left-0 z-20 relative flex-shrink-0 border-r border-gray-200 bg-slate-100" style={{ width: 140 }}>
                 <div className="flex items-center gap-2 px-3 h-7 border-b border-gray-200">
                   <span className="text-[9px] font-bold text-navy-600 uppercase tracking-wider">Hour View</span>
                   {allWeekEvents.length > 0 && (
