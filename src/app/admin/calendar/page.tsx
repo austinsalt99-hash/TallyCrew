@@ -379,7 +379,9 @@ export default function AdminCalendar() {
   const [visibleTypes, setVisibleTypes] = useState<Set<string>>(
     new Set(["job", "draft-job", "meeting", "site-visit", "task", "reminder", "note"])
   );
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 768
+  );
   const [planModalOpen, setPlanModalOpen] = useState(false);
   const [planModalType, setPlanModalType] = useState<string>("task");
   const [planModalDate, setPlanModalDate] = useState<string>("");
@@ -876,13 +878,13 @@ export default function AdminCalendar() {
                   const evs = allDayByDate.get(dateStr) ?? [];
                   const isToday = dateStr === todayStr;
                   return (
-                    <div key={dateStr} className={`flex-1 min-h-[26px] p-0.5 border-l border-gray-100 ${isToday ? "bg-navy-50/30" : ""}`}>
+                    <div key={dateStr} className={`flex-1 min-w-0 min-h-[26px] p-0.5 border-l border-gray-100 ${isToday ? "bg-navy-50/30" : ""}`}>
                       {evs.map(ev => {
                         const { color, bg } = getEventStyle(ev.type);
                         return (
                           <div
                             key={ev.id}
-                            className="text-[9px] font-semibold px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer leading-tight border-l-2"
+                            className="text-[10px] font-semibold px-1.5 py-1 rounded mb-0.5 truncate cursor-pointer leading-tight border-l-2"
                             style={{ backgroundColor: bg, borderLeftColor: color, color }}
                             onClick={() => { if (ev.source === "job") { const orig = events.find(j => j.id === ev.id); if (orig) selectEvent(ev); } }}
                           >
@@ -1557,7 +1559,7 @@ export default function AdminCalendar() {
                             const dateStr = fmt(date);
                             const isToday = dateStr === todayStr;
                             return (
-                              <div key={dateStr} className={`flex-1 py-3 text-center border-l border-gray-100 ${isToday ? "bg-navy-50" : ""}`}>
+                              <div key={dateStr} className={`flex-1 min-w-0 py-3 text-center border-l border-gray-100 ${isToday ? "bg-navy-50" : ""}`}>
                                 <div className={`text-xs font-semibold uppercase tracking-wider ${isToday ? "text-navy-500" : "text-gray-400"}`}>
                                   {DAY_NAMES[i]}
                                 </div>

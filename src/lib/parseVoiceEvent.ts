@@ -11,7 +11,7 @@ export interface ParsedVoiceEvent {
   description: string;
 }
 
-export async function parseVoiceEventText(text: string): Promise<ParsedVoiceEvent> {
+export async function parseVoiceEventText(text: string, crewNames: string[] = []): Promise<ParsedVoiceEvent> {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
@@ -21,6 +21,10 @@ export async function parseVoiceEventText(text: string): Promise<ParsedVoiceEven
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
   const dayOfWeek = today.toLocaleDateString("en-US", { weekday: "long" });
+
+  const assignedToInstruction = crewNames.length > 0
+    ? `assigned_to (string, or "") — this company's crew members are: ${crewNames.join(", ")}. Speech-to-text often mishears names (e.g. "John Dough" for "John Doe"), so if the input names or sounds like any of these crew members, return that crew member's name EXACTLY as spelled in the list above, even if the input spells or pronounces it differently. Only return a name outside this list if the input clearly names someone not on it. Return "" if no one is mentioned.`
+    : `assigned_to (string, crew member or team, or "")`;
 
   const message = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
@@ -35,7 +39,7 @@ export async function parseVoiceEventText(text: string): Promise<ParsedVoiceEven
 - end_time (string, HH:MM in 24h format, or "")
 - client (string, company or person name, or "")
 - location (string, address or place, or "")
-- assigned_to (string, crew member or team, or "")
+- ${assignedToInstruction}
 - description (string, any remaining notes, or "")
 
 Return ONLY the JSON object. No explanation, no markdown, no code fences.

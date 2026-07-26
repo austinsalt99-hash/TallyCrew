@@ -11,4 +11,11 @@
   body {
     padding-top: calc(env(safe-area-inset-top) + 44px);
   }
+
+  /* iOS Safari auto-zooms the page when focusing a text input under 16px.
+     Force 16px on mobile so tapping into a field (location, assigned-to, etc.)
+     doesn't zoom the screen in. */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }

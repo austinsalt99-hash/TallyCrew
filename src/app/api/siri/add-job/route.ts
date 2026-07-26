@@ -30,9 +30,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
   }
 
+  const { data: crew } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("company_id", profile.company_id);
+  const crewNames = (crew ?? []).map((p) => p.full_name).filter(Boolean);
+
   let parsed;
   try {
-    parsed = await parseVoiceEventText(text);
+    parsed = await parseVoiceEventText(text, crewNames);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to parse voice input" }, { status: 500 });
   }

@@ -11,8 +11,14 @@ export async function POST(request: Request) {
   const { text } = await request.json();
   if (!text?.trim()) return NextResponse.json({ error: "No text provided" }, { status: 400 });
 
+  const { data: crew } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("company_id", profile.company_id);
+  const crewNames = (crew ?? []).map((p) => p.full_name).filter(Boolean);
+
   try {
-    const parsed = await parseVoiceEventText(text);
+    const parsed = await parseVoiceEventText(text, crewNames);
     return NextResponse.json(parsed);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to parse AI response" }, { status: 500 });
