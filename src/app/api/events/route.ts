@@ -17,6 +17,7 @@ export async function GET(request: Request) {
   const from = searchParams.get("from");
   const to = searchParams.get("to");
   const unverifiedOnly = searchParams.get("unverified") === "1";
+  const ongoingJobId = searchParams.get("ongoingJobId");
 
   let query = supabase
     .from("job_events")
@@ -25,7 +26,11 @@ export async function GET(request: Request) {
     .order("date")
     .order("start_time");
 
-  if (unverifiedOnly) {
+  if (ongoingJobId) {
+    // Every calendar entry ever scheduled under this ongoing job, regardless
+    // of date range — used to bulk-link them all into one invoice.
+    query = query.eq("ongoing_job_id", ongoingJobId);
+  } else if (unverifiedOnly) {
     // Drafts (e.g. from the Siri shortcut) can land on any date, so this
     // ignores the from/to range entirely — the admin needs to see all of them.
     query = query.eq("is_verified", false);
@@ -65,7 +70,14 @@ export async function PUT(request: Request) {
   if (authErr || !profile) return NextResponse.json({ error: authErr }, { status });
 
   const { id, ...updates } = await request.json();
-  const cleanUpdates = { ...updates, start_time: updates.start_time || null, end_time: updates.end_time || null, end_date: updates.end_date || null };
+  // Only normalize fields the caller actually sent — defaulting an *omitted*
+  // field to null (rather than leaving it untouched) silently wipes it on
+  // every partial update (e.g. drag-to-reschedule only sends date/time,
+  // "quick verify" only sends is_verified — neither should blank end_date).
+  const cleanUpdates: Record<string, unknown> = { ...updates };
+  if ("start_time" in updates) cleanUpdates.start_time = updates.start_time || null;
+  if ("end_time" in updates) cleanUpdates.end_time = updates.end_time || null;
+  if ("end_date" in updates) cleanUpdates.end_date = updates.end_date || null;
   const { data, error } = await supabase
     .from("job_events")
     .update(cleanUpdates)

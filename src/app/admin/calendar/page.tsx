@@ -23,6 +23,15 @@ interface JobEvent {
   end_time: string;
   assigned_to: string;
   is_verified: boolean;
+  ongoing_job_id?: string | null;
+}
+
+interface OngoingJob {
+  id: string;
+  title: string;
+  client: string | null;
+  location: string | null;
+  description: string | null;
 }
 
 interface UnifiedEvent {
@@ -240,7 +249,62 @@ const EMPTY_FORM = {
   is_verified: true as boolean,
   recurrence: "" as "" | "daily" | "weekly" | "biweekly" | "monthly",
   repeat_until: "",
+  ongoing_job_id: "",
 };
+
+// ── OngoingJobPicker: lets a job be linked to a reusable "parent" project so
+// scheduling another day doesn't require re-entering client/location/
+// description, and invoicing can pull hours across every day logged
+// against the project. Shared by the Add/Edit modal and the detail panel. ──
+
+function OngoingJobPicker({
+  form, setForm, ongoingJobs, newTitle, setNewTitle,
+}: {
+  form: typeof EMPTY_FORM;
+  setForm: (f: typeof EMPTY_FORM) => void;
+  ongoingJobs: OngoingJob[];
+  newTitle: string;
+  setNewTitle: (t: string) => void;
+}) {
+  return (
+    <div className="col-span-2">
+      <label className="block text-xs text-gray-500 mb-1">
+        Ongoing job <span className="font-normal text-gray-400">(optional — links this to a recurring project)</span>
+      </label>
+      <select
+        value={form.ongoing_job_id}
+        onChange={(e) => {
+          const val = e.target.value;
+          if (val === "__new__") { setForm({ ...form, ongoing_job_id: val }); return; }
+          const picked = ongoingJobs.find((j) => j.id === val);
+          setForm({
+            ...form,
+            ongoing_job_id: val,
+            client: form.client || picked?.client || "",
+            location: form.location || picked?.location || "",
+            description: form.description || picked?.description || "",
+          });
+        }}
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
+      >
+        <option value="">— One-off job —</option>
+        {ongoingJobs.map((j) => (
+          <option key={j.id} value={j.id}>{j.title}</option>
+        ))}
+        <option value="__new__">+ New ongoing job…</option>
+      </select>
+      {form.ongoing_job_id === "__new__" && (
+        <input
+          type="text"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          placeholder="Name this ongoing job (e.g. Smith Residence Renovation)"
+          className="w-full mt-2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+        />
+      )}
+    </div>
+  );
+}
 
 const START_HOUR = 6;
 const END_HOUR = 19;
@@ -391,9 +455,16 @@ export default function AdminCalendar() {
   const [planModalType, setPlanModalType] = useState<string>("task");
   const [planModalDate, setPlanModalDate] = useState<string>("");
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [ongoingJobs, setOngoingJobs] = useState<OngoingJob[]>([]);
+  const [newOngoingJobTitle, setNewOngoingJobTitle] = useState("");
+  const [panelNewOngoingJobTitle, setPanelNewOngoingJobTitle] = useState("");
   const [formWorkerOpen, setFormWorkerOpen] = useState(false);
   const [panelWorkerOpen, setPanelWorkerOpen] = useState(false);
   const isDraggingRef = useRef(false);
+  // Zone-qualified drop-target highlight (e.g. "allday:2026-08-03") — zone
+  // prefix keeps the all-day strip, hourly grid, and month view from
+  // cross-highlighting when they show the same date simultaneously.
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
 
   const weekDates = getWeekDates(weekOffset);
   const from = fmt(weekDates[0]);
@@ -551,6 +622,12 @@ export default function AdminCalendar() {
   }, []);
 
   useEffect(() => {
+    fetch("/api/ongoing-jobs", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setOngoingJobs(Array.isArray(data) ? data : []));
+  }, []);
+
+  useEffect(() => {
     setExpandedLogs([]);
     if (!selectedEvent) { setLinkedLogs([]); return; }
     setLoadingLogs(true);
@@ -566,6 +643,7 @@ export default function AdminCalendar() {
 
   function openNew(date = "", startTime = "", assignedTo = "") {
     setForm({ ...EMPTY_FORM, date, start_time: startTime, assigned_to: assignedTo, is_verified: true });
+    setNewOngoingJobTitle("");
     setEditId(null);
     setShowForm(true);
   }
@@ -583,6 +661,7 @@ export default function AdminCalendar() {
       end_time: ev.end_time ?? "",
       assigned_to: ev.assigned_to ?? "",
       is_verified: ev.is_verified !== false,
+      ongoing_job_id: ev.ongoing_job_id ?? "",
     };
   }
 
@@ -656,30 +735,127 @@ export default function AdminCalendar() {
       newEndTime = `${String(Math.min(newEndH, 23)).padStart(2, "0")}:${String(Math.min(newEndM, 59)).padStart(2, "0")}`;
     }
 
-    setEvents((prev) => prev.map((e) =>
-      e.id === eventId ? { ...e, date: dateStr, start_time: newStartTime, end_time: newEndTime ?? e.end_time } : e
-    ));
+    // A timed job only ever shows on its start day in this lane, so dragging
+    // it here always means "move that one day" — the split-day endpoint
+    // detaches it from the rest of the span (if any) rather than dragging
+    // every other day along with it.
+    try {
+      await fetch("/api/events/split-day", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          eventId,
+          extractedDate: ev.date,
+          targetDate: dateStr,
+          startTime: newStartTime,
+          endTime: newEndTime,
+        }),
+      });
+      const res = await fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`);
+      setEvents(await res.json());
+    } finally {
+      setTimeout(() => { isDraggingRef.current = false; }, 100);
+    }
+  }
 
+  // ── Whole-day drag: used by the all-day strip and month view, where a job
+  // has no hour axis to drop onto — dragging a day segment detaches just
+  // that day (see commitWholeDayMove), and a resize handle drag shrinks/
+  // extends the span itself. ──
+
+  function handleWholeDayDragStart(e: React.DragEvent, evId: string, sourceDate: string) {
+    isDraggingRef.current = true;
+    e.dataTransfer.setData("wholeDayEventId", evId);
+    e.dataTransfer.setData("wholeDayEventSourceDate", sourceDate);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleResizeDragStart(e: React.DragEvent, evId: string) {
+    isDraggingRef.current = true;
+    e.dataTransfer.setData("resizeEventId", evId);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  // Dragging a single day off a multi-day job detaches just that day — the
+  // split-day endpoint handles both the plain-move case (already a single
+  // day) and exploding a still-contiguous range into per-day rows linked
+  // via ongoing_job_id.
+  async function commitWholeDayMove(eventId: string, sourceDate: string, targetDate: string) {
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev) return;
+    const extractedDate = sourceDate || ev.date;
+    if (extractedDate === targetDate) return;
+    await fetch("/api/events/split-day", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ eventId, extractedDate, targetDate }),
+    });
+    const res = await fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`);
+    setEvents(await res.json());
+  }
+
+  async function commitResize(eventId: string, targetDate: string) {
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev) return;
+    const clampedTarget = targetDate < ev.date ? ev.date : targetDate;
+    const newEndDate = clampedTarget === ev.date ? undefined : clampedTarget;
+    if ((ev.end_date || undefined) === newEndDate) return;
+    setEvents((prev) => prev.map((e) => e.id === eventId ? { ...e, end_date: newEndDate } : e));
     await fetch("/api/events", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ id: eventId, date: dateStr, start_time: newStartTime, end_time: newEndTime }),
+      body: JSON.stringify({ id: eventId, end_date: newEndDate ?? null }),
     });
+  }
 
-    setTimeout(() => { isDraggingRef.current = false; }, 100);
+  async function handleWholeDayDrop(dateStr: string, e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const resizeId = e.dataTransfer.getData("resizeEventId");
+    const moveId = e.dataTransfer.getData("wholeDayEventId");
+    const moveSourceDate = e.dataTransfer.getData("wholeDayEventSourceDate");
+    try {
+      if (resizeId) await commitResize(resizeId, dateStr);
+      else if (moveId) await commitWholeDayMove(moveId, moveSourceDate, dateStr);
+    } finally {
+      setTimeout(() => { isDraggingRef.current = false; }, 100);
+    }
+  }
+
+  // Resolves the "+ New ongoing job…" sentinel into a real ongoing_jobs row
+  // (creating it on first save), or passes through an existing id / null.
+  async function resolveOngoingJobId(f: typeof EMPTY_FORM, title: string): Promise<string | null> {
+    if (f.ongoing_job_id !== "__new__") return f.ongoing_job_id || null;
+    const trimmed = title.trim();
+    if (!trimmed) return null;
+    const res = await fetch("/api/ongoing-jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ title: trimmed, client: f.client, location: f.location, description: f.description }),
+    });
+    if (!res.ok) return null;
+    const created = await res.json();
+    setOngoingJobs((prev) => [...prev, created].sort((a, b) => a.title.localeCompare(b.title)));
+    return created.id;
   }
 
   async function handleSave() {
     if (!form.title || !form.date) return;
     setSaving(true);
 
+    const ongoingJobId = await resolveOngoingJobId(form, newOngoingJobTitle);
+    const formToSave = { ...form, ongoing_job_id: ongoingJobId };
+
     function clean<T extends { start_time: string; end_time: string; end_date: string }>(p: T) {
       return { ...p, start_time: p.start_time || null, end_time: p.end_time || null, end_date: p.end_date || null };
     }
-    if (!editId && form.recurrence && form.repeat_until) {
-      const dates = generateRecurrenceDates(form.date, form.recurrence, form.repeat_until);
-      const { recurrence: _r, repeat_until: _u, ...basePayload } = form;
+    if (!editId && formToSave.recurrence && formToSave.repeat_until) {
+      const dates = generateRecurrenceDates(formToSave.date, formToSave.recurrence, formToSave.repeat_until);
+      const { recurrence: _r, repeat_until: _u, ...basePayload } = formToSave;
       for (const d of dates) {
         await fetch("/api/events", {
           method: "POST",
@@ -689,7 +865,7 @@ export default function AdminCalendar() {
         });
       }
     } else {
-      const { recurrence: _r, repeat_until: _u, ...payload } = form;
+      const { recurrence: _r, repeat_until: _u, ...payload } = formToSave;
       const method = editId ? "PUT" : "POST";
       const body = editId ? { id: editId, ...clean(payload) } : clean(payload);
       await fetch("/api/events", {
@@ -704,6 +880,7 @@ export default function AdminCalendar() {
     setEvents(await res.json());
     setShowForm(false);
     setSaving(false);
+    setNewOngoingJobTitle("");
     refreshDrafts();
   }
 
@@ -742,8 +919,9 @@ export default function AdminCalendar() {
   async function handleSavePanel(markVerified = false) {
     if (!selectedEvent) return;
     setSaving(true);
+    const ongoingJobId = await resolveOngoingJobId(panelForm, panelNewOngoingJobTitle);
     const { recurrence: _r, repeat_until: _u, ...payload } = panelForm;
-    const cleanedPayload = { ...payload, start_time: payload.start_time || null, end_time: payload.end_time || null, end_date: payload.end_date || null };
+    const cleanedPayload = { ...payload, ongoing_job_id: ongoingJobId, start_time: payload.start_time || null, end_time: payload.end_time || null, end_date: payload.end_date || null };
     const body = { id: selectedEvent.id, ...cleanedPayload, ...(markVerified ? { is_verified: true } : {}) };
     await fetch("/api/events", {
       method: "PUT",
@@ -759,6 +937,7 @@ export default function AdminCalendar() {
     setSelectedEvent(fresh);
     if (fresh) setPanelForm(eventToForm(fresh));
     setSaving(false);
+    setPanelNewOngoingJobTitle("");
     refreshDrafts();
   }
 
@@ -883,17 +1062,42 @@ export default function AdminCalendar() {
                   const evs = allDayByDate.get(dateStr) ?? [];
                   const isToday = dateStr === todayStr;
                   return (
-                    <div key={dateStr} className={`flex-1 min-w-0 min-h-[26px] p-0.5 border-l border-gray-100 ${isToday ? "bg-navy-50/30" : ""}`}>
+                    <div
+                      key={dateStr}
+                      className={`flex-1 min-w-0 min-h-[26px] p-0.5 border-l border-gray-100 transition-colors ${
+                        dragOverKey === `allday:${dateStr}` ? "bg-blue-100 ring-2 ring-inset ring-blue-400" : isToday ? "bg-navy-50/30" : ""
+                      }`}
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverKey(`allday:${dateStr}`); }}
+                      onDragLeave={() => setDragOverKey((k) => k === `allday:${dateStr}` ? null : k)}
+                      onDrop={(e) => { setDragOverKey(null); handleWholeDayDrop(dateStr, e); }}
+                    >
                       {evs.map(ev => {
                         const { color, bg } = getEventStyle(ev.type);
+                        const isJob = ev.source === "job";
+                        const isStart = ev.date === dateStr;
+                        const isEnd = (ev.end_date || ev.date) === dateStr;
                         return (
                           <div
                             key={ev.id}
-                            className="text-[10px] font-semibold px-1.5 py-1 rounded mb-0.5 truncate cursor-pointer leading-tight border-l-2"
+                            className={`relative text-[10px] font-semibold px-1.5 py-1 rounded mb-0.5 truncate leading-tight border-l-2 ${isJob ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                             style={{ backgroundColor: bg, borderLeftColor: color, color }}
-                            onClick={() => { if (ev.source === "job") { const orig = events.find(j => j.id === ev.id); if (orig) selectEvent(ev); } }}
+                            draggable={isJob}
+                            onDragStart={isJob ? (e) => handleWholeDayDragStart(e, ev.id, dateStr) : undefined}
+                            onDragEnd={() => setDragOverKey(null)}
+                            onClick={() => { if (isJob) { const orig = events.find(j => j.id === ev.id); if (orig) selectEvent(ev); } }}
+                            title={!isStart ? `${ev.title} (continues from ${ev.date})` : ev.title}
                           >
-                            {ev.title}
+                            {!isStart && "↔ "}{ev.title}
+                            {isJob && isEnd && (
+                              <div
+                                draggable
+                                onDragStart={(e) => { e.stopPropagation(); handleResizeDragStart(e, ev.id); }}
+                                onDragEnd={() => setDragOverKey(null)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute top-0 right-0 h-full w-2.5 cursor-ew-resize hover:bg-black/10"
+                                title="Drag to extend across more days"
+                              />
+                            )}
                           </div>
                         );
                       })}
@@ -921,11 +1125,14 @@ export default function AdminCalendar() {
               return (
                 <div
                   key={dateStr}
-                  className={`flex-1 relative border-l border-gray-100 cursor-crosshair ${isToday ? "bg-navy-50/20" : ""}`}
+                  className={`flex-1 relative border-l border-gray-100 cursor-crosshair transition-colors ${
+                    dragOverKey === `hourly:${dateStr}` ? "bg-blue-100 ring-2 ring-inset ring-blue-400" : isToday ? "bg-navy-50/20" : ""
+                  }`}
                   style={{ height: totalHeight }}
                   onClick={(e) => handleGridClick(dateStr, e)}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                  onDrop={(e) => handleDrop(dateStr, e)}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverKey(`hourly:${dateStr}`); }}
+                  onDragLeave={() => setDragOverKey((k) => k === `hourly:${dateStr}` ? null : k)}
+                  onDrop={(e) => { setDragOverKey(null); handleDrop(dateStr, e); }}
                 >
                   {HOUR_LABELS.map((_, i) => (
                     <div key={i} className="absolute left-0 right-0 border-t border-gray-100" style={{ top: i * HOUR_HEIGHT }} />
@@ -955,6 +1162,7 @@ export default function AdminCalendar() {
                           borderLeftColor: color,
                         }}
                         onDragStart={ev.source === "job" ? (e) => { e.stopPropagation(); handleDragStart(e, ev); } : undefined}
+                        onDragEnd={() => setDragOverKey(null)}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (!isDraggingRef.current && ev.source === "job") {
@@ -1125,6 +1333,13 @@ export default function AdminCalendar() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
             />
           </div>
+          <OngoingJobPicker
+            form={panelForm}
+            setForm={setPanelForm}
+            ongoingJobs={ongoingJobs}
+            newTitle={panelNewOngoingJobTitle}
+            setNewTitle={setPanelNewOngoingJobTitle}
+          />
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Start time</label>
@@ -1512,9 +1727,12 @@ export default function AdminCalendar() {
                         return (
                           <div
                             key={dateStr}
-                            onClick={() => { setDayOffset(dayDiff(date, new Date())); setCalView("day"); }}
+                            onClick={() => { if (isDraggingRef.current) return; setDayOffset(dayDiff(date, new Date())); setCalView("day"); }}
+                            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverKey(`month:${dateStr}`); }}
+                            onDragLeave={() => setDragOverKey((k) => k === `month:${dateStr}` ? null : k)}
+                            onDrop={(e) => { setDragOverKey(null); handleWholeDayDrop(dateStr, e); }}
                             className={`min-h-[72px] p-1 border-t border-gray-100 cursor-pointer active:bg-gray-100 hover:bg-gray-50 transition-colors ${
-                              !isCurrentMonth ? "bg-gray-50/60" : ""
+                              dragOverKey === `month:${dateStr}` ? "bg-blue-100 ring-2 ring-inset ring-blue-400" : !isCurrentMonth ? "bg-gray-50/60" : ""
                             } ${idx % 7 !== 6 ? "border-r border-gray-100" : ""}`}
                           >
                             <div className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full mb-1 ${
@@ -1524,20 +1742,37 @@ export default function AdminCalendar() {
                             </div>
                             {dayEvents.slice(0, 2).map((ev) => {
                               const { color, bg } = getEventStyle(ev.type);
+                              const isJob = ev.source === "job";
+                              const isStart = ev.date === dateStr;
+                              const isEnd = (ev.end_date || ev.date) === dateStr;
                               return (
                                 <div
                                   key={ev.id}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (ev.source === "job") {
+                                    if (isJob) {
                                       const original = events.find((j) => j.id === ev.id);
                                       if (original) selectEvent(ev);
                                     }
                                   }}
-                                  className="flex items-center gap-0.5 text-[9px] leading-tight px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer"
+                                  draggable={isJob}
+                                  onDragStart={isJob ? (e) => { e.stopPropagation(); handleWholeDayDragStart(e, ev.id, dateStr); } : undefined}
+                                  onDragEnd={() => setDragOverKey(null)}
+                                  className={`relative flex items-center gap-0.5 text-[9px] leading-tight px-1 py-0.5 rounded mb-0.5 truncate ${isJob ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                                   style={{ backgroundColor: bg, borderLeft: `2px solid ${color}` }}
+                                  title={!isStart ? `${ev.title} (continues from ${ev.date})` : ev.title}
                                 >
-                                  <span className="truncate font-medium" style={{ color }}>{ev.title}</span>
+                                  <span className="truncate font-medium" style={{ color }}>{!isStart && "↔ "}{ev.title}</span>
+                                  {isJob && isEnd && (
+                                    <div
+                                      draggable
+                                      onDragStart={(e) => { e.stopPropagation(); handleResizeDragStart(e, ev.id); }}
+                                      onDragEnd={() => setDragOverKey(null)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="absolute top-0 right-0 h-full w-2 cursor-ew-resize hover:bg-black/10"
+                                      title="Drag to extend across more days"
+                                    />
+                                  )}
                                 </div>
                               );
                             })}
@@ -1737,6 +1972,13 @@ export default function AdminCalendar() {
                   onChange={(e) => setForm({ ...form, end_date: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
               </div>
+              <OngoingJobPicker
+                form={form}
+                setForm={setForm}
+                ongoingJobs={ongoingJobs}
+                newTitle={newOngoingJobTitle}
+                setNewTitle={setNewOngoingJobTitle}
+              />
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Client</label>
                 <input type="text" value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })}

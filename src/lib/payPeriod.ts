@@ -2,20 +2,13 @@
 // strings (no timezone conversion) to match how dates are handled
 // elsewhere in the app (see TimesheetForm's fmtDate/today helpers).
 
+import { parseDateStr as toDate, formatDateStr as toStr, daysBetweenDateStrs } from "./dateMath";
+
 export type PayPeriodType = "weekly" | "biweekly" | "semimonthly" | "monthly";
 
 export interface PayPeriod {
   start: string;
   end: string;
-}
-
-function toDate(s: string): Date {
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function toStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function addDays(d: Date, days: number): Date {
@@ -26,16 +19,6 @@ function addDays(d: Date, days: number): Date {
 
 function lastDayOfMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
-}
-
-// Whole-day difference between two local dates. Diffing via getTime() and
-// dividing by 86400000 breaks across DST transitions (a 23- or 25-hour local
-// day throws off the day count) — going through Date.UTC() with the same
-// y/m/d fields sidesteps DST entirely since UTC has no DST.
-function daysBetween(a: Date, b: Date): number {
-  const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
-  const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
-  return Math.round((utcA - utcB) / 86400000);
 }
 
 export function today(): string {
@@ -64,7 +47,7 @@ export function getPeriodFor(type: PayPeriodType, anchor: string, referenceDate:
   // weekly / biweekly: fixed-length blocks anchored to a known start date
   const lengthDays = type === "weekly" ? 7 : 14;
   const anchorDate = toDate(anchor);
-  const diffDays = daysBetween(ref, anchorDate);
+  const diffDays = daysBetweenDateStrs(referenceDate, anchor);
   const periodsSinceAnchor = Math.floor(diffDays / lengthDays);
   const start = addDays(anchorDate, periodsSinceAnchor * lengthDays);
   return { start: toStr(start), end: toStr(addDays(start, lengthDays - 1)) };

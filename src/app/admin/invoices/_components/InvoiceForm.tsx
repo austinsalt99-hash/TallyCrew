@@ -83,6 +83,12 @@ interface JobResult {
   date: string;
 }
 
+interface OngoingJobOption {
+  id: string;
+  title: string;
+  client: string | null;
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_COLUMNS: ColumnDef[] = [
@@ -624,6 +630,11 @@ export default function InvoiceForm({
   const [loadingJobId, setLoadingJobId]       = useState<string | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
 
+  const [ongoingJobs, setOngoingJobs]         = useState<OngoingJobOption[]>([]);
+  const [ongoingPickerOpen, setOngoingPickerOpen] = useState(false);
+  const [linkingOngoingId, setLinkingOngoingId] = useState<string | null>(null);
+  const ongoingRef = useRef<HTMLDivElement>(null);
+
   const [expandedSubmissions, setExpandedSubmissions] = useState<Set<string>>(new Set());
   const [expandedBreakdowns, setExpandedBreakdowns]   = useState<Set<string>>(new Set());
 
@@ -823,10 +834,35 @@ export default function InvoiceForm({
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) setJobSearchOpen(false);
+      if (ongoingRef.current && !ongoingRef.current.contains(e.target as Node)) setOngoingPickerOpen(false);
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
+
+  useEffect(() => {
+    fetch("/api/ongoing-jobs", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setOngoingJobs(Array.isArray(data) ? data : []));
+  }, []);
+
+  // ── Link every calendar entry under an ongoing job in one go — the whole
+  // point of an ongoing job is that hours logged on any day of it should
+  // roll into the same invoice, regardless of which specific day it was. ──
+  async function linkOngoingJob(ongoingJobId: string) {
+    setLinkingOngoingId(ongoingJobId);
+    setOngoingPickerOpen(false);
+    try {
+      const res = await fetch(`/api/events?ongoingJobId=${ongoingJobId}`, { credentials: "include" });
+      const jobs: JobResult[] = await res.json();
+      if (!Array.isArray(jobs)) return;
+      for (const job of jobs) {
+        await linkJob(job);
+      }
+    } finally {
+      setLinkingOngoingId(null);
+    }
+  }
 
   // ── Link a job ────────────────────────────────────────────────────────────
   async function linkJob(job: JobResult) {
@@ -1471,6 +1507,38 @@ export default function InvoiceForm({
               </div>
             )}
           </div>
+
+          {ongoingJobs.length > 0 && (
+            <div ref={ongoingRef} className="relative mt-2">
+              <button
+                type="button"
+                onClick={() => setOngoingPickerOpen((o) => !o)}
+                className="w-full flex items-center justify-between border border-dashed border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-500 hover:text-navy-600 hover:border-navy-400 transition-colors"
+              >
+                <span>Link an ongoing job (adds every day logged against it)</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {ongoingPickerOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 overflow-hidden max-h-56 overflow-y-auto">
+                  {ongoingJobs.map((oj) => (
+                    <button
+                      key={oj.id}
+                      type="button"
+                      disabled={linkingOngoingId === oj.id}
+                      onClick={() => linkOngoingJob(oj.id)}
+                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors disabled:opacity-50"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">{oj.title}</p>
+                        {oj.client && <p className="text-xs text-gray-500">{oj.client}</p>}
+                      </div>
+                      {linkingOngoingId === oj.id && <span className="text-xs text-gray-400">Linking…</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Added Hour Logs */}

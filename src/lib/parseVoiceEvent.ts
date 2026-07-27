@@ -28,7 +28,7 @@ export async function parseVoiceEventText(text: string, crewNames: string[] = []
 
   const message = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 256,
+    max_tokens: 512,
     messages: [
       {
         role: "user",
@@ -40,7 +40,7 @@ export async function parseVoiceEventText(text: string, crewNames: string[] = []
 - client (string, company or person name, or "")
 - location (string, address or place, or "")
 - ${assignedToInstruction}
-- description (string, any remaining notes, or "")
+- description (string, or "") — CRITICAL: this is a catch-all. Every piece of information in the voice input that isn't captured by title, date, start_time, end_time, client, location, or assigned_to MUST be included here, even if it seems minor, unrelated, or oddly phrased (e.g. pricing/quotes, materials, special instructions, preferences like "they want it trimmed small", warnings, contact info). Do not silently drop any detail. When in doubt, include it in description rather than omitting it.
 
 Return ONLY the JSON object. No explanation, no markdown, no code fences.
 

@@ -6,6 +6,7 @@ import {
   DragOverlay,
   MouseSensor,
   TouchSensor,
+  closestCenter,
   useSensor,
   useSensors,
   useDraggable,
@@ -26,6 +27,7 @@ interface JobEvent {
   end_time: string;
   assigned_to: string;
   is_verified: boolean;
+  ongoing_job_id?: string | null;
 }
 
 interface Worker {
@@ -41,6 +43,71 @@ interface CrewBoardProps {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const RESIZE_PREFIX = "resize-end::";
+const MOVE_PREFIX = "move::";
+const DUPLICATE_PREFIX = "duplicate::";
+
+function moveId(eventId: string, dateStr: string, sourceWorker: string): string {
+  return `${MOVE_PREFIX}${eventId}::${dateStr}::${sourceWorker}`;
+}
+
+function duplicateId(eventId: string, dateStr: string): string {
+  return `${DUPLICATE_PREFIX}${eventId}::${dateStr}`;
+}
+
+// sourceDate is the day the duplicate handle was dragged from — dropping
+// back on that same date just means "add this worker to the job", not
+// "create a separate copy" (see handleDuplicateEnd).
+function parseDuplicateId(rawId: string): { eventId: string; sourceDate: string } | null {
+  if (!rawId.startsWith(DUPLICATE_PREFIX)) return null;
+  const [eventId, sourceDate] = rawId.slice(DUPLICATE_PREFIX.length).split("::");
+  if (!eventId || !sourceDate) return null;
+  return { eventId, sourceDate };
+}
+
+// A move id is unique per (event, day-segment, row) so every day a multi-day
+// job spans — in every worker row it's shown in — can register its own
+// dnd-kit draggable without id collisions; the event id itself (the first
+// "::"-delimited segment) is what matters for logic.
+function eventIdFromRawId(rawId: string): string {
+  if (rawId.startsWith(RESIZE_PREFIX)) return rawId.slice(RESIZE_PREFIX.length);
+  if (rawId.startsWith(MOVE_PREFIX)) return rawId.slice(MOVE_PREFIX.length).split("::")[0];
+  if (rawId.startsWith(DUPLICATE_PREFIX)) return rawId.slice(DUPLICATE_PREFIX.length).split("::")[0];
+  return rawId;
+}
+
+// Pulls (eventId, sourceDate, sourceWorker) out of a move id — sourceDate is
+// the day segment grabbed, sourceWorker is the row it was dragged from (so a
+// job assigned to multiple people only loses that one worker on drop, not
+// everyone else it's assigned to).
+function parseMoveId(rawId: string): { eventId: string; sourceDate: string; sourceWorker: string } | null {
+  if (!rawId.startsWith(MOVE_PREFIX)) return null;
+  const [eventId, sourceDate, sourceWorker] = rawId.slice(MOVE_PREFIX.length).split("::");
+  if (!eventId || !sourceDate || !sourceWorker) return null;
+  return { eventId, sourceDate, sourceWorker };
+}
+
+// Swaps sourceWorker out of a comma-separated assignment list for
+// targetWorker, preserving every other assignee. "Unassigned" as either
+// side just means "no name" rather than a literal worker.
+function swapAssignedWorker(currentAssignedTo: string, sourceWorker: string, targetWorker: string): string {
+  const names = currentAssignedTo.split(",").map((n) => n.trim()).filter(Boolean);
+  const withoutSource = sourceWorker === "Unassigned"
+    ? names
+    : names.filter((n) => n.toLowerCase() !== sourceWorker.toLowerCase());
+  if (targetWorker === "Unassigned") return withoutSource.join(", ");
+  if (withoutSource.some((n) => n.toLowerCase() === targetWorker.toLowerCase())) return withoutSource.join(", ");
+  return [...withoutSource, targetWorker].join(", ");
+}
+
+// Adds targetWorker to a job's assignment list without removing anyone —
+// used when a same-day duplicate-drag really just means "add this person".
+function addAssignedWorker(currentAssignedTo: string, targetWorker: string): string {
+  const names = currentAssignedTo.split(",").map((n) => n.trim()).filter(Boolean);
+  if (names.some((n) => n.toLowerCase() === targetWorker.toLowerCase())) return names.join(", ");
+  return [...names, targetWorker].join(", ");
+}
+
 const COMPACT_START = 6;
 const COMPACT_END = 19;
 const COMPACT_HOUR_HEIGHT = 36;
@@ -137,17 +204,23 @@ function getOverlappingIds(evs: JobEvent[]): Set<string> {
   return out;
 }
 
-// ── DraggableChip: grid cell chip (replaces renderChip) ──
+// ── DraggableChip: grid cell chip. Every day a job spans gets its own
+// draggable node (id scoped to that day via moveId()) so any segment can be
+// grabbed to move the whole job — not just the day it starts on. Days after
+// the first are styled as a "continuation" but are just as draggable. ──
 
 interface ChipProps {
   ev: JobEvent;
+  dateStr: string;
+  sourceWorker: string;
+  isStart: boolean;
   isOverlapping: boolean;
   compact?: boolean;
   onSelect: (ev: JobEvent) => void;
 }
 
-function DraggableChip({ ev, isOverlapping, compact = false, onSelect }: ChipProps) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: ev.id });
+function DraggableChip({ ev, dateStr, sourceWorker, isStart, isOverlapping, compact = false, onSelect }: ChipProps) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: moveId(ev.id, dateStr, sourceWorker) });
   const bgColor = isOverlapping ? "#ef4444" : ev.is_verified === false ? "#e5e7eb" : "#dbeafe";
   const textColor = isOverlapping ? "white" : ev.is_verified === false ? "#6b7280" : "#1d4ed8";
   const subColor = isOverlapping ? "rgba(255,255,255,0.8)" : ev.is_verified === false ? "#9ca3af" : "#3b82f6";
@@ -157,13 +230,14 @@ function DraggableChip({ ev, isOverlapping, compact = false, onSelect }: ChipPro
       {...listeners}
       {...attributes}
       onClick={(e) => { e.stopPropagation(); onSelect(ev); }}
-      className={`rounded-lg px-2 py-1.5 cursor-grab active:cursor-grabbing hover:brightness-90 transition-all select-none ${isDragging ? "opacity-40" : ""}`}
+      title={!isStart ? `${ev.title} (continues from ${ev.date})` : undefined}
+      className={`rounded-lg px-2 py-1.5 cursor-grab active:cursor-grabbing hover:brightness-90 transition-all select-none ${isDragging ? "opacity-40" : ""} ${!isStart ? "border-l-4 border-dashed border-blue-300" : ""}`}
       style={{ backgroundColor: bgColor, touchAction: "none" }}
     >
       <p className={`${compact ? "text-[9px]" : "text-xs"} font-semibold truncate leading-tight`} style={{ color: textColor }}>
-        {ev.title}
+        {!isStart && "↔ "}{ev.title}
       </p>
-      {ev.start_time && (
+      {isStart && ev.start_time && (
         <p className={`${compact ? "text-[8px]" : "text-[10px]"} leading-tight mt-0.5`} style={{ color: subColor }}>
           {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
         </p>
@@ -173,10 +247,79 @@ function DraggableChip({ ev, isOverlapping, compact = false, onSelect }: ChipPro
   );
 }
 
-// ── DraggableTimelineChip: absolute-positioned chip in expanded hour view ──
+// ── ResizeHandle: drag the last day's edge to extend/shrink a job's span.
+// Rendered as a sibling overlay (not nested inside the chip) so its own
+// pointer listeners don't fight with the chip's move-drag listeners. ──
+
+function ResizeHandle({ eventId, style }: { eventId: string; style?: React.CSSProperties }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${RESIZE_PREFIX}${eventId}` });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onClick={(e) => e.stopPropagation()}
+      className={`absolute top-0 right-0 h-full flex items-center justify-center cursor-ew-resize z-20 ${isDragging ? "bg-navy-500/40" : "hover:bg-navy-500/20"}`}
+      style={{ width: 10, touchAction: "none", ...style }}
+      title="Drag to extend across more days"
+    >
+      <div className="w-0.5 h-3 bg-white/80 rounded-full" />
+    </div>
+  );
+}
+
+// ── ActionIcons: duplicate + delete controls floating above a chip's
+// top-right corner. Hidden until the chip's parent ".group" wrapper is
+// hovered (mouse) or contains focus (tap-to-focus on touch, since dnd-kit's
+// draggable attributes already make the chip focusable) — kept invisible
+// otherwise so the job title stays fully readable at these small chip
+// sizes. Rendered as a sibling of the chip (not nested) so it doesn't
+// compete with the chip's own drag/click handling, and offset upward so it
+// doesn't overlap the resize handle's full-height strip on the right edge.
+//
+// The duplicate control is itself a dnd-kit draggable (like the resize
+// handle): clicking it without moving duplicates onto the same day/worker,
+// while dragging it onto a different cell drops the copy there — same
+// click-vs-drag coexistence pattern already used by the chip's own body. ──
+
+function ActionIcons({ eventId, dateStr, onDuplicateClick, onDelete }: { eventId: string; dateStr: string; onDuplicateClick: () => void; onDelete: () => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: duplicateId(eventId, dateStr) });
+  return (
+    <div className="absolute -top-2 right-0 flex gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity z-30">
+      <div
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
+        onClick={(e) => { e.stopPropagation(); onDuplicateClick(); }}
+        className={`w-4 h-4 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow cursor-grab active:cursor-grabbing select-none ${isDragging ? "opacity-40" : ""}`}
+        style={{ touchAction: "none" }}
+        title="Click to duplicate here, or drag onto another day/worker"
+      >
+        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+      </div>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        className="w-4 h-4 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow"
+        title="Delete job"
+      >
+        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// ── DraggableTimelineChip: absolute-positioned chip in expanded hour view.
+// Same per-day-segment draggable id scheme as DraggableChip, so any day a
+// job spans can be grabbed to move it, not just its start day. ──
 
 interface TimelineChipProps {
   ev: JobEvent;
+  dateStr: string;
+  sourceWorker: string;
+  isStart: boolean;
   isOverlap: boolean;
   evHeight: number;
   top: number;
@@ -185,8 +328,8 @@ interface TimelineChipProps {
   onSelect: (ev: JobEvent) => void;
 }
 
-function DraggableTimelineChip({ ev, isOverlap, evHeight, top, col, totalCols, onSelect }: TimelineChipProps) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: ev.id });
+function DraggableTimelineChip({ ev, dateStr, sourceWorker, isStart, isOverlap, evHeight, top, col, totalCols, onSelect }: TimelineChipProps) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: moveId(ev.id, dateStr, sourceWorker) });
   const bgColor = isOverlap ? "#ef4444" : ev.is_verified === false ? "#9ca3af" : "#3b82f6";
   return (
     <div
@@ -194,7 +337,8 @@ function DraggableTimelineChip({ ev, isOverlap, evHeight, top, col, totalCols, o
       {...listeners}
       {...attributes}
       onClick={(e) => { e.stopPropagation(); onSelect(ev); }}
-      className={`absolute rounded px-1.5 overflow-hidden cursor-grab active:cursor-grabbing hover:brightness-90 transition-all z-10 select-none ${isDragging ? "opacity-40" : ""}`}
+      title={!isStart ? `${ev.title} (continues from ${ev.date})` : undefined}
+      className={`absolute rounded px-1.5 overflow-hidden cursor-grab active:cursor-grabbing hover:brightness-90 transition-all z-10 select-none ${isDragging ? "opacity-40" : !isStart ? "opacity-70" : ""}`}
       style={{
         top: top + 1,
         height: evHeight,
@@ -202,10 +346,11 @@ function DraggableTimelineChip({ ev, isOverlap, evHeight, top, col, totalCols, o
         width: `calc(${(1 / totalCols) * 100}% - 2px)`,
         backgroundColor: bgColor,
         touchAction: "none",
+        ...(!isStart ? { borderLeft: "3px dashed rgba(255,255,255,0.7)" } : {}),
       }}
     >
-      <p className="text-white text-[9px] font-bold truncate leading-tight">{ev.title}</p>
-      {evHeight > 22 && ev.start_time && (
+      <p className="text-white text-[9px] font-bold truncate leading-tight">{!isStart && "↔ "}{ev.title}</p>
+      {isStart && evHeight > 22 && ev.start_time && (
         <p className="text-white/80 text-[8px] leading-tight">
           {formatTime(ev.start_time)}{ev.end_time ? `–${formatTime(ev.end_time)}` : ""}
         </p>
@@ -219,15 +364,19 @@ function DraggableTimelineChip({ ev, isOverlap, evHeight, top, col, totalCols, o
 
 interface DroppableGridCellProps {
   cellKey: string;
+  dateStr: string;
+  rowWorker: string;
   evs: JobEvent[];
   overlapping: Set<string>;
   isToday: boolean;
   isDraggingAny: boolean;
   onAddJob: () => void;
   onSelect: (ev: JobEvent) => void;
+  onDuplicate: (ev: JobEvent) => void;
+  onDelete: (ev: JobEvent) => void;
 }
 
-function DroppableGridCell({ cellKey, evs, overlapping, isToday, isDraggingAny, onAddJob, onSelect }: DroppableGridCellProps) {
+function DroppableGridCell({ cellKey, dateStr, rowWorker, evs, overlapping, isToday, isDraggingAny, onAddJob, onSelect, onDuplicate, onDelete }: DroppableGridCellProps) {
   const { setNodeRef, isOver } = useDroppable({ id: cellKey });
   return (
     <td
@@ -248,9 +397,17 @@ function DroppableGridCell({ cellKey, evs, overlapping, isToday, isDraggingAny, 
         </div>
       ) : (
         <div className="space-y-1">
-          {evs.map((ev) => (
-            <DraggableChip key={ev.id} ev={ev} isOverlapping={overlapping.has(ev.id)} onSelect={onSelect} />
-          ))}
+          {evs.map((ev) => {
+            const isStart = ev.date === dateStr;
+            const isEnd = (ev.end_date || ev.date) === dateStr;
+            return (
+              <div key={ev.id} className="relative group">
+                <DraggableChip ev={ev} dateStr={dateStr} sourceWorker={rowWorker} isStart={isStart} isOverlapping={overlapping.has(ev.id)} onSelect={onSelect} />
+                <ActionIcons eventId={ev.id} dateStr={dateStr} onDuplicateClick={() => onDuplicate(ev)} onDelete={() => onDelete(ev)} />
+                {isEnd && <ResizeHandle eventId={ev.id} style={{ borderRadius: "0 0.5rem 0.5rem 0" }} />}
+              </div>
+            );
+          })}
         </div>
       )}
     </td>
@@ -269,10 +426,12 @@ interface DroppableExpandedColumnProps {
   workerName: string;
   onAddJob: (dateStr: string, workerName: string) => void;
   onSelect: (ev: JobEvent) => void;
+  onDuplicate: (ev: JobEvent) => void;
+  onDelete: (ev: JobEvent) => void;
 }
 
 function DroppableExpandedColumn({
-  cellKey, dateStr, di, isToday, dayEvents, overlapping, workerName, onAddJob, onSelect,
+  cellKey, dateStr, di, isToday, dayEvents, overlapping, workerName, onAddJob, onSelect, onDuplicate, onDelete,
 }: DroppableExpandedColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: cellKey });
   const hasOverlaps = overlapping.size > 0;
@@ -300,17 +459,23 @@ function DroppableExpandedColumn({
         if (clampedEnd <= clampedStart) return null;
         const top = COMPACT_HEADER_HEIGHT + (clampedStart - COMPACT_START) * COMPACT_HOUR_HEIGHT;
         const evHeight = Math.max((clampedEnd - clampedStart) * COMPACT_HOUR_HEIGHT - 2, 16);
+        const isStart = ev.date === dateStr;
+        const isEnd = (ev.end_date || ev.date) === dateStr;
         return (
-          <DraggableTimelineChip
+          <div
             key={ev.id}
-            ev={ev}
-            isOverlap={overlapping.has(ev.id)}
-            evHeight={evHeight}
-            top={top}
-            col={col}
-            totalCols={totalCols}
-            onSelect={onSelect}
-          />
+            className="absolute group"
+            style={{
+              top,
+              height: evHeight,
+              left: `calc(${(col / totalCols) * 100}% + 1px)`,
+              width: `calc(${(1 / totalCols) * 100}% - 2px)`,
+            }}
+          >
+            <DraggableTimelineChip ev={ev} dateStr={dateStr} sourceWorker={workerName} isStart={isStart} isOverlap={overlapping.has(ev.id)} evHeight={evHeight} top={0} col={0} totalCols={1} onSelect={onSelect} />
+            <ActionIcons eventId={ev.id} dateStr={dateStr} onDuplicateClick={() => onDuplicate(ev)} onDelete={() => onDelete(ev)} />
+            {isEnd && <ResizeHandle eventId={ev.id} />}
+          </div>
         );
       })}
       {dayEvents.length === 0 && (
@@ -364,6 +529,12 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
       .then((data) => { setEvents(Array.isArray(data) ? data : []); setLoading(false); });
   }, [from, to]);
 
+  async function refetchEvents() {
+    const res = await fetch(`/api/events?from=${from}&to=${to}`);
+    const data = await res.json();
+    setEvents(Array.isArray(data) ? data : []);
+  }
+
   const crew = workers.filter((w) => w.role === "worker");
 
   function getEventsForWorkerDay(workerName: string, dateStr: string): JobEvent[] {
@@ -398,15 +569,182 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
   }
 
   function handleDragStart({ active }: DragStartEvent) {
-    const ev = events.find((e) => e.id === active.id);
+    const rawId = active.id as string;
+    if (rawId.startsWith(RESIZE_PREFIX)) return; // day-cell highlight is enough feedback; no ghost chip
+    const ev = events.find((e) => e.id === eventIdFromRawId(rawId));
     if (ev) setActiveEvent(ev);
+  }
+
+  // Duplicating links the copy to the same ongoing job as the original
+  // (creating one if it doesn't have one yet) so both are tracked together
+  // for invoicing even though they're now independent, separately-movable
+  // calendar entries — e.g. one for each of two people doing the same job.
+  async function ensureOngoingJobId(ev: JobEvent): Promise<string | null> {
+    if (ev.ongoing_job_id) return ev.ongoing_job_id;
+    const res = await fetch("/api/ongoing-jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ title: ev.title, client: ev.client, location: ev.location, description: ev.description }),
+    });
+    if (!res.ok) return null;
+    const created = await res.json();
+    await fetch("/api/events", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id: ev.id, ongoing_job_id: created.id }),
+    });
+    return created.id;
+  }
+
+  // Click (no movement) duplicates onto the same day/worker as the original.
+  async function handleDuplicateJob(ev: JobEvent) {
+    dragSavingRef.current = true;
+    try {
+      const ongoingJobId = await ensureOngoingJobId(ev);
+      await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          title: ev.title,
+          date: ev.date,
+          end_date: ev.end_date ?? null,
+          client: ev.client,
+          location: ev.location,
+          description: ev.description,
+          start_time: ev.start_time || null,
+          end_time: ev.end_time || null,
+          assigned_to: ev.assigned_to,
+          is_verified: ev.is_verified,
+          ongoing_job_id: ongoingJobId,
+        }),
+      });
+      await refetchEvents();
+    } finally {
+      dragSavingRef.current = false;
+    }
+  }
+
+  // Dragging the duplicate handle onto a cell on the SAME day just adds that
+  // worker to the existing job's assignment list — it's still one job, just
+  // crewed by another person, so the Calendar view (which isn't grouped by
+  // worker the way Crew Board is) doesn't show a spurious second entry for
+  // the same day. Dropping on a DIFFERENT day, though, genuinely can't be
+  // the same job_events row, so that drops a real single-day copy there,
+  // assigned to whichever worker's row it landed on.
+  async function handleDuplicateEnd(eventId: string, sourceDate: string, over: DragEndEvent["over"]) {
+    if (!over) return;
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev) return;
+    const parts = (over.id as string).split("|");
+    const targetDate = parts[0];
+    const targetWorker = parts[1];
+    if (!targetWorker) return;
+
+    dragSavingRef.current = true;
+    try {
+      if (targetDate === sourceDate) {
+        if (targetWorker === "Unassigned") return;
+        const newAssignedTo = addAssignedWorker(ev.assigned_to ?? "", targetWorker);
+        if (newAssignedTo === (ev.assigned_to ?? "")) return;
+        await fetch("/api/events", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ id: eventId, assigned_to: newAssignedTo }),
+        });
+        await refetchEvents();
+        return;
+      }
+
+      const ongoingJobId = await ensureOngoingJobId(ev);
+      await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          title: ev.title,
+          date: targetDate,
+          end_date: null,
+          client: ev.client,
+          location: ev.location,
+          description: ev.description,
+          start_time: ev.start_time || null,
+          end_time: ev.end_time || null,
+          assigned_to: targetWorker === "Unassigned" ? "" : targetWorker,
+          is_verified: ev.is_verified,
+          ongoing_job_id: ongoingJobId,
+        }),
+      });
+      await refetchEvents();
+    } finally {
+      dragSavingRef.current = false;
+    }
+  }
+
+  async function handleDeleteJob(ev: JobEvent) {
+    if (!confirm(`Delete "${ev.title}"?`)) return;
+    dragSavingRef.current = true;
+    try {
+      await fetch("/api/events", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: ev.id }),
+      });
+      await refetchEvents();
+    } finally {
+      dragSavingRef.current = false;
+    }
+  }
+
+  async function handleResizeEnd(eventId: string, over: DragEndEvent["over"]) {
+    if (!over || dragSavingRef.current) return;
+    const targetDate = (over.id as string).split("|")[0];
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev) return;
+
+    const clampedTarget = targetDate < ev.date ? ev.date : targetDate;
+    const newEndDate = clampedTarget === ev.date ? undefined : clampedTarget;
+    if ((ev.end_date || undefined) === newEndDate) return;
+
+    setEvents((prev) => prev.map((e) => e.id === eventId ? { ...e, end_date: newEndDate } : e));
+    dragSavingRef.current = true;
+    try {
+      await fetch("/api/events", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: eventId, end_date: newEndDate ?? null }),
+      });
+    } finally {
+      dragSavingRef.current = false;
+    }
   }
 
   async function handleDragEnd({ active, over }: DragEndEvent) {
     setActiveEvent(null);
+    const rawId = active.id as string;
+
+    if (rawId.startsWith(RESIZE_PREFIX)) {
+      await handleResizeEnd(eventIdFromRawId(rawId), over);
+      return;
+    }
+
+    const duplicateParsed = parseDuplicateId(rawId);
+    if (duplicateParsed) {
+      if (dragSavingRef.current) return;
+      await handleDuplicateEnd(duplicateParsed.eventId, duplicateParsed.sourceDate, over);
+      return;
+    }
+
     if (!over || dragSavingRef.current) return;
 
-    const eventId = active.id as string;
+    const moved = parseMoveId(rawId);
+    const eventId = moved ? moved.eventId : eventIdFromRawId(rawId);
+    const sourceDate = moved?.sourceDate;
     const cellKey = over.id as string;
     // cellKey format: "YYYY-MM-DD|workerName" or "YYYY-MM-DD|workerName|expanded"
     const parts = cellKey.split("|");
@@ -416,24 +754,32 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
     const ev = events.find((e) => e.id === eventId);
     if (!ev) return;
 
-    const newAssignedTo = targetWorker === "Unassigned" ? "" : targetWorker;
-    if (
-      ev.date === targetDate &&
-      (newAssignedTo === "" ? !ev.assigned_to?.trim() : isAssignedTo(ev, targetWorker))
-    ) return;
-
-    setEvents((prev) =>
-      prev.map((e) => e.id === eventId ? { ...e, date: targetDate, assigned_to: newAssignedTo } : e)
-    );
+    // Swap out just the row this was dragged from — a job assigned to
+    // several people shouldn't lose everyone else when moved to one of them.
+    const sourceWorker = moved?.sourceWorker ?? "Unassigned";
+    const newAssignedTo = swapAssignedWorker(ev.assigned_to ?? "", sourceWorker, targetWorker);
+    const currentNormalized = (ev.assigned_to ?? "").split(",").map((n) => n.trim()).filter(Boolean).join(", ");
+    const dateUnchanged = (sourceDate ?? ev.date) === targetDate;
+    if (dateUnchanged && newAssignedTo === currentNormalized) return;
 
     dragSavingRef.current = true;
     try {
-      await fetch("/api/events", {
-        method: "PUT",
+      // Dragging a single day off a multi-day job detaches just that day —
+      // the split-day endpoint handles both the plain-move case (already a
+      // single day) and exploding a still-contiguous range into per-day
+      // rows linked via ongoing_job_id.
+      await fetch("/api/events/split-day", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ id: eventId, date: targetDate, assigned_to: newAssignedTo }),
+        body: JSON.stringify({
+          eventId,
+          extractedDate: sourceDate ?? ev.date,
+          targetDate,
+          assignedTo: newAssignedTo,
+        }),
       });
+      await refetchEvents();
     } finally {
       dragSavingRef.current = false;
     }
@@ -496,6 +842,8 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
                     workerName={workerName}
                     onAddJob={onAddJob}
                     onSelect={onSelectEvent}
+                    onDuplicate={handleDuplicateJob}
+                    onDelete={handleDeleteJob}
                   />
                 );
               })}
@@ -530,7 +878,7 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
   ];
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div>
         {/* Week nav */}
         <div className="flex items-center justify-between mb-4">
@@ -665,12 +1013,16 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
                               <DroppableGridCell
                                 key={dateStr}
                                 cellKey={cellKey}
+                                dateStr={dateStr}
+                                rowWorker={name}
                                 evs={evs}
                                 overlapping={overlapping}
                                 isToday={isToday}
                                 isDraggingAny={activeEvent !== null}
                                 onAddJob={() => onAddJob(dateStr, name)}
                                 onSelect={onSelectEvent}
+                                onDuplicate={handleDuplicateJob}
+                                onDelete={handleDeleteJob}
                               />
                             );
                           })}

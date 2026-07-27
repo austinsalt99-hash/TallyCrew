@@ -516,7 +516,7 @@ CREATE POLICY reminders_admin_delete ON reminders FOR DELETE
 
 
 -- -------------------------------------------------------------
--- 14. STORAGE BUCKETS
+-- 15. STORAGE BUCKETS
 --     job-photos:     photos attached to billable job entries
 --     company-banners: custom dashboard banner images (admin upload)
 --
@@ -542,3 +542,42 @@ ON CONFLICT (id) DO NOTHING;
 CREATE POLICY "company_banners_read"   ON storage.objects FOR SELECT  USING     (bucket_id = 'company-banners');
 CREATE POLICY "company_banners_insert" ON storage.objects FOR INSERT  WITH CHECK (bucket_id = 'company-banners' AND auth.uid() IS NOT NULL);
 CREATE POLICY "company_banners_delete" ON storage.objects FOR DELETE  USING     (bucket_id = 'company-banners' AND auth.uid() IS NOT NULL);
+
+
+-- -------------------------------------------------------------
+-- 16. ONGOING JOBS
+--     A reusable "parent" job (e.g. a long-running project) that
+--     job_events can link to via job_events.ongoing_job_id, so
+--     scheduling another day for the same project doesn't require
+--     re-entering client/location/description, and invoicing can
+--     pull hours across every day logged against the project
+--     regardless of which specific calendar entry an employee's
+--     timesheet was linked to.
+-- -------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ongoing_jobs (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id  UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  title       TEXT        NOT NULL,
+  client      TEXT,
+  location    TEXT,
+  description TEXT,
+  is_active   BOOLEAN     NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE ongoing_jobs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY ongoing_jobs_admin_read ON ongoing_jobs FOR SELECT
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY ongoing_jobs_admin_insert ON ongoing_jobs FOR INSERT
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY ongoing_jobs_admin_update ON ongoing_jobs FOR UPDATE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY ongoing_jobs_admin_delete ON ongoing_jobs FOR DELETE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS ongoing_job_id UUID REFERENCES ongoing_jobs(id) ON DELETE SET NULL;
