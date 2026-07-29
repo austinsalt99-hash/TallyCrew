@@ -90,8 +90,8 @@ function getWorkItems(entry: BillableEntry): WorkItem[] {
     const generalWindow = timeRangeHours(entry.startTime, entry.endTime, entry.manualHours);
     const subHoursList = entry.subEntries.map((sub) => timeRangeHours(sub.startTime, sub.endTime, sub.manualHours));
     const { generalHours } = carveOutGeneral(generalWindow, subHoursList);
-    if (entry.client || entry.description) {
-      items.push({ slug: "standard", hours: formatHoursLabel(generalHours) || undefined, client: entry.client, description: entry.description });
+    if (entry.client || entry.description || Object.values(entry.customFields ?? {}).some(Boolean)) {
+      items.push({ slug: "standard", hours: formatHoursLabel(generalHours) || undefined, client: entry.client, description: entry.description, customFields: entry.customFields });
     }
     entry.subEntries.forEach((sub, i) => {
       items.push({ slug: sub.slug, hours: formatHoursLabel(subHoursList[i]) || undefined, customFields: sub.customFields });
@@ -104,8 +104,8 @@ function getWorkItems(entry: BillableEntry): WorkItem[] {
   const activeSlug = entry.entryType ?? "standard";
 
   if (activeSlug === "standard") {
-    if (entry.client || entry.description) {
-      items.push({ slug: "standard", hours: hoursFromData(entry.startTime, entry.endTime, entry.manualHours), client: entry.client, description: entry.description });
+    if (entry.client || entry.description || Object.values(entry.customFields ?? {}).some(Boolean)) {
+      items.push({ slug: "standard", hours: hoursFromData(entry.startTime, entry.endTime, entry.manualHours), client: entry.client, description: entry.description, customFields: entry.customFields });
     }
   } else if (entry.customFields && Object.values(entry.customFields).some(Boolean)) {
     items.push({ slug: activeSlug, hours: hoursFromData(entry.startTime, entry.endTime, entry.manualHours), customFields: entry.customFields });
@@ -113,8 +113,8 @@ function getWorkItems(entry: BillableEntry): WorkItem[] {
 
   for (const [slug, data] of Object.entries(entry._typeData ?? {})) {
     if (slug === "standard") {
-      if (data.client || data.description) {
-        items.push({ slug: "standard", hours: hoursFromData(data.startTime, data.endTime, data.manualHours), client: data.client, description: data.description });
+      if (data.client || data.description || Object.values(data.customFields ?? {}).some(Boolean)) {
+        items.push({ slug: "standard", hours: hoursFromData(data.startTime, data.endTime, data.manualHours), client: data.client, description: data.description, customFields: data.customFields });
       }
     } else if (data.customFields && Object.values(data.customFields).some(Boolean)) {
       items.push({ slug, hours: hoursFromData(data.startTime, data.endTime, data.manualHours), customFields: data.customFields });
@@ -349,22 +349,19 @@ export default function Dashboard() {
                                             <span className="font-bold opacity-70">· {item.hours}</span>
                                           )}
                                         </span>
-                                        <div className="text-sm text-gray-700">
-                                          {item.slug === "standard" ? (
+                                        <div className="text-sm text-gray-700 space-y-0.5">
+                                          {item.slug === "standard" && (
                                             <>
                                               {item.client && <span className="font-medium">{item.client}</span>}
                                               {item.client && item.description && <span className="text-gray-400"> — </span>}
                                               {item.description && <span>{item.description}</span>}
                                             </>
-                                          ) : (
-                                            <div className="space-y-0.5">
-                                              {Object.entries(item.customFields ?? {}).filter(([, v]) => v).map(([k, v]) => (
-                                                <div key={k} className="text-xs text-gray-600">
-                                                  <span className="text-gray-400">{k.replace(/_/g, " ")}: </span>{v}
-                                                </div>
-                                              ))}
-                                            </div>
                                           )}
+                                          {Object.entries(item.customFields ?? {}).filter(([, v]) => v).map(([k, v]) => (
+                                            <div key={k} className="text-xs text-gray-600">
+                                              <span className="text-gray-400">{k.replace(/_/g, " ")}: </span>{v}
+                                            </div>
+                                          ))}
                                         </div>
                                       </div>
                                     ))}

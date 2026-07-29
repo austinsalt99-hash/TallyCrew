@@ -9,7 +9,7 @@ export async function GET() {
   if (profile.role === "admin") {
     const { data, error } = await supabase
       .from("reminders")
-      .select("id, title, body, target_type, target_user_ids, send_time, days_of_week, active, created_at")
+      .select("id, title, body, target_type, target_user_ids, send_time, days_of_week, one_off_date, active, created_at")
       .eq("company_id", profile.company_id)
       .order("created_at", { ascending: false });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -19,7 +19,7 @@ export async function GET() {
   // Workers: only active reminders targeted at them
   const { data, error } = await supabase
     .from("reminders")
-    .select("id, title, body, send_time, days_of_week, created_at")
+    .select("id, title, body, send_time, days_of_week, one_off_date, created_at")
     .eq("company_id", profile.company_id)
     .eq("active", true)
     .order("send_time");
@@ -37,18 +37,20 @@ export async function POST(request: Request) {
   if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await request.json();
-  const { title, body: text, target_type, target_user_ids, send_time, days_of_week } = body as {
+  const { title, body: text, target_type, target_user_ids, send_time, days_of_week, one_off_date } = body as {
     title: string;
     body?: string;
     target_type: "all" | "specific";
     target_user_ids?: string[];
     send_time: string;
-    days_of_week: number[];
+    days_of_week?: number[];
+    one_off_date?: string;
   };
 
   if (!title?.trim()) return NextResponse.json({ error: "Title required" }, { status: 400 });
   if (!send_time) return NextResponse.json({ error: "send_time required" }, { status: 400 });
-  if (!days_of_week?.length) return NextResponse.json({ error: "At least one day required" }, { status: 400 });
+  if (!one_off_date && !days_of_week?.length)
+    return NextResponse.json({ error: "At least one day (or a one-time date) required" }, { status: 400 });
   if (target_type === "specific" && !target_user_ids?.length)
     return NextResponse.json({ error: "At least one employee required" }, { status: 400 });
 
@@ -62,9 +64,10 @@ export async function POST(request: Request) {
       target_type,
       target_user_ids: target_type === "specific" ? target_user_ids : null,
       send_time,
-      days_of_week,
+      days_of_week: one_off_date ? null : days_of_week,
+      one_off_date: one_off_date || null,
     })
-    .select("id, title, body, target_type, target_user_ids, send_time, days_of_week, active, created_at")
+    .select("id, title, body, target_type, target_user_ids, send_time, days_of_week, one_off_date, active, created_at")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

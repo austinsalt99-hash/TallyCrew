@@ -72,7 +72,7 @@ export async function GET(request: Request) {
 
     const { data: reminders } = await supabase
       .from("reminders")
-      .select("id, title, body, target_type, target_user_ids, send_time, days_of_week, last_sent_date")
+      .select("id, title, body, target_type, target_user_ids, send_time, days_of_week, one_off_date, last_sent_date")
       .eq("company_id", company.id)
       .eq("active", true);
 
@@ -87,7 +87,12 @@ export async function GET(request: Request) {
       const dow = getLocalDow(checkDate, timezone);
 
       for (const reminder of reminders) {
-        if (!(reminder.days_of_week as number[]).includes(dow)) continue;
+        const isOneOff = !!reminder.one_off_date;
+        if (isOneOff) {
+          if (reminder.one_off_date !== localDate) continue;
+        } else if (!(reminder.days_of_week as number[] | null)?.includes(dow)) {
+          continue;
+        }
         if (reminder.last_sent_date === localDate) continue;
 
         const fireUTC = localToUTC(localDate, reminder.send_time, timezone);
@@ -115,10 +120,11 @@ export async function GET(request: Request) {
             });
           }
 
-          // Mark as scheduled for today so a cron retry doesn't double-schedule
+          // Mark as scheduled for today so a cron retry doesn't double-schedule.
+          // One-off reminders deactivate after their single send.
           await supabase
             .from("reminders")
-            .update({ last_sent_date: localDate })
+            .update(isOneOff ? { last_sent_date: localDate, active: false } : { last_sent_date: localDate })
             .eq("id", reminder.id);
 
           scheduled++;

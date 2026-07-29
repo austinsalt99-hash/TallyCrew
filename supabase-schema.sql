@@ -439,7 +439,10 @@ CREATE POLICY announcements_admin_delete ON announcements FOR DELETE
 -- -------------------------------------------------------------
 -- 13. REMINDERS
 --     Admin-created timed reminders. Fires as push notifications
---     on a recurring schedule (days_of_week + send_time).
+--     either on a recurring schedule (days_of_week + send_time) or
+--     once on a specific date (one_off_date + send_time). Exactly
+--     one of days_of_week / one_off_date is set per reminder; the
+--     cron job deactivates a one-off reminder after it fires.
 --     target_type='all' → all workers; 'specific' → target_user_ids only.
 --     last_sent_date prevents duplicate sends within the same day.
 -- -------------------------------------------------------------
@@ -452,11 +455,16 @@ CREATE TABLE IF NOT EXISTS reminders (
   target_type     TEXT        NOT NULL DEFAULT 'all' CHECK (target_type IN ('all', 'specific')),
   target_user_ids UUID[],
   send_time       TEXT        NOT NULL,
-  days_of_week    INT[]       NOT NULL,
+  days_of_week    INT[],
+  one_off_date    DATE,
   active          BOOLEAN     NOT NULL DEFAULT TRUE,
   last_sent_date  TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Existing deployments: relax days_of_week to nullable and add one_off_date
+ALTER TABLE reminders ALTER COLUMN days_of_week DROP NOT NULL;
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS one_off_date DATE;
 
 ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
 

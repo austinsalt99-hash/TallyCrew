@@ -50,6 +50,15 @@ export interface BillableEntryData {
   _typeData?: Record<string, TypeSnapshot>;
 }
 
+function calcHoursFromTimes(start?: string, end?: string): number | undefined {
+  if (!start || !end) return undefined;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  const mins = eh * 60 + em - (sh * 60 + sm);
+  if (mins <= 0) return undefined;
+  return Math.round((mins / 60) * 100) / 100;
+}
+
 function hoursDisplay(start?: string, end?: string, manual?: number): string {
   if (manual != null) return `${manual}h`;
   if (!start || !end) return "";
@@ -92,6 +101,29 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
 
   const generalHours = hoursDisplay(entry.startTime, entry.endTime, entry.manualHours);
   const generalName = standardType?.name ?? "General";
+
+  const activeStartTime = activeSub ? activeSub.startTime : entry.startTime;
+  const activeEndTime = activeSub ? activeSub.endTime : entry.endTime;
+  const computedHours = calcHoursFromTimes(activeStartTime, activeEndTime);
+
+  const clearTimes = () => {
+    if (activeSub) {
+      updateSubEntry(activeSub.id, { startTime: "", endTime: "" });
+    } else {
+      onChange({ ...entry, startTime: "", endTime: "" });
+    }
+  };
+
+  const updateTime = (field: "startTime" | "endTime", value: string) => {
+    const newStart = field === "startTime" ? value : activeStartTime;
+    const newEnd = field === "endTime" ? value : activeEndTime;
+    const computed = calcHoursFromTimes(newStart, newEnd);
+    if (activeSub) {
+      updateSubEntry(activeSub.id, { [field]: value, manualHours: computed ?? activeSub.manualHours });
+    } else {
+      onChange({ ...entry, [field]: value, manualHours: computed ?? entry.manualHours });
+    }
+  };
 
   const update = (field: keyof BillableEntryData, value: string) =>
     onChange({ ...entry, [field]: value });
@@ -375,11 +407,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                   type="time"
                   size={1}
                   value={activeSub ? (activeSub.startTime ?? "") : entry.startTime}
-                  onChange={(e) =>
-                    activeSub
-                      ? updateSubEntry(activeSub.id, { startTime: e.target.value })
-                      : update("startTime", e.target.value)
-                  }
+                  onChange={(e) => updateTime("startTime", e.target.value)}
                   className="w-full min-w-0 border border-gray-300 rounded-lg px-2 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-navy-400 appearance-none"
                 />
               </div>
@@ -391,24 +419,21 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                   type="time"
                   size={1}
                   value={activeSub ? (activeSub.endTime ?? "") : entry.endTime}
-                  onChange={(e) =>
-                    activeSub
-                      ? updateSubEntry(activeSub.id, { endTime: e.target.value })
-                      : update("endTime", e.target.value)
-                  }
+                  onChange={(e) => updateTime("endTime", e.target.value)}
                   className="w-full min-w-0 border border-gray-300 rounded-lg px-2 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-navy-400 appearance-none"
                 />
               </div>
             </div>
           </div>
           <div className="w-28">
-            <label className="block text-xs text-gray-500 mb-1">Hours (manual)</label>
+            <label className="block text-xs text-gray-500 mb-1">Hours{computedHours != null ? "" : " (manual)"}</label>
             <input
               type="number"
               min="0"
-              step="0.5"
+              step="0.25"
               placeholder="—"
-              value={activeSub ? (activeSub.manualHours ?? "") : (entry.manualHours ?? "")}
+              disabled={computedHours != null}
+              value={computedHours ?? (activeSub ? (activeSub.manualHours ?? "") : (entry.manualHours ?? ""))}
               onChange={(e) => {
                 const val = e.target.value !== "" ? parseFloat(e.target.value) : undefined;
                 if (activeSub) {
@@ -417,8 +442,17 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                   onChange({ ...entry, manualHours: val });
                 }
               }}
-              className="w-full border border-gray-300 rounded-lg px-2 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-navy-400 text-center"
+              className="w-full border border-gray-300 rounded-lg px-2 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-navy-400 text-center disabled:bg-gray-50 disabled:text-gray-500"
             />
+            {computedHours != null && (
+              <button
+                type="button"
+                onClick={clearTimes}
+                className="text-[10px] text-navy-500 hover:text-navy-700 underline mt-1"
+              >
+                Clear times, enter manually
+              </button>
+            )}
           </div>
         </div>
       )}

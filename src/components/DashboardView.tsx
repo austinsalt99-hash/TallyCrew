@@ -41,7 +41,8 @@ interface Reminder {
   title: string;
   body: string | null;
   send_time: string;
-  days_of_week: number[];
+  days_of_week: number[] | null;
+  one_off_date: string | null;
 }
 
 function fmt12(time: string): string {
@@ -60,6 +61,14 @@ function fmtDays(days: number[]): string {
     .sort((a, b) => a - b)
     .map((d) => DAY_FULL[d])
     .join(", ");
+}
+
+function fmtSchedule(r: Reminder): string {
+  if (r.one_off_date) {
+    const [y, mo, d] = r.one_off_date.split("-").map(Number);
+    return `Once · ${new Date(y, mo - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+  }
+  return fmtDays(r.days_of_week ?? []);
 }
 
 function fmtDate(d: Date): string {
@@ -297,7 +306,7 @@ export default function DashboardView({ userName }: { userName: string }) {
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${NAVY}15`, color: NAVY }}>
                           {fmt12(r.send_time)}
                         </span>
-                        <span className="text-[10px] text-gray-400 font-medium">{fmtDays(r.days_of_week)}</span>
+                        <span className="text-[10px] text-gray-400 font-medium">{fmtSchedule(r)}</span>
                       </div>
                     </div>
                   </div>

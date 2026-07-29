@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import BillableEntry, { BillableEntryData } from "./BillableEntry";
-import NonBillableEntry, { NonBillableEntryData } from "./NonBillableEntry";
+import type { NonBillableEntryData } from "./NonBillableEntry";
 import JobEventPicker, { JobEvent } from "./JobEventPicker";
 import LogHistoryPanel from "./LogHistoryPanel";
 import type { LogEntryType } from "@/types/logConfig";
@@ -25,20 +25,16 @@ function uuid(): string {
   });
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function fmtDate(dt: Date): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 }
 
-function newBillable(): BillableEntryData {
-  return { id: uuid(), client: "", description: "", startTime: "", endTime: "", subEntries: [] };
+function today(): string {
+  return fmtDate(new Date());
 }
 
-function newNonBillable(): NonBillableEntryData {
-  return { id: uuid(), description: "", hours: "" };
+function newBillable(): BillableEntryData {
+  return { id: uuid(), client: "", description: "", startTime: "", endTime: "", subEntries: [] };
 }
 
 function storageKey(userId: string, date: string): string {
@@ -91,7 +87,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   const [dayStartTime, setDayStartTime] = useState("");
   const [dayEndTime, setDayEndTime] = useState("");
   const [billable, setBillable] = useState<BillableEntryData[]>([newBillable()]);
-  const [nonBillable, setNonBillable] = useState<NonBillableEntryData[]>([newNonBillable()]);
+  const [nonBillable, setNonBillable] = useState<NonBillableEntryData[]>([]);
   const [notes, setNotes] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [submittedAt, setSubmittedAt] = useState<string | null>(null);
@@ -314,7 +310,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     setDayStartTime("");
     setDayEndTime("");
     setBillable([newBillable()]);
-    setNonBillable([newNonBillable()]);
+    setNonBillable([]);
     setNotes("");
     setBreakMinutes("");
     setClockInTimestamp(null);
@@ -324,19 +320,12 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   }
 
   const addBillable = () => setBillable((prev) => [...prev, newBillable()]);
-  const addNonBillable = () => setNonBillable((prev) => [...prev, newNonBillable()]);
 
   const updateBillable = (entry: BillableEntryData) =>
     setBillable((prev) => prev.map((e) => (e.id === entry.id ? entry : e)));
 
   const removeBillable = (id: string) =>
     setBillable((prev) => prev.filter((e) => e.id !== id));
-
-  const updateNonBillable = (entry: NonBillableEntryData) =>
-    setNonBillable((prev) => prev.map((e) => (e.id === entry.id ? entry : e)));
-
-  const removeNonBillable = (id: string) =>
-    setNonBillable((prev) => prev.filter((e) => e.id !== id));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -402,10 +391,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   }
 
   const totalBillable = calcTotalBillable(billable);
-  const manualNonBillable = calcTotalNonBillable(nonBillable);
   const dayTotalHours = calcDayTotalHours(dayStartTime, dayEndTime, breakMinutes);
-  const { generalHours: autoNonBillableHours } = carveOutGeneral(dayTotalHours, [totalBillable, manualNonBillable]);
-  const totalNonBillable = Math.round((manualNonBillable + autoNonBillableHours) * 100) / 100;
   const todayStr = today();
   const wBaseDate = (() => { const [y, mo, d] = date.split("-").map(Number); return new Date(y, mo - 1, d); })();
   const wMonday = new Date(wBaseDate);
@@ -424,7 +410,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     setDayStartTime("");
     setDayEndTime("");
     setBillable([newBillable()]);
-    setNonBillable([newNonBillable()]);
+    setNonBillable([]);
     setNotes("");
     setDate(today());
     setErrorMsg("");
@@ -811,39 +797,6 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
           </div>
         </section>
       )}
-
-      {/* Non-billable entries */}
-      <section>
-        <h2 className="text-base font-semibold text-gray-800 mb-3">Non-Billable Time</h2>
-        <div className="space-y-3">
-          {nonBillable.map((entry) => (
-            <NonBillableEntry
-              key={entry.id}
-              entry={entry}
-              onChange={updateNonBillable}
-              onRemove={() => removeNonBillable(entry.id)}
-              showRemove={nonBillable.length > 1}
-            />
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={addNonBillable}
-          className="mt-3 w-full py-3 border-2 border-dashed border-orange-300 rounded-xl text-orange-500 font-medium text-sm hover:bg-orange-50 transition-colors"
-        >
-          + Add another non-billable entry
-        </button>
-        {autoNonBillableHours > 0 && (
-          <p className="mt-2 text-right text-xs text-gray-400">
-            +{autoNonBillableHours}h auto-calculated (day total minus jobs and entries above)
-          </p>
-        )}
-        {totalNonBillable > 0 && (
-          <p className="mt-2 text-right text-sm text-gray-500">
-            Total non-billable: <span className="font-semibold text-gray-800">{totalNonBillable}h</span>
-          </p>
-        )}
-      </section>
 
       {/* Notes */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">

@@ -41,6 +41,14 @@ function fmtDays(days: number[]): string {
     .join(", ");
 }
 
+function fmtSchedule(r: Reminder): string {
+  if (r.one_off_date) {
+    const [y, mo, d] = r.one_off_date.split("-").map(Number);
+    return `Once · ${new Date(y, mo - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  }
+  return fmtDays(r.days_of_week ?? []);
+}
+
 interface Announcement {
   id: string;
   title: string;
@@ -56,7 +64,8 @@ interface Reminder {
   target_type: "all" | "specific";
   target_user_ids: string[] | null;
   send_time: string;
-  days_of_week: number[];
+  days_of_week: number[] | null;
+  one_off_date: string | null;
   active: boolean;
   created_at: string;
 }
@@ -88,12 +97,15 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
 
   // Reminder form
   const [showRemForm, setShowRemForm] = useState(false);
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(null);
   const [remTitle, setRemTitle] = useState("");
   const [remBody, setRemBody] = useState("");
   const [remTargetType, setRemTargetType] = useState<"all" | "specific">("all");
   const [remTargetIds, setRemTargetIds] = useState<string[]>([]);
   const [remTime, setRemTime] = useState("08:00");
+  const [remFrequency, setRemFrequency] = useState<"recurring" | "one_off">("recurring");
   const [remDays, setRemDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [remOneOffDate, setRemOneOffDate] = useState("");
   const [remSaving, setRemSaving] = useState(false);
 
   const todayLabel = new Date().toLocaleDateString("en-US", {
@@ -156,28 +168,64 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
     );
   }
 
-  async function handlePostReminder() {
-    if (!remTitle.trim() || !remDays.length) return;
+  function resetReminderForm() {
+    setEditingReminderId(null);
+    setRemTitle(""); setRemBody(""); setRemTargetType("all"); setRemTargetIds([]);
+    setRemTime("08:00"); setRemFrequency("recurring"); setRemDays([1, 2, 3, 4, 5]); setRemOneOffDate("");
+  }
+
+  function openNewReminderForm() {
+    resetReminderForm();
+    setShowRemForm(true);
+  }
+
+  function openEditReminderForm(r: Reminder) {
+    setEditingReminderId(r.id);
+    setRemTitle(r.title);
+    setRemBody(r.body ?? "");
+    setRemTargetType(r.target_type);
+    setRemTargetIds(r.target_user_ids ?? []);
+    setRemTime(r.send_time);
+    if (r.one_off_date) {
+      setRemFrequency("one_off");
+      setRemOneOffDate(r.one_off_date);
+      setRemDays([1, 2, 3, 4, 5]);
+    } else {
+      setRemFrequency("recurring");
+      setRemDays(r.days_of_week ?? [1, 2, 3, 4, 5]);
+      setRemOneOffDate("");
+    }
+    setShowRemForm(true);
+  }
+
+  async function handleSaveReminder() {
+    if (!remTitle.trim()) return;
+    if (remFrequency === "recurring" && !remDays.length) return;
+    if (remFrequency === "one_off" && !remOneOffDate) return;
     if (remTargetType === "specific" && !remTargetIds.length) return;
     setRemSaving(true);
     try {
-      const res = await fetch("/api/reminders", {
-        method: "POST",
+      const payload = {
+        title: remTitle.trim(),
+        body: remBody.trim() || null,
+        target_type: remTargetType,
+        target_user_ids: remTargetType === "specific" ? remTargetIds : null,
+        send_time: remTime,
+        days_of_week: remFrequency === "recurring" ? remDays : null,
+        one_off_date: remFrequency === "one_off" ? remOneOffDate : null,
+      };
+      const res = await fetch(editingReminderId ? `/api/reminders/${editingReminderId}` : "/api/reminders", {
+        method: editingReminderId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: remTitle.trim(),
-          body: remBody.trim() || null,
-          target_type: remTargetType,
-          target_user_ids: remTargetType === "specific" ? remTargetIds : null,
-          send_time: remTime,
-          days_of_week: remDays,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) return;
-      const created: Reminder = await res.json();
-      setReminders((prev) => [created, ...prev]);
-      setRemTitle(""); setRemBody(""); setRemTargetType("all"); setRemTargetIds([]);
-      setRemTime("08:00"); setRemDays([1, 2, 3, 4, 5]); setShowRemForm(false);
+      const saved: Reminder = await res.json();
+      setReminders((prev) =>
+        editingReminderId ? prev.map((r) => (r.id === editingReminderId ? saved : r)) : [saved, ...prev]
+      );
+      resetReminderForm();
+      setShowRemForm(false);
     } finally {
       setRemSaving(false);
     }
@@ -375,7 +423,14 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Reminders</h2>
             <button
-              onClick={() => setShowRemForm((v) => !v)}
+              onClick={() => {
+                if (showRemForm) {
+                  setShowRemForm(false);
+                  resetReminderForm();
+                } else {
+                  openNewReminderForm();
+                }
+              }}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
               style={{
                 backgroundColor: showRemForm ? "#f3f4f6" : NAVY,
@@ -388,6 +443,9 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
 
           {showRemForm && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-3 space-y-3">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
+                {editingReminderId ? "Edit reminder" : "New reminder"}
+              </p>
               <input
                 type="text"
                 placeholder="Title"
@@ -442,25 +500,57 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
                 </div>
               )}
 
-              {/* Days of week */}
+              {/* Frequency */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 mb-1.5">Days</p>
-                <div className="flex gap-1.5">
-                  {DAY_LABELS.map((label, dow) => (
+                <p className="text-xs font-semibold text-gray-500 mb-1.5">Frequency</p>
+                <div className="flex gap-2">
+                  {(["recurring", "one_off"] as const).map((f) => (
                     <button
-                      key={dow}
-                      onClick={() => toggleDay(dow)}
-                      className="w-8 h-8 rounded-lg text-xs font-bold border transition-colors"
-                      style={remDays.includes(dow)
+                      key={f}
+                      onClick={() => setRemFrequency(f)}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
+                      style={remFrequency === f
                         ? { backgroundColor: NAVY, color: "#fff", borderColor: NAVY }
-                        : { backgroundColor: "#f9fafb", color: "#9ca3af", borderColor: "#e5e7eb" }
+                        : { backgroundColor: "#f9fafb", color: "#6b7280", borderColor: "#e5e7eb" }
                       }
                     >
-                      {label}
+                      {f === "recurring" ? "Repeats" : "One time"}
                     </button>
                   ))}
                 </div>
               </div>
+
+              {remFrequency === "recurring" ? (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1.5">Days</p>
+                  <div className="flex gap-1.5">
+                    {DAY_LABELS.map((label, dow) => (
+                      <button
+                        key={dow}
+                        onClick={() => toggleDay(dow)}
+                        className="w-8 h-8 rounded-lg text-xs font-bold border transition-colors"
+                        style={remDays.includes(dow)
+                          ? { backgroundColor: NAVY, color: "#fff", borderColor: NAVY }
+                          : { backgroundColor: "#f9fafb", color: "#9ca3af", borderColor: "#e5e7eb" }
+                        }
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1.5">Date</p>
+                  <input
+                    type="date"
+                    value={remOneOffDate}
+                    onChange={(e) => setRemOneOffDate(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                    style={{ "--tw-ring-color": NAVY } as React.CSSProperties}
+                  />
+                </div>
+              )}
 
               {/* Time */}
               <div>
@@ -479,12 +569,17 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
 
               <div className="flex justify-end">
                 <button
-                  onClick={handlePostReminder}
-                  disabled={remSaving || !remTitle.trim() || !remDays.length || (remTargetType === "specific" && !remTargetIds.length)}
+                  onClick={handleSaveReminder}
+                  disabled={
+                    remSaving ||
+                    !remTitle.trim() ||
+                    (remFrequency === "recurring" ? !remDays.length : !remOneOffDate) ||
+                    (remTargetType === "specific" && !remTargetIds.length)
+                  }
                   className="text-sm font-semibold px-4 py-2.5 md:py-1.5 rounded-lg text-white disabled:opacity-40 transition-opacity"
                   style={{ backgroundColor: NAVY }}
                 >
-                  {remSaving ? "Saving…" : "Save"}
+                  {remSaving ? "Saving…" : editingReminderId ? "Save changes" : "Save"}
                 </button>
               </div>
             </div>
@@ -515,13 +610,24 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${NAVY}15`, color: NAVY }}>
                           {fmt12(r.send_time)}
                         </span>
-                        <span className="text-[10px] text-gray-400 font-medium">{fmtDays(r.days_of_week)}</span>
+                        <span className="text-[10px] text-gray-400 font-medium">{fmtSchedule(r)}</span>
                         <span className="text-[10px] text-gray-400">
                           {r.target_type === "all" ? "Everyone" : `${r.target_user_ids?.length ?? 0} employee${(r.target_user_ids?.length ?? 0) !== 1 ? "s" : ""}`}
                         </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Edit */}
+                      <button
+                        onClick={() => openEditReminderForm(r)}
+                        className="p-1.5 rounded-lg text-gray-300 hover:text-navy-600 hover:bg-gray-50 transition-colors"
+                        title="Edit reminder"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </button>
                       {/* Active toggle */}
                       <button
                         onClick={() => handleToggleReminder(r.id, !r.active)}
