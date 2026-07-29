@@ -6,7 +6,7 @@ import NonBillableEntry, { NonBillableEntryData } from "./NonBillableEntry";
 import JobEventPicker, { JobEvent } from "./JobEventPicker";
 import LogHistoryPanel from "./LogHistoryPanel";
 import type { LogEntryType } from "@/types/logConfig";
-import { findBillableOverflow } from "@/lib/billableHours";
+import { findBillableOverflow, timeRangeHours, carveOutGeneral } from "@/lib/billableHours";
 
 interface DayEntry {
   id: string;
@@ -73,6 +73,11 @@ function calcTotalNonBillable(entries: NonBillableEntryData[]): number {
   ) / 100;
 }
 
+function calcDayTotalHours(dayStartTime: string, dayEndTime: string, breakMinutes: string): number {
+  const raw = timeRangeHours(dayStartTime, dayEndTime) - (parseFloat(breakMinutes) || 0) / 60;
+  return raw > 0 ? raw : 0;
+}
+
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
 interface TimesheetFormProps {
@@ -89,6 +94,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   const [nonBillable, setNonBillable] = useState<NonBillableEntryData[]>([newNonBillable()]);
   const [notes, setNotes] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [submittedAt, setSubmittedAt] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [submittedId, setSubmittedId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -109,7 +115,6 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   const [breakElapsed, setBreakElapsed] = useState("");
   const [weekStripOffset, setWeekStripOffset] = useState(0);
   const [weekSummaries, setWeekSummaries] = useState<Record<string, { billable: number; nonBillable: number }>>({});
-  const [popoverDate, setPopoverDate] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function handleClockIn() {
@@ -261,10 +266,20 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     };
   }, [loaded, userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, breakMinutes, saveDraft]);
 
+  // Editing after a successful submit means the on-screen data no longer
+  // matches what was sent — drop the "Submitted" indicator until resubmitted.
+  useEffect(() => {
+    if (!loaded) return;
+    setSubmitState((s) => (s === "success" ? "idle" : s));
+  }, [loaded, dayStartTime, dayEndTime, billable, nonBillable, notes, breakMinutes, dayEntries]);
+
   async function loadPastLog(overrideDate?: string) {
     const targetDate = overrideDate ?? date;
     setHistoryLoading(true);
     setHistoryMsg("");
+    setSubmitState("idle");
+    setSubmittedAt(null);
+    setErrorMsg("");
     try {
       const res = await fetch(`/api/submissions/employee?date=${targetDate}`, { credentials: "include" });
       const data = await res.json();
@@ -287,6 +302,14 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     } finally {
       setHistoryLoading(false);
     }
+  }
+
+  function resetSubmissionIdentity() {
+    setSubmitState("idle");
+    setSubmittedAt(null);
+    setSubmittedId(null);
+    setIsEditing(false);
+    setErrorMsg("");
   }
 
   const addBillable = () => setBillable((prev) => [...prev, newBillable()]);
@@ -318,16 +341,26 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     setSubmitState("submitting");
     setErrorMsg("");
     try {
+      const totalBillableHours = calcTotalBillable(billable);
+      const dayTotalHours = calcDayTotalHours(dayStartTime, dayEndTime, breakMinutes);
+      const { generalHours: autoNonBillableHours } = carveOutGeneral(dayTotalHours, [
+        totalBillableHours,
+        calcTotalNonBillable(nonBillable),
+      ]);
+      const nonBillablePayload =
+        autoNonBillableHours > 0
+          ? [...nonBillable, { id: uuid(), description: "Unaccounted time (auto-calculated)", hours: String(autoNonBillableHours) }]
+          : nonBillable;
       const payload = {
         date,
         dayStartTime,
         dayEndTime,
         billable,
-        nonBillable,
+        nonBillable: nonBillablePayload,
         dailyEntries: dayEntries,
         notes,
-        totalBillableHours: calcTotalBillable(billable),
-        totalNonBillableHours: calcTotalNonBillable(nonBillable),
+        totalBillableHours,
+        totalNonBillableHours: calcTotalNonBillable(nonBillablePayload),
         breakMinutes: parseFloat(breakMinutes) || 0,
         ...(isEditing && submittedId ? { id: submittedId } : {}),
       };
@@ -344,8 +377,13 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       const result = await res.json();
       if (result.id) setSubmittedId(result.id);
       localStorage.removeItem(storageKey(userId, today()));
-      setIsEditing(false);
+      setIsEditing(true);
       setSubmitState("success");
+      setSubmittedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      setWeekSummaries((prev) => ({
+        ...prev,
+        [date]: { billable: totalBillableHours, nonBillable: calcTotalNonBillable(nonBillablePayload) },
+      }));
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Something went wrong. Try again.");
       setSubmitState("error");
@@ -353,7 +391,10 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   }
 
   const totalBillable = calcTotalBillable(billable);
-  const totalNonBillable = calcTotalNonBillable(nonBillable);
+  const manualNonBillable = calcTotalNonBillable(nonBillable);
+  const dayTotalHours = calcDayTotalHours(dayStartTime, dayEndTime, breakMinutes);
+  const { generalHours: autoNonBillableHours } = carveOutGeneral(dayTotalHours, [totalBillable, manualNonBillable]);
+  const totalNonBillable = Math.round((manualNonBillable + autoNonBillableHours) * 100) / 100;
   const todayStr = today();
   const wBaseDate = (() => { const [y, mo, d] = date.split("-").map(Number); return new Date(y, mo - 1, d); })();
   const wMonday = new Date(wBaseDate);
@@ -364,48 +405,18 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     return { dateStr: fmtDate(dt), label: ["M","T","W","T","F","S","S"][i], num: dt.getDate() };
   });
 
-  if (submitState === "success") {
-    return (
-      <div className="bg-white rounded-2xl p-6 sm:p-10 text-center shadow-sm border border-gray-200">
-        <div className="mb-4 flex justify-center">
-          <svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500">
-            <circle cx="28" cy="28" r="26"/>
-            <polyline points="17,28 24,36 39,20"/>
-          </svg>
-        </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Hours submitted!</h2>
-        <p className="text-gray-500 mb-6">Your timesheet for {date} has been sent.</p>
-        <div className="flex flex-col items-center gap-3">
-          {submittedId && (
-            <button
-              onClick={() => {
-                setIsEditing(true);
-                setSubmitState("idle");
-              }}
-              className="bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm"
-            >
-              Edit this submission
-            </button>
-          )}
-          <button
-            onClick={() => {
-              setSubmitState("idle");
-              setSubmittedId(null);
-              setIsEditing(false);
-              setDayStartTime("");
-              setDayEndTime("");
-              setBillable([newBillable()]);
-              setNonBillable([newNonBillable()]);
-              setNotes("");
-              setDate(today());
-            }}
-            className="text-navy-600 underline text-sm"
-          >
-            Start a new entry
-          </button>
-        </div>
-      </div>
-    );
+  function startNewEntry() {
+    setSubmitState("idle");
+    setSubmittedAt(null);
+    setSubmittedId(null);
+    setIsEditing(false);
+    setDayStartTime("");
+    setDayEndTime("");
+    setBillable([newBillable()]);
+    setNonBillable([newNonBillable()]);
+    setNotes("");
+    setDate(today());
+    setErrorMsg("");
   }
 
   return (
@@ -424,10 +435,10 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
           <span>You&apos;re editing a submitted timesheet. Changes will replace your previous submission.</span>
           <button
             type="button"
-            onClick={() => { setIsEditing(false); setSubmitState("success"); }}
+            onClick={() => loadPastLog(date)}
             className="text-amber-600 underline self-start sm:ml-3 sm:self-auto"
           >
-            Cancel
+            Discard changes
           </button>
         </div>
       )}
@@ -462,29 +473,28 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
                   <button
                     key={dateStr}
                     type="button"
+                    disabled={historyLoading}
                     onClick={() => {
+                      setDate(dateStr);
+                      setHistoryMsg("");
+                      setWeekStripOffset(0);
                       if (hasLog) {
-                        setPopoverDate(popoverDate === dateStr ? null : dateStr);
+                        loadPastLog(dateStr);
                       } else {
-                        setDate(dateStr);
-                        setHistoryMsg("");
-                        setWeekStripOffset(0);
-                        setPopoverDate(null);
+                        resetSubmissionIdentity();
                       }
                     }}
-                    className="flex-1 flex flex-col items-center gap-0.5 py-0.5"
+                    className="flex-1 flex flex-col items-center gap-0.5 py-0.5 disabled:opacity-50"
                   >
                     <span className="text-[10px] font-medium text-gray-400">{label}</span>
                     <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
                       isSelected
                         ? "bg-navy-600 text-white"
-                        : popoverDate === dateStr
-                          ? "bg-navy-100 text-navy-700 ring-2 ring-navy-300"
-                          : hasLog
-                            ? "bg-navy-50 text-navy-600 ring-1 ring-navy-200"
-                            : isTodayDate
-                              ? "ring-2 ring-navy-400 text-navy-600"
-                              : "bg-gray-100 text-gray-400"
+                        : hasLog
+                          ? "bg-navy-50 text-navy-600 ring-1 ring-navy-200"
+                          : isTodayDate
+                            ? "ring-2 ring-navy-400 text-navy-600"
+                            : "bg-gray-100 text-gray-400"
                     }`}>
                       {num}
                     </div>
@@ -518,48 +528,6 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
               </svg>
             </button>
           </div>
-
-          {popoverDate && weekSummaries[popoverDate] && (
-            <div className="mt-2 bg-navy-50 rounded-xl border border-navy-100 p-3 relative">
-              <button
-                type="button"
-                onClick={() => setPopoverDate(null)}
-                className="absolute top-2 right-2 text-gray-300 hover:text-gray-500"
-              >
-                <svg width="11" height="11" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="1" y1="1" x2="12" y2="12"/><line x1="12" y1="1" x2="1" y2="12"/>
-                </svg>
-              </button>
-              <p className="text-sm font-semibold text-gray-900 mb-1.5">
-                {(() => { const [py, pmo, pd] = popoverDate.split("-").map(Number); return new Date(py, pmo - 1, pd).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }); })()}
-              </p>
-              <div className="flex gap-3 text-xs mb-2.5">
-                {weekSummaries[popoverDate].billable > 0 && (
-                  <span className="text-navy-600">{weekSummaries[popoverDate].billable}h billable</span>
-                )}
-                {weekSummaries[popoverDate].nonBillable > 0 && (
-                  <span className="text-orange-500">{weekSummaries[popoverDate].nonBillable}h non-billable</span>
-                )}
-                {Math.round((weekSummaries[popoverDate].billable + weekSummaries[popoverDate].nonBillable) * 100) / 100 > 0 && (
-                  <span className="font-semibold text-gray-700">
-                    {Math.round((weekSummaries[popoverDate].billable + weekSummaries[popoverDate].nonBillable) * 100) / 100}h total
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setDate(popoverDate);
-                  setWeekStripOffset(0);
-                  loadPastLog(popoverDate);
-                  setPopoverDate(null);
-                }}
-                className="w-full bg-navy-600 hover:bg-navy-700 text-white text-xs font-semibold rounded-lg py-2 transition-colors"
-              >
-                Load & Edit
-              </button>
-            </div>
-          )}
         </div>
 
         <div>
@@ -568,7 +536,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
             <input
               type="date"
               value={date}
-              onChange={(e) => { setDate(e.target.value); setHistoryMsg(""); setWeekStripOffset(0); setPopoverDate(null); }}
+              onChange={(e) => { setDate(e.target.value); setHistoryMsg(""); setWeekStripOffset(0); resetSubmissionIdentity(); }}
               className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
             />
             <button
@@ -854,6 +822,11 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
         >
           + Add another non-billable entry
         </button>
+        {autoNonBillableHours > 0 && (
+          <p className="mt-2 text-right text-xs text-gray-400">
+            +{autoNonBillableHours}h auto-calculated (day total minus jobs and entries above)
+          </p>
+        )}
         {totalNonBillable > 0 && (
           <p className="mt-2 text-right text-sm text-gray-500">
             Total non-billable: <span className="font-semibold text-gray-800">{totalNonBillable}h</span>
@@ -878,6 +851,16 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
         <p className="text-center text-xs text-gray-400">Draft saved at {savedAt}</p>
       )}
 
+      {/* Submitted indicator */}
+      {submitState === "success" && (
+        <div className="flex items-center justify-center gap-1.5 text-green-600 text-sm font-semibold">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/><polyline points="8,12.5 11,15.5 16,9"/>
+          </svg>
+          Submitted{submittedAt ? ` at ${submittedAt}` : ""}
+        </div>
+      )}
+
       {/* Error message */}
       {errorMsg && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
@@ -899,6 +882,16 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
           {submitState === "submitting"
             ? (isEditing ? "Updating..." : "Submitting...")
             : (isEditing ? "Update Submission" : "Submit for the Day")}
+        </button>
+      )}
+
+      {submitState === "success" && (
+        <button
+          type="button"
+          onClick={startNewEntry}
+          className="w-full text-center text-navy-600 underline text-sm"
+        >
+          Start a new entry for today
         </button>
       )}
     </form>

@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 export default function MobileTopBar() {
   return (
     <div
@@ -8,7 +10,7 @@ export default function MobileTopBar() {
       }}
     >
       <div className="h-11 flex items-center justify-center">
-        <span className="text-white font-bold text-base tracking-widest uppercase">TallyCrew</span>
+        <Image src="/tally-wordmark-white.png" alt="TallyCrew" width={70} height={24} priority />
       </div>
     </div>
   );
