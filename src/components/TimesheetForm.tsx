@@ -284,6 +284,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       const res = await fetch(`/api/submissions/employee?date=${targetDate}`, { credentials: "include" });
       const data = await res.json();
       if (!data || !data.id) {
+        resetSubmissionIdentity();
         setHistoryMsg(`No log found for ${targetDate}.`);
         return;
       }
@@ -310,6 +311,16 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     setSubmittedId(null);
     setIsEditing(false);
     setErrorMsg("");
+    setDayStartTime("");
+    setDayEndTime("");
+    setBillable([newBillable()]);
+    setNonBillable([newNonBillable()]);
+    setNotes("");
+    setBreakMinutes("");
+    setClockInTimestamp(null);
+    setBreakStartTimestamp(null);
+    const dayTypes = entryTypes.filter((t) => t.time_mode === "day");
+    setDayEntries(dayTypes.map((t) => ({ id: t.id, typeSlug: t.slug, typeName: t.name, customFields: {} })));
   }
 
   const addBillable = () => setBillable((prev) => [...prev, newBillable()]);
