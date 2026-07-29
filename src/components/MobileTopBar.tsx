@@ -10,7 +10,7 @@ export default function MobileTopBar() {
       }}
     >
       <div className="h-11 flex items-center justify-center">
-        <Image src="/tally-wordmark-white.png" alt="TallyCrew" width={70} height={24} priority />
+        <Image src="/tally-wordmark-transparent.png" alt="TallyCrew" width={103} height={24} priority />
       </div>
     </div>
   );
