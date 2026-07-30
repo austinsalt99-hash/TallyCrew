@@ -2,10 +2,8 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function BillingPage() {
-  const router = useRouter();
   const [selected, setSelected] = useState<"monthly" | "annual">("annual");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -27,7 +25,7 @@ export default function BillingPage() {
       return;
     }
 
-    router.push(data.url);
+    window.location.href = data.url;
   }
 
   return (

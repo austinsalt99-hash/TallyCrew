@@ -34,7 +34,7 @@ export default function AdminBillingClient({
       setLoading(false);
       return;
     }
-    router.push(data.url);
+    window.location.href = data.url;
   }
 
   const isPastDue = subscriptionStatus === "past_due";
