@@ -1,3 +1,5 @@
+import { TERMS_VERSION } from "@/lib/legalVersions";
+
 export const metadata = {
   title: "Terms of Service — TallyCrew",
 };
@@ -7,7 +9,7 @@ export default function TermsPage() {
     <main className="min-h-screen bg-gray-50">
       <div className="max-w-2xl mx-auto px-4 py-10 sm:py-16">
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Terms of Service</h1>
-        <p className="text-sm text-gray-400 mb-8">Last updated: July 2026</p>
+        <p className="text-sm text-gray-400 mb-8">Last updated: {TERMS_VERSION}</p>
 
         <div className="space-y-6 text-sm leading-relaxed text-gray-700">
           <p>

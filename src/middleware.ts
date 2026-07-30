@@ -82,11 +82,14 @@ export async function middleware(request: NextRequest) {
         .eq("id", profile.company_id)
         .single();
 
-      // Only gate companies that have gone through Stripe (grandfathered = no customer ID)
-      if (company?.stripe_customer_id) {
+      // Gate companies that have gone through Stripe, or that are freshly
+      // registered and still "pending" first payment. Companies with neither
+      // a customer ID nor "pending" status are grandfathered (pre-date billing).
+      const status = company?.subscription_status ?? null;
+      if (company?.stripe_customer_id || status === "pending") {
         const allowed = isSubscriptionActive(
-          company.subscription_status ?? null,
-          company.subscription_period_end ?? null
+          status,
+          company?.subscription_period_end ?? null
         );
         if (!allowed) {
           const url = request.nextUrl.clone();

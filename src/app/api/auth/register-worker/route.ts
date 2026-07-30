@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { TERMS_VERSION, PRIVACY_VERSION } from "@/lib/legalVersions";
 
 function getAdminClient() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -10,10 +11,16 @@ function getAdminClient() {
 }
 
 export async function POST(req: NextRequest) {
-  const { code, fullName, email, password } = await req.json();
+  const { code, fullName, email, password, agreedToTerms } = await req.json();
 
   if (!code || !fullName || !email || !password) {
     return NextResponse.json({ error: "All fields are required." }, { status: 400 });
+  }
+  if (!agreedToTerms) {
+    return NextResponse.json(
+      { error: "You must agree to the Terms of Service and Privacy Policy." },
+      { status: 400 }
+    );
   }
 
   const admin = getAdminClient();
@@ -69,6 +76,15 @@ export async function POST(req: NextRequest) {
     .from("invite_codes")
     .update({ used_at: new Date().toISOString(), used_by: authData.user.id })
     .eq("id", invite.id);
+
+  // 5. Record consent — append-only, tied to the exact document version shown at signup.
+  // Not fatal to account creation if this fails; just logged for follow-up.
+  const acceptedAt = new Date().toISOString();
+  const { error: consentError } = await admin.from("consent_log").insert([
+    { user_id: authData.user.id, document_type: "terms", document_version: TERMS_VERSION, accepted_at: acceptedAt },
+    { user_id: authData.user.id, document_type: "privacy", document_version: PRIVACY_VERSION, accepted_at: acceptedAt },
+  ]);
+  if (consentError) console.error("Consent log insert error:", consentError);
 
   // Session is established client-side via signInWithPassword after this returns OK
   return NextResponse.json({ ok: true });

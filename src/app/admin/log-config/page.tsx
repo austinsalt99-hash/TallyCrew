@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import BillableEntry, { BillableEntryData } from "@/components/BillableEntry";
 import TimesheetForm from "@/components/TimesheetForm";
-import type { LogEntryType, LogEntryField, LogEntryFieldOption } from "@/types/logConfig";
+import type { LogEntryType, LogEntryField, LogEntryFieldOption, TypeWorkerRate } from "@/types/logConfig";
 
 const NAVY = "#0A1172";
 
@@ -17,8 +17,15 @@ function toSlug(name: string): string {
 
 type TimeMode = "job" | "day" | "none";
 
+interface Worker {
+  id: string;
+  full_name: string;
+  role: string;
+}
+
 export default function LogConfigPage() {
   const [types, setTypes] = useState<LogEntryType[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedType, setExpandedType] = useState<string | null>(null);
   const [expandedField, setExpandedField] = useState<string | null>(null);
@@ -86,7 +93,13 @@ export default function LogConfigPage() {
     setLoading(false);
   }
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    reload();
+    fetch("/api/admin/workers", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setWorkers(data.filter((w: Worker) => w.role === "worker")); })
+      .catch(() => {});
+  }, []);
 
   async function handleAddType() {
     if (!newTypeName.trim()) return;
@@ -305,6 +318,8 @@ export default function LogConfigPage() {
           {expandedType === type.id && (
             <div className="border-t border-gray-100 px-5 py-4 space-y-3 bg-gray-50 rounded-b-xl overflow-hidden">
 
+              {isPrimary && <WorkerRatesSection type={type} workers={workers} />}
+
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Fields</p>
                 <button
@@ -471,6 +486,120 @@ export default function LogConfigPage() {
               <TimesheetForm previewMode />
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── WorkerRatesSection ─────────────────────────────────────────────────────
+
+function RateCell({ workerId, rate, onSave }: {
+  workerId: string;
+  rate: number | null;
+  onSave: (workerId: string, rateAmount: number | null) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(rate != null ? String(rate) : "");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setValue(rate != null ? String(rate) : "");
+  }, [rate]);
+
+  async function commit() {
+    setEditing(false);
+    const parsed = value.trim() === "" ? null : parseFloat(value);
+    if (parsed === rate) return;
+    setSaving(true);
+    await onSave(workerId, parsed != null && !isNaN(parsed) ? parsed : null);
+    setSaving(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="number"
+        min="0"
+        step="0.01"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setValue(rate != null ? String(rate) : ""); setEditing(false); } }}
+        placeholder="0.00"
+        className="w-24 border border-navy-300 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-navy-400"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      title="Click to set the rate charged to the client for this worker's General hours"
+      className="text-sm text-right tabular-nums hover:text-navy-700 transition-colors"
+    >
+      {saving ? (
+        <span className="text-gray-400">…</span>
+      ) : rate != null ? (
+        <span className="text-gray-900">${rate.toFixed(2)}<span className="text-gray-400">/hr</span></span>
+      ) : (
+        <span className="text-gray-300 italic">Not set</span>
+      )}
+    </button>
+  );
+}
+
+function WorkerRatesSection({ type, workers }: { type: LogEntryType; workers: { id: string; full_name: string }[] }) {
+  const [rates, setRates] = useState<TypeWorkerRate[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/log-config/type-worker-rates?type_id=${type.id}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setRates(data); })
+      .finally(() => setLoading(false));
+  }, [type.id]);
+
+  async function saveRate(workerId: string, rateAmount: number | null) {
+    const res = await fetch("/api/log-config/type-worker-rates", {
+      method: "PUT",
+      headers: authHeader(), credentials: "include",
+      body: JSON.stringify({ type_id: type.id, worker_id: workerId, rate_amount: rateAmount }),
+    });
+    if (!res.ok) return;
+    setRates((prev) => {
+      const withoutWorker = prev.filter((r) => r.worker_id !== workerId);
+      return rateAmount == null
+        ? withoutWorker
+        : [...withoutWorker, { id: `${type.id}-${workerId}`, type_id: type.id, worker_id: workerId, rate_amount: rateAmount }];
+    });
+  }
+
+  if (workers.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-navy-200 rounded-lg p-3 space-y-2">
+      <p className="text-xs font-semibold text-navy-700">Client billing rate — per worker</p>
+      <p className="text-xs text-gray-400">
+        What to charge the client per hour of General work for each worker. Separate from the hourly wage under Workers, which is what they&apos;re paid.
+      </p>
+      {loading ? (
+        <p className="text-xs text-gray-400">Loading…</p>
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {workers.map((w) => (
+            <div key={w.id} className="flex items-center justify-between py-1.5">
+              <span className="text-sm text-gray-700">{w.full_name}</span>
+              <RateCell
+                workerId={w.id}
+                rate={rates.find((r) => r.worker_id === w.id)?.rate_amount ?? null}
+                onSave={saveRate}
+              />
+            </div>
+          ))}
         </div>
       )}
     </div>

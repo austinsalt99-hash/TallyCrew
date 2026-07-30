@@ -20,6 +20,13 @@ export interface LogEntryField {
   rate_amount?: number | null;
 }
 
+export interface TypeWorkerRate {
+  id: string;
+  type_id: string;
+  worker_id: string;
+  rate_amount: number;
+}
+
 export interface LogEntryType {
   id: string;
   name: string;

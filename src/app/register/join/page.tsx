@@ -13,6 +13,7 @@ export default function JoinPage() {
     password: "",
     confirmPassword: "",
   });
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -31,6 +32,10 @@ export default function JoinPage() {
       setError("Password must be at least 8 characters.");
       return;
     }
+    if (!agreedToTerms) {
+      setError("You must agree to the Terms of Service and Privacy Policy.");
+      return;
+    }
 
     setLoading(true);
     const res = await fetch("/api/auth/register-worker", {
@@ -41,6 +46,7 @@ export default function JoinPage() {
         fullName: form.fullName,
         email: form.email,
         password: form.password,
+        agreedToTerms,
       }),
     });
 
@@ -145,13 +151,32 @@ export default function JoinPage() {
               </div>
             </div>
 
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-navy-600 focus:ring-navy-400"
+              />
+              <span className="text-sm text-gray-600">
+                I agree to the{" "}
+                <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-navy-600 hover:underline font-medium">
+                  Terms of Service
+                </a>{" "}
+                and{" "}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-navy-600 hover:underline font-medium">
+                  Privacy Policy
+                </a>
+              </span>
+            </label>
+
             {error && (
               <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
             )}
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !agreedToTerms}
               className="w-full bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl py-3 transition-colors disabled:opacity-50"
             >
               {loading ? "Creating account…" : "Create account"}

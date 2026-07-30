@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { TERMS_VERSION, PRIVACY_VERSION } from "@/lib/legalVersions";
 
 function getAdminClient() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -10,18 +11,25 @@ function getAdminClient() {
 }
 
 export async function POST(req: NextRequest) {
-  const { companyName, fullName, email, password } = await req.json();
+  const { companyName, fullName, email, password, agreedToTerms } = await req.json();
 
   if (!companyName || !fullName || !email || !password) {
     return NextResponse.json({ error: "All fields are required." }, { status: 400 });
   }
+  if (!agreedToTerms) {
+    return NextResponse.json(
+      { error: "You must agree to the Terms of Service and Privacy Policy." },
+      { status: 400 }
+    );
+  }
 
   const admin = getAdminClient();
 
-  // 1. Create the company
+  // 1. Create the company. New companies start "pending" and are gated out of
+  // /admin until they complete Stripe checkout (see middleware.ts).
   const { data: company, error: companyError } = await admin
     .from("companies")
-    .insert({ name: companyName })
+    .insert({ name: companyName, subscription_status: "pending" })
     .select("id")
     .single();
 
@@ -60,6 +68,15 @@ export async function POST(req: NextRequest) {
     console.error("Profile insert error:", profileError);
     return NextResponse.json({ error: "Account setup failed. Please try again." }, { status: 500 });
   }
+
+  // 4. Record consent — append-only, tied to the exact document version shown at signup.
+  // Not fatal to account creation if this fails; just logged for follow-up.
+  const acceptedAt = new Date().toISOString();
+  const { error: consentError } = await admin.from("consent_log").insert([
+    { user_id: authData.user.id, document_type: "terms", document_version: TERMS_VERSION, accepted_at: acceptedAt },
+    { user_id: authData.user.id, document_type: "privacy", document_version: PRIVACY_VERSION, accepted_at: acceptedAt },
+  ]);
+  if (consentError) console.error("Consent log insert error:", consentError);
 
   return NextResponse.json({ ok: true });
 }

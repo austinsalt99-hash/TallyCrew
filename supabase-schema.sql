@@ -227,19 +227,27 @@ CREATE POLICY job_events_admin_delete ON job_events FOR DELETE
 --    Slugs are unique per company.
 -- -------------------------------------------------------------
 CREATE TABLE log_entry_types (
-  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  company_id UUID        REFERENCES companies(id),
-  name       TEXT        NOT NULL,
-  slug       TEXT        NOT NULL,
-  sort_order INTEGER     NOT NULL DEFAULT 0,
-  is_active  BOOLEAN     NOT NULL DEFAULT true,
-  is_timed   BOOLEAN     NOT NULL DEFAULT true,
-  time_mode  TEXT        NOT NULL DEFAULT 'job',
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  company_id  UUID        REFERENCES companies(id),
+  name        TEXT        NOT NULL,
+  slug        TEXT        NOT NULL,
+  sort_order  INTEGER     NOT NULL DEFAULT 0,
+  is_active   BOOLEAN     NOT NULL DEFAULT true,
+  is_timed    BOOLEAN     NOT NULL DEFAULT true,
+  time_mode   TEXT        NOT NULL DEFAULT 'job',
+  is_priced   BOOLEAN     NOT NULL DEFAULT false,
+  rate_type   TEXT        CHECK (rate_type IN ('per_hour', 'per_unit')),
+  rate_amount NUMERIC,
   CONSTRAINT log_entry_types_company_slug_key UNIQUE (company_id, slug)
 );
 
 ALTER TABLE log_entry_types ENABLE ROW LEVEL SECURITY;
+
+-- Existing deployments: these three predate this file documenting them
+ALTER TABLE log_entry_types ADD COLUMN IF NOT EXISTS is_priced BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE log_entry_types ADD COLUMN IF NOT EXISTS rate_type TEXT CHECK (rate_type IN ('per_hour', 'per_unit'));
+ALTER TABLE log_entry_types ADD COLUMN IF NOT EXISTS rate_amount NUMERIC;
 
 CREATE POLICY log_types_read ON log_entry_types FOR SELECT
   USING (company_id = get_my_company_id());
@@ -361,6 +369,63 @@ CREATE POLICY log_options_admin_delete ON log_entry_field_options FOR DELETE
       SELECT 1 FROM log_entry_fields f
       JOIN log_entry_types t ON t.id = f.type_id
       WHERE f.id = log_entry_field_options.field_id
+        AND t.company_id = get_my_company_id()
+    ) AND get_my_role() = 'admin'
+  );
+
+
+-- -------------------------------------------------------------
+-- 10a. LOG ENTRY TYPE WORKER RATES
+--      Per-worker override of the client billing rate for a given
+--      log entry type — e.g. a different $/hr to charge the client
+--      for each worker's General time. Distinct from
+--      profiles.hourly_wage, which is what the company pays the
+--      worker. Invoice pricing prefers this over
+--      log_entry_types.rate_amount, which in turn beats falling
+--      back to the worker's hourly_wage.
+-- -------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS log_entry_type_worker_rates (
+  id          UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  type_id     UUID    NOT NULL REFERENCES log_entry_types(id) ON DELETE CASCADE,
+  worker_id   UUID    NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  rate_amount NUMERIC NOT NULL,
+  CONSTRAINT log_entry_type_worker_rates_unique UNIQUE (type_id, worker_id)
+);
+
+ALTER TABLE log_entry_type_worker_rates ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY type_worker_rates_read ON log_entry_type_worker_rates FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM log_entry_types t
+      WHERE t.id = log_entry_type_worker_rates.type_id
+        AND t.company_id = get_my_company_id()
+    )
+  );
+
+CREATE POLICY type_worker_rates_admin_insert ON log_entry_type_worker_rates FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM log_entry_types t
+      WHERE t.id = log_entry_type_worker_rates.type_id
+        AND t.company_id = get_my_company_id()
+    ) AND get_my_role() = 'admin'
+  );
+
+CREATE POLICY type_worker_rates_admin_update ON log_entry_type_worker_rates FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM log_entry_types t
+      WHERE t.id = log_entry_type_worker_rates.type_id
+        AND t.company_id = get_my_company_id()
+    ) AND get_my_role() = 'admin'
+  );
+
+CREATE POLICY type_worker_rates_admin_delete ON log_entry_type_worker_rates FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM log_entry_types t
+      WHERE t.id = log_entry_type_worker_rates.type_id
         AND t.company_id = get_my_company_id()
     ) AND get_my_role() = 'admin'
   );
