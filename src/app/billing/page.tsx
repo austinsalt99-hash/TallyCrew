@@ -12,20 +12,25 @@ export default function BillingPage() {
     setLoading(true);
     setError("");
 
-    const res = await fetch("/api/stripe/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan: selected }),
-    });
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: selected }),
+      });
 
-    const data = await res.json();
-    if (!res.ok || !data.url) {
-      setError(data.error ?? "Something went wrong. Please try again.");
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        setError(data.error ?? "Something went wrong. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      window.location.href = data.url;
+    } catch {
+      setError("Something went wrong. Please try again.");
       setLoading(false);
-      return;
     }
-
-    window.location.href = data.url;
   }
 
   return (

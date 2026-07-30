@@ -33,21 +33,29 @@ export async function POST(req: NextRequest) {
 
   const origin = req.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
-  const session = await getStripe().checkout.sessions.create({
-    mode: "subscription",
-    ...(company?.stripe_customer_id
-      ? { customer: company.stripe_customer_id }
-      : { customer_email: user.email }),
-    line_items: [{ price: priceId, quantity: 1 }],
-    subscription_data: {
-      trial_period_days: 14,
+  try {
+    const session = await getStripe().checkout.sessions.create({
+      mode: "subscription",
+      ...(company?.stripe_customer_id
+        ? { customer: company.stripe_customer_id }
+        : { customer_email: user.email }),
+      line_items: [{ price: priceId, quantity: 1 }],
+      subscription_data: {
+        trial_period_days: 14,
+        metadata: { company_id: profile.company_id },
+      },
+      allow_promotion_codes: true,
       metadata: { company_id: profile.company_id },
-    },
-    allow_promotion_codes: true,
-    metadata: { company_id: profile.company_id },
-    success_url: `${origin}/admin/billing?success=1`,
-    cancel_url: `${origin}/billing`,
-  });
+      success_url: `${origin}/admin/billing?success=1`,
+      cancel_url: `${origin}/billing`,
+    });
 
-  return NextResponse.json({ url: session.url });
+    return NextResponse.json({ url: session.url });
+  } catch (err) {
+    console.error("Stripe checkout session creation failed:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Could not start checkout." },
+      { status: 500 }
+    );
+  }
 }

@@ -27,14 +27,19 @@ export default function AdminBillingClient({
   async function openPortal() {
     setLoading(true);
     setError("");
-    const res = await fetch("/api/stripe/portal", { method: "POST" });
-    const data = await res.json();
-    if (!res.ok || !data.url) {
-      setError(data.error ?? "Could not open billing portal. Please try again.");
+    try {
+      const res = await fetch("/api/stripe/portal", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        setError(data.error ?? "Could not open billing portal. Please try again.");
+        setLoading(false);
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      setError("Could not open billing portal. Please try again.");
       setLoading(false);
-      return;
     }
-    window.location.href = data.url;
   }
 
   const isPastDue = subscriptionStatus === "past_due";

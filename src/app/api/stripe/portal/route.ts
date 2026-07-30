@@ -25,10 +25,18 @@ export async function POST(req: NextRequest) {
 
   const origin = req.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
-  const portalSession = await getStripe().billingPortal.sessions.create({
-    customer: company.stripe_customer_id,
-    return_url: `${origin}/admin/billing`,
-  });
+  try {
+    const portalSession = await getStripe().billingPortal.sessions.create({
+      customer: company.stripe_customer_id,
+      return_url: `${origin}/admin/billing`,
+    });
 
-  return NextResponse.json({ url: portalSession.url });
+    return NextResponse.json({ url: portalSession.url });
+  } catch (err) {
+    console.error("Stripe portal session creation failed:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Could not open billing portal." },
+      { status: 500 }
+    );
+  }
 }
