@@ -1,6 +1,12 @@
+"use client";
+
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 
 export default function MobileTopBar() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/site")) return null;
+
   return (
     <div
       className="md:hidden fixed top-0 left-0 right-0 z-20"

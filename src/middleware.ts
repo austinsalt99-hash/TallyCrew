@@ -3,6 +3,19 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isSubscriptionActive } from "@/lib/subscription";
 
 export async function middleware(request: NextRequest) {
+  const hostname = request.headers.get("host") ?? "";
+  const isMarketingHost = hostname === "tallycrew.ca" || hostname === "www.tallycrew.ca";
+
+  // tallycrew.ca / www.tallycrew.ca serve the marketing site — fully public,
+  // no auth check needed. app.tallycrew.ca (and everything else, incl. localhost)
+  // keeps serving the product as before.
+  if (isMarketingHost) {
+    const url = request.nextUrl.clone();
+    const { pathname } = url;
+    url.pathname = `/site${pathname === "/" ? "" : pathname}`;
+    return NextResponse.rewrite(url);
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -37,7 +50,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/privacy") ||
-    pathname.startsWith("/terms");
+    pathname.startsWith("/terms") ||
+    pathname.startsWith("/site");
 
   // Not logged in → send to login (except public routes), preserving where
   // they were headed so e.g. a Stripe checkout return isn't lost mid-flow
