@@ -15,7 +15,7 @@ const PAY_PERIOD_OPTIONS: { value: PayPeriodType; label: string }[] = [
   { value: "monthly", label: "Monthly" },
 ];
 
-type Section = "profile" | "general" | "appearance" | "siri";
+type Section = "profile" | "general" | "appearance" | "siri" | "notifications";
 type UploadStage = "idle" | "cropping" | "uploading";
 
 interface ProfileData {
@@ -129,6 +129,9 @@ export default function AdminSettingsPage() {
   const [payPeriodAnchor, setPayPeriodAnchor] = useState("2024-01-01");
   const [paySaving, setPaySaving] = useState(false);
   const [paySaved, setPaySaved] = useState(false);
+  const [morningDigestTime, setMorningDigestTime] = useState("07:00");
+  const [digestSaving, setDigestSaving] = useState(false);
+  const [digestSaved, setDigestSaved] = useState(false);
 
   // Siri Shortcuts
   const [siriEnabled, setSiriEnabled] = useState(false);
@@ -154,7 +157,7 @@ export default function AdminSettingsPage() {
       if (!profileData) { setLoading(false); return; }
       setSiriEnabled(!!profileData.siri_token_hash);
       const { data: company } = await supabase
-        .from("companies").select("name, banner_url, timezone, pay_period_type, pay_period_anchor").eq("id", profileData.company_id).single();
+        .from("companies").select("name, banner_url, timezone, pay_period_type, pay_period_anchor, morning_digest_time").eq("id", profileData.company_id).single();
       setProfile({
         email: user.email ?? "",
         fullName: profileData.full_name,
@@ -169,6 +172,7 @@ export default function AdminSettingsPage() {
       setCompanyTimezone(company?.timezone ?? "America/Toronto");
       setPayPeriodType((company?.pay_period_type as PayPeriodType) ?? "biweekly");
       setPayPeriodAnchor(company?.pay_period_anchor ?? "2024-01-01");
+      setMorningDigestTime(company?.morning_digest_time ?? "07:00");
       setLoading(false);
     }
     load();
@@ -224,6 +228,22 @@ export default function AdminSettingsPage() {
       if (res.ok) setPaySaved(true);
     } finally {
       setPaySaving(false);
+    }
+  }
+
+  async function saveMorningDigestTime() {
+    setDigestSaving(true);
+    setDigestSaved(false);
+    try {
+      const res = await fetch("/api/company", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ morning_digest_time: morningDigestTime }),
+      });
+      if (res.ok) setDigestSaved(true);
+    } finally {
+      setDigestSaving(false);
     }
   }
 
@@ -324,7 +344,7 @@ export default function AdminSettingsPage() {
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
           <div>
             <p className="text-sm font-semibold text-gray-900 mb-0.5">Company Timezone</p>
-            <p className="text-xs text-gray-400">Used to schedule the 7:00 AM daily job digest notification.</p>
+            <p className="text-xs text-gray-400">Used to schedule the daily job digest notification (set the exact time under Notifications).</p>
           </div>
           <select
             value={companyTimezone}
@@ -395,6 +415,46 @@ export default function AdminSettingsPage() {
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-xl py-3 text-sm transition-colors"
           >
             {paySaving ? "Saving…" : "Save Pay Schedule"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Section: Notifications ────────────────────────────────────────────────
+  if (activeSection === "notifications") {
+    return (
+      <div className="max-w-lg mx-auto">
+        <BackHeader title="Notifications" onBack={() => { setDigestSaved(false); setActiveSection(null); }} />
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-900 mb-0.5">Morning Digest Time</p>
+            <p className="text-xs text-gray-400">
+              Each worker gets a push notification listing their jobs for the day, sent at this time
+              in your company&apos;s timezone (set under General).
+            </p>
+          </div>
+          <input
+            type="time"
+            value={morningDigestTime}
+            onChange={(e) => { setMorningDigestTime(e.target.value); setDigestSaved(false); }}
+            className="w-full border border-gray-300 rounded-xl px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {digestSaved && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="7.5" cy="7.5" r="6.5"/><polyline points="4.5,7.5 6.5,9.5 10.5,5.5"/>
+              </svg>
+              <p className="text-xs text-green-700 font-medium">Morning digest time saved.</p>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={saveMorningDigestTime}
+            disabled={digestSaving}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-xl py-3 text-sm transition-colors"
+          >
+            {digestSaving ? "Saving…" : "Save Notification Time"}
           </button>
         </div>
       </div>
@@ -601,6 +661,10 @@ export default function AdminSettingsPage() {
           <NavRow iconBg="#F4A823"
             icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>}
             label="Appearance" description="Dashboard banner, branding" onClick={() => setActiveSection("appearance")} />
+          <div className="mx-4 border-t border-gray-100" />
+          <NavRow iconBg="#dc2626"
+            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>}
+            label="Notifications" description="Morning digest send time" onClick={() => setActiveSection("notifications")} />
           <div className="mx-4 border-t border-gray-100" />
           <NavRow iconBg="#0A1172"
             icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg>}

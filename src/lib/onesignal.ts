@@ -34,6 +34,21 @@ export async function sendToUser(
   });
 }
 
+export async function scheduleToUser(
+  externalUserId: string,
+  title: string,
+  body: string,
+  sendAfter: string
+): Promise<void> {
+  await send({
+    include_external_user_ids: [externalUserId],
+    channel_for_external_user_ids: "push",
+    headings: { en: title },
+    contents: { en: body },
+    send_after: sendAfter,
+  });
+}
+
 export async function sendToCompany(
   companyId: string,
   title: string,

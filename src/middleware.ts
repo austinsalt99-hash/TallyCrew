@@ -39,10 +39,13 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/privacy") ||
     pathname.startsWith("/terms");
 
-  // Not logged in → send to login (except public routes)
+  // Not logged in → send to login (except public routes), preserving where
+  // they were headed so e.g. a Stripe checkout return isn't lost mid-flow
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    url.search = "";
+    url.searchParams.set("redirectTo", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(url);
   }
 

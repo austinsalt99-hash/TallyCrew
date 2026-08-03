@@ -1,12 +1,20 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 
-export default function LoginPage() {
+// Only ever redirect to a same-origin relative path — never let a query
+// param send the user off-site.
+function safeRedirectTarget(value: string | null): string | null {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
+  return value;
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -36,7 +44,8 @@ export default function LoginPage() {
       .eq("id", user.id)
       .single();
 
-    router.push(profile?.role === "admin" ? "/admin/dashboard" : "/");
+    const redirectTo = safeRedirectTarget(searchParams.get("redirectTo"));
+    router.push(redirectTo ?? (profile?.role === "admin" ? "/admin/dashboard" : "/"));
     router.refresh();
 
     if (profile?.company_id) {
@@ -114,5 +123,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

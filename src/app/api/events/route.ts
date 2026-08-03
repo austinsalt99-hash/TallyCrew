@@ -8,6 +8,30 @@ async function adminGuard(supabase: Awaited<ReturnType<typeof createSupabaseServ
   return { error: null, status: 200, profile };
 }
 
+// Only these columns may be set from the request body — prevents a client
+// from writing to columns the form doesn't expose (e.g. company_id).
+const EVENT_FIELDS = [
+  "title",
+  "client",
+  "location",
+  "description",
+  "date",
+  "end_date",
+  "start_time",
+  "end_time",
+  "assigned_to",
+  "is_verified",
+  "ongoing_job_id",
+] as const;
+
+function pickEventFields(body: Record<string, unknown>): Record<string, unknown> {
+  const picked: Record<string, unknown> = {};
+  for (const field of EVENT_FIELDS) {
+    if (field in body) picked[field] = body[field];
+  }
+  return picked;
+}
+
 export async function GET(request: Request) {
   const supabase = await createSupabaseServer();
   const { user, profile } = await getSessionUser(supabase);
@@ -54,7 +78,10 @@ export async function POST(request: Request) {
   if (authErr || !profile) return NextResponse.json({ error: authErr }, { status });
 
   const body = await request.json();
-  const cleanBody = { ...body, start_time: body.start_time || null, end_time: body.end_time || null, end_date: body.end_date || null };
+  const cleanBody = pickEventFields(body);
+  cleanBody.start_time = cleanBody.start_time || null;
+  cleanBody.end_time = cleanBody.end_time || null;
+  cleanBody.end_date = cleanBody.end_date || null;
   const { data, error } = await supabase
     .from("job_events")
     .insert({ ...cleanBody, company_id: profile.company_id })
@@ -69,7 +96,8 @@ export async function PUT(request: Request) {
   const { error: authErr, status, profile } = await adminGuard(supabase);
   if (authErr || !profile) return NextResponse.json({ error: authErr }, { status });
 
-  const { id, ...updates } = await request.json();
+  const { id, ...body } = await request.json();
+  const updates = pickEventFields(body);
   // Only normalize fields the caller actually sent — defaulting an *omitted*
   // field to null (rather than leaving it untouched) silently wipes it on
   // every partial update (e.g. drag-to-reschedule only sends date/time,

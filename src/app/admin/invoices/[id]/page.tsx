@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
 interface LineItem {
   description: string;
+  notes?: string;
   employee: string;
   date: string;
   hours: number | string;
@@ -176,15 +177,22 @@ export default function InvoiceDetailPage() {
           </thead>
           <tbody>
             {invoice.line_items.map((item, i) => (
-              <tr key={i} className="border-b border-gray-100">
-                <td className="py-2 pr-4 text-gray-600">{item.date}</td>
-                <td className="py-2 pr-4 text-gray-700">{item.employee}</td>
-                <td className="py-2 pr-4 text-gray-700">{item.description || "—"}</td>
-                <td className="py-2 pr-4 text-right text-gray-500">{item.hours !== "" && item.hours !== 0 ? `${item.hours}h` : "—"}</td>
-                <td className="py-2 text-right font-medium text-gray-900">
-                  ${parseFloat(String(item.amount) || "0").toFixed(2)}
-                </td>
-              </tr>
+              <Fragment key={i}>
+                <tr className={item.notes ? "" : "border-b border-gray-100"}>
+                  <td className="py-2 pr-4 text-gray-600">{item.date}</td>
+                  <td className="py-2 pr-4 text-gray-700">{item.employee}</td>
+                  <td className="py-2 pr-4 text-gray-700">{item.description || "—"}</td>
+                  <td className="py-2 pr-4 text-right text-gray-500">{item.hours !== "" && item.hours !== 0 ? `${item.hours}h` : "—"}</td>
+                  <td className="py-2 text-right font-medium text-gray-900">
+                    ${parseFloat(String(item.amount) || "0").toFixed(2)}
+                  </td>
+                </tr>
+                {item.notes && (
+                  <tr className="border-b border-gray-100">
+                    <td colSpan={5} className="pb-2 pr-4 pt-0 text-xs text-gray-400 italic">{item.notes}</td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
           <tfoot>

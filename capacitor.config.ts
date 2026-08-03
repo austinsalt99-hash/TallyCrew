@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: "TallyCrew",
   webDir: "out",
   server: {
-    url: "https://www.tallycrew.ca",
+    url: "https://app.tallycrew.ca",
     cleartext: false,
   },
   plugins: {

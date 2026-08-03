@@ -8,7 +8,7 @@ export async function GET() {
 
   const { data } = await supabase
     .from("companies")
-    .select("name, banner_url, timezone, pay_period_type, pay_period_anchor")
+    .select("name, banner_url, timezone, pay_period_type, pay_period_anchor, morning_digest_time")
     .eq("id", profile.company_id)
     .single();
 
@@ -27,6 +27,7 @@ export async function PATCH(req: Request) {
   if (body.timezone !== undefined) updates.timezone = body.timezone;
   if (body.pay_period_type !== undefined) updates.pay_period_type = body.pay_period_type;
   if (body.pay_period_anchor !== undefined) updates.pay_period_anchor = body.pay_period_anchor;
+  if (body.morning_digest_time !== undefined) updates.morning_digest_time = body.morning_digest_time;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });

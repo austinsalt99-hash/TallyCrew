@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       },
       allow_promotion_codes: true,
       metadata: { company_id: profile.company_id },
-      success_url: `${origin}/admin/billing?success=1`,
+      success_url: `${origin}/admin/billing?success=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/billing`,
     });
 

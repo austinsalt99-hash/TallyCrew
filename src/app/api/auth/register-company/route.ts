@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { TERMS_VERSION, PRIVACY_VERSION } from "@/lib/legalVersions";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 function getAdminClient() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -11,6 +12,10 @@ function getAdminClient() {
 }
 
 export async function POST(req: NextRequest) {
+  if (!checkRateLimit(`register-company:${getClientIp(req)}`, 5, 60 * 60 * 1000)) {
+    return NextResponse.json({ error: "Too many signup attempts. Please try again later." }, { status: 429 });
+  }
+
   const { companyName, fullName, email, password, agreedToTerms } = await req.json();
 
   if (!companyName || !fullName || !email || !password) {

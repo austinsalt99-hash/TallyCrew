@@ -9,6 +9,7 @@ import MyPlanView from "./components/MyPlanView";
 import { ALL_TYPE_CONFIGS, PlanEvent, UnifiedEventType } from "./constants/eventTypes";
 import ScheduleSidebar from "./components/ScheduleSidebar";
 import PlanEventModal from "./components/PlanEventModal";
+import QuotesView, { Quote } from "./components/QuotesView";
 import { carveOutGeneral } from "@/lib/billableHours";
 
 interface JobEvent {
@@ -104,7 +105,7 @@ interface LinkedSubmission {
   billable_entries: LinkedBillableEntry[];
 }
 
-type CalTab = "schedule" | "crew" | "availability" | "workload" | "plan";
+type CalTab = "schedule" | "crew" | "availability" | "workload" | "plan" | "quotes";
 type CalView = "month" | "week" | "day" | "list";
 
 function getDisplayItems(entry: LinkedBillableEntry, generalHrs: string): DisplayItem[] {
@@ -280,6 +281,7 @@ function OngoingJobPicker({
           setForm({
             ...form,
             ongoing_job_id: val,
+            title: form.title || picked?.title || "",
             client: form.client || picked?.client || "",
             location: form.location || picked?.location || "",
             description: form.description || picked?.description || "",
@@ -415,10 +417,17 @@ const CAL_TAB_LABELS: Record<CalTab, string> = {
   availability: "Availability",
   workload: "Workload",
   plan: "My Plan",
+  quotes: "Quotes",
 };
+
+// Schedule and Crew Board stay as buttons; everything else (including future
+// additions) lives behind the "More" dropdown so the bar doesn't overflow.
+const PRIMARY_TABS: CalTab[] = ["schedule", "crew"];
+const MORE_TABS: CalTab[] = ["availability", "workload", "plan", "quotes"];
 
 export default function AdminCalendar() {
   const [calTab, setCalTab] = useState<CalTab>("schedule");
+  const [moreTabsOpen, setMoreTabsOpen] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [draftEvents, setDraftEvents] = useState<JobEvent[]>([]);
@@ -457,6 +466,9 @@ export default function AdminCalendar() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [ongoingJobs, setOngoingJobs] = useState<OngoingJob[]>([]);
   const [newOngoingJobTitle, setNewOngoingJobTitle] = useState("");
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [addSourceMode, setAddSourceMode] = useState<"blank" | "ongoing" | "quote">("blank");
+  const [sourceQuoteId, setSourceQuoteId] = useState("");
   const [panelNewOngoingJobTitle, setPanelNewOngoingJobTitle] = useState("");
   const [formWorkerOpen, setFormWorkerOpen] = useState(false);
   const [panelWorkerOpen, setPanelWorkerOpen] = useState(false);
@@ -627,6 +639,13 @@ export default function AdminCalendar() {
       .then((data) => setOngoingJobs(Array.isArray(data) ? data : []));
   }, []);
 
+  function refreshQuotes() {
+    fetch("/api/quotes", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setQuotes(Array.isArray(data) ? data : []));
+  }
+  useEffect(refreshQuotes, []);
+
   useEffect(() => {
     setExpandedLogs([]);
     if (!selectedEvent) { setLinkedLogs([]); return; }
@@ -644,6 +663,25 @@ export default function AdminCalendar() {
   function openNew(date = "", startTime = "", assignedTo = "") {
     setForm({ ...EMPTY_FORM, date, start_time: startTime, assigned_to: assignedTo, is_verified: true });
     setNewOngoingJobTitle("");
+    setAddSourceMode("blank");
+    setSourceQuoteId("");
+    setEditId(null);
+    setShowForm(true);
+  }
+
+  function openNewFromQuote(quote: Quote) {
+    setForm({
+      ...EMPTY_FORM,
+      title: quote.title,
+      client: quote.client ?? "",
+      location: quote.location ?? "",
+      description: quote.description ?? "",
+      date: quote.target_date ?? "",
+      is_verified: true,
+    });
+    setNewOngoingJobTitle("");
+    setAddSourceMode("quote");
+    setSourceQuoteId(quote.id);
     setEditId(null);
     setShowForm(true);
   }
@@ -853,27 +891,40 @@ export default function AdminCalendar() {
     function clean<T extends { start_time: string; end_time: string; end_date: string }>(p: T) {
       return { ...p, start_time: p.start_time || null, end_time: p.end_time || null, end_date: p.end_date || null };
     }
+    let firstCreatedId: string | null = null;
     if (!editId && formToSave.recurrence && formToSave.repeat_until) {
       const dates = generateRecurrenceDates(formToSave.date, formToSave.recurrence, formToSave.repeat_until);
       const { recurrence: _r, repeat_until: _u, ...basePayload } = formToSave;
       for (const d of dates) {
-        await fetch("/api/events", {
+        const dRes = await fetch("/api/events", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify(clean({ ...basePayload, date: d })),
         });
+        if (!firstCreatedId && dRes.ok) firstCreatedId = (await dRes.json()).id;
       }
     } else {
       const { recurrence: _r, repeat_until: _u, ...payload } = formToSave;
       const method = editId ? "PUT" : "POST";
       const body = editId ? { id: editId, ...clean(payload) } : clean(payload);
-      await fetch("/api/events", {
+      const sRes = await fetch("/api/events", {
         method,
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(body),
       });
+      if (!editId && sRes.ok) firstCreatedId = (await sRes.json()).id;
+    }
+
+    if (!editId && addSourceMode === "quote" && sourceQuoteId && firstCreatedId) {
+      await fetch("/api/quotes", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: sourceQuoteId, status: "converted", converted_job_id: firstCreatedId }),
+      });
+      refreshQuotes();
     }
 
     const res = await fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`);
@@ -881,6 +932,8 @@ export default function AdminCalendar() {
     setShowForm(false);
     setSaving(false);
     setNewOngoingJobTitle("");
+    setAddSourceMode("blank");
+    setSourceQuoteId("");
     refreshDrafts();
   }
 
@@ -1523,18 +1576,48 @@ export default function AdminCalendar() {
     <div>
       {/* Main section tab bar */}
       <div className="flex bg-gray-100 rounded-2xl p-1 mb-4">
-        {(["schedule", "crew", "availability", "workload", "plan"] as CalTab[]).map((tab) => (
+        {PRIMARY_TABS.map((tab) => (
           <button
             key={tab}
-            onClick={() => { setCalTab(tab); closePanel(); }}
+            onClick={() => { setCalTab(tab); closePanel(); setMoreTabsOpen(false); }}
             className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-colors ${
               calTab === tab ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            <span className="hidden sm:inline">{CAL_TAB_LABELS[tab]}</span>
-            <span className="sm:hidden">{tab === "crew" ? "Crew" : tab === "availability" ? "Avail." : tab === "plan" ? "Plan" : CAL_TAB_LABELS[tab]}</span>
+            {CAL_TAB_LABELS[tab]}
           </button>
         ))}
+        <div className="flex-1 relative">
+          <button
+            onClick={() => setMoreTabsOpen((o) => !o)}
+            className={`w-full py-2 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-1 ${
+              MORE_TABS.includes(calTab) ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            {MORE_TABS.includes(calTab) ? CAL_TAB_LABELS[calTab] : "More"}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${moreTabsOpen ? "rotate-180" : ""}`}>
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+          {moreTabsOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setMoreTabsOpen(false)} />
+              <div className="absolute right-0 z-50 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                {MORE_TABS.map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => { setCalTab(tab); closePanel(); setMoreTabsOpen(false); }}
+                    className={`w-full text-left px-3 py-2.5 text-sm font-medium hover:bg-gray-50 ${
+                      calTab === tab ? "text-navy-600 bg-navy-50" : "text-gray-700"
+                    }`}
+                  >
+                    {CAL_TAB_LABELS[tab]}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* ── SCHEDULE TAB ── */}
@@ -1911,6 +1994,11 @@ export default function AdminCalendar() {
       {/* ── MY PLAN TAB ── */}
       {calTab === "plan" && <MyPlanView />}
 
+      {/* ── QUOTES TAB ── */}
+      {calTab === "quotes" && (
+        <QuotesView quotes={quotes} onRefresh={refreshQuotes} onConvertToJob={openNewFromQuote} />
+      )}
+
       {/* Details modal for non-schedule tabs */}
       {selectedEvent && calTab !== "schedule" && (
         <div
@@ -1955,6 +2043,67 @@ export default function AdminCalendar() {
               </div>
             )}
 
+            {!editId && (
+              <div>
+                <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+                  {(["blank", "ongoing", "quote"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setAddSourceMode(m)}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                        addSourceMode === m ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      {m === "blank" ? "Blank job" : m === "ongoing" ? "From repeating job" : "From quote"}
+                    </button>
+                  ))}
+                </div>
+
+                {addSourceMode === "ongoing" && (
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <OngoingJobPicker
+                      form={form}
+                      setForm={setForm}
+                      ongoingJobs={ongoingJobs}
+                      newTitle={newOngoingJobTitle}
+                      setNewTitle={setNewOngoingJobTitle}
+                    />
+                  </div>
+                )}
+
+                {addSourceMode === "quote" && (
+                  <div className="mt-3">
+                    <label className="block text-xs text-gray-500 mb-1">Select a quote</label>
+                    <select
+                      value={sourceQuoteId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setSourceQuoteId(id);
+                        const q = quotes.find((qq) => qq.id === id);
+                        if (q) {
+                          setForm({
+                            ...form,
+                            title: q.title,
+                            client: q.client ?? "",
+                            location: q.location ?? "",
+                            description: q.description ?? "",
+                            date: form.date || q.target_date || "",
+                          });
+                        }
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
+                    >
+                      <option value="">— Select a quote —</option>
+                      {quotes.filter((q) => q.status !== "converted").map((q) => (
+                        <option key={q.id} value={q.id}>{q.title}{q.client ? ` · ${q.client}` : ""}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">Job title *</label>
@@ -1972,13 +2121,6 @@ export default function AdminCalendar() {
                   onChange={(e) => setForm({ ...form, end_date: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
               </div>
-              <OngoingJobPicker
-                form={form}
-                setForm={setForm}
-                ongoingJobs={ongoingJobs}
-                newTitle={newOngoingJobTitle}
-                setNewTitle={setNewOngoingJobTitle}
-              />
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Client</label>
                 <input type="text" value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })}

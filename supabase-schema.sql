@@ -605,16 +605,43 @@ ON CONFLICT (id) DO NOTHING;
 
 CREATE POLICY "job_photos_read"   ON storage.objects FOR SELECT  USING     (bucket_id = 'job-photos');
 CREATE POLICY "job_photos_insert" ON storage.objects FOR INSERT  WITH CHECK (bucket_id = 'job-photos' AND auth.uid() IS NOT NULL);
-CREATE POLICY "job_photos_delete" ON storage.objects FOR DELETE  USING     (bucket_id = 'job-photos' AND auth.uid() IS NOT NULL);
+
+-- Delete is scoped to same-company via the auto-populated `owner` column
+-- (the uploader's auth.uid()) — paths are `${entry.id}/...` with no
+-- company_id segment to check directly, so this joins back to profiles.
+CREATE POLICY "job_photos_delete" ON storage.objects FOR DELETE
+  USING (
+    bucket_id = 'job-photos'
+    AND EXISTS (
+      SELECT 1 FROM profiles p
+      WHERE p.id = storage.objects.owner
+        AND p.company_id = get_my_company_id()
+    )
+  );
 
 -- Company banners bucket
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('company-banners', 'company-banners', true)
 ON CONFLICT (id) DO NOTHING;
 
-CREATE POLICY "company_banners_read"   ON storage.objects FOR SELECT  USING     (bucket_id = 'company-banners');
-CREATE POLICY "company_banners_insert" ON storage.objects FOR INSERT  WITH CHECK (bucket_id = 'company-banners' AND auth.uid() IS NOT NULL);
-CREATE POLICY "company_banners_delete" ON storage.objects FOR DELETE  USING     (bucket_id = 'company-banners' AND auth.uid() IS NOT NULL);
+-- Paths are `${company_id}/banner.ext` — insert/delete are scoped to admins
+-- writing within their own company's folder, since the API route's admin
+-- check only guards that route, not direct calls to Supabase storage.
+CREATE POLICY "company_banners_read" ON storage.objects FOR SELECT USING (bucket_id = 'company-banners');
+
+CREATE POLICY "company_banners_insert" ON storage.objects FOR INSERT
+  WITH CHECK (
+    bucket_id = 'company-banners'
+    AND get_my_role() = 'admin'
+    AND (storage.foldername(name))[1] = get_my_company_id()::text
+  );
+
+CREATE POLICY "company_banners_delete" ON storage.objects FOR DELETE
+  USING (
+    bucket_id = 'company-banners'
+    AND get_my_role() = 'admin'
+    AND (storage.foldername(name))[1] = get_my_company_id()::text
+  );
 
 
 -- -------------------------------------------------------------
@@ -654,3 +681,41 @@ CREATE POLICY ongoing_jobs_admin_delete ON ongoing_jobs FOR DELETE
   USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
 
 ALTER TABLE job_events ADD COLUMN IF NOT EXISTS ongoing_job_id UUID REFERENCES ongoing_jobs(id) ON DELETE SET NULL;
+
+-- -------------------------------------------------------------
+-- 17. QUOTES
+--     A tentative job that isn't confirmed yet. Lives in its own
+--     table so it never shows up on the calendar grid / Crew Board /
+--     Workload until an admin explicitly converts it into a real
+--     job_events row, tracked via quotes.converted_job_id.
+-- -------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS quotes (
+  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id       UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  title            TEXT        NOT NULL,
+  client           TEXT,
+  location         TEXT,
+  description      TEXT,
+  estimated_price  NUMERIC,
+  target_date      DATE,
+  valid_until      DATE,
+  status           TEXT        NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending','accepted','declined','converted')),
+  converted_job_id UUID REFERENCES job_events(id) ON DELETE SET NULL,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE quotes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY quotes_admin_read ON quotes FOR SELECT
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY quotes_admin_insert ON quotes FOR INSERT
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY quotes_admin_update ON quotes FOR UPDATE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY quotes_admin_delete ON quotes FOR DELETE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');

@@ -20,7 +20,7 @@ struct AddJobIntent: AppIntent {
             throw AddJobIntentError.notSignedIn
         }
 
-        var request = URLRequest(url: URL(string: "https://www.tallycrew.ca/api/siri/add-job")!)
+        var request = URLRequest(url: URL(string: "https://app.tallycrew.ca/api/siri/add-job")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

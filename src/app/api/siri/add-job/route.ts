@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { parseVoiceEventText } from "@/lib/parseVoiceEvent";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -28,6 +29,10 @@ export async function POST(request: Request) {
 
   if (!profile || profile.role !== "admin") {
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+  }
+
+  if (!checkRateLimit(`siri-add-job:${profile.id}`, 20, 60 * 1000)) {
+    return NextResponse.json({ error: "Too many requests. Please slow down." }, { status: 429 });
   }
 
   const { data: crew } = await supabase

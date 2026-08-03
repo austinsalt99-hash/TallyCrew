@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 
@@ -29,6 +29,7 @@ export interface ColumnDef {
 interface LineItemState {
   id: string;
   description: string;
+  notes?: string;
   employee: string;
   date: string;
   hours: number | string;
@@ -128,7 +129,7 @@ function formatShortDate(d: string) {
 }
 
 function blankItem(): LineItemState {
-  return { id: crypto.randomUUID(), description: "", employee: "", date: todayStr(), hours: "", amount: "", customValues: {} };
+  return { id: crypto.randomUUID(), description: "", notes: "", employee: "", date: todayStr(), hours: "", amount: "", customValues: {} };
 }
 
 // Map each workItem to the line item ID it contributes to, by description (not index).
@@ -348,10 +349,20 @@ function InvoicePreview({
             <tr><td colSpan={colCount} className="py-6 text-center text-gray-300 text-sm italic">Line items will appear here</td></tr>
           ) : lineItems.map((item) => {
             const isActive = activeItemId === item.id;
+            const rowBg = isActive ? "bg-navy-50" : "";
             return (
-              <tr key={item.id} className={`border-b border-gray-100 transition-colors ${isActive ? "bg-navy-50" : ""}`}>
-                {visibleCols.map((col) => renderCell(col, item))}
-              </tr>
+              <Fragment key={item.id}>
+                <tr className={`transition-colors ${rowBg}`}>
+                  {visibleCols.map((col) => renderCell(col, item))}
+                </tr>
+                <tr className={`border-b border-gray-100 transition-colors ${rowBg}`}>
+                  <td colSpan={colCount} className="pb-2 pr-3 pt-0">
+                    <EditableCell value={item.notes ?? ""} onFocus={() => onActivate(item.id)}
+                      onCommit={(v) => onUpdateItem(item.id, "notes", v)} placeholder="+ Add description"
+                      className="text-xs text-gray-400 italic" />
+                  </td>
+                </tr>
+              </Fragment>
             );
           })}
         </tbody>
@@ -674,6 +685,7 @@ export default function InvoiceForm({
       const loadedItems = (data.line_items || []).map((item: Record<string, unknown>) => ({
         id: crypto.randomUUID(),
         description: String(item.description || ""),
+        notes: String(item.notes || ""),
         employee: String(item.employee || ""),
         date: String(item.date || todayStr()),
         hours: item.hours ?? "",
@@ -1668,6 +1680,12 @@ export default function InvoiceForm({
                                 onFocus={() => setActiveItemId(item.id)} placeholder="e.g. $35/hr"
                                 className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400" />
                             </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-gray-400">Description (shown under this line item)</label>
+                            <textarea value={item.notes ?? ""} onChange={(e) => updateItem(item.id, "notes", e.target.value)}
+                              onFocus={() => setActiveItemId(item.id)} rows={2}
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400 resize-none" />
                           </div>
                           {customCols.map((col) => (
                             <div key={col.id}>
