@@ -5,17 +5,26 @@ import { isSubscriptionActive } from "@/lib/subscription";
 export async function middleware(request: NextRequest) {
   const hostname = request.headers.get("host") ?? "";
   const isMarketingHost = hostname === "tallycrew.ca";
+  const { pathname: rawPathname } = request.nextUrl;
+
+  // robots.txt / sitemap.xml are single host-aware files at the app root
+  // (src/app/robots.ts, src/app/sitemap.ts) — never rewritten to /site.
+  const isMetadataRoute = rawPathname === "/robots.txt" || rawPathname === "/sitemap.xml";
 
   // Only the bare apex serves the marketing site. www.tallycrew.ca must keep
   // serving the product — older native app builds (pre app.tallycrew.ca) are
   // hardcoded to that exact host and would otherwise load the marketing site
   // instead of the app. app.tallycrew.ca (and everything else, incl. localhost)
   // keeps serving the product as before.
-  if (isMarketingHost) {
+  if (isMarketingHost && !isMetadataRoute) {
     const url = request.nextUrl.clone();
     const { pathname } = url;
     url.pathname = `/site${pathname === "/" ? "" : pathname}`;
     return NextResponse.rewrite(url);
+  }
+
+  if (isMetadataRoute) {
+    return NextResponse.next({ request });
   }
 
   let supabaseResponse = NextResponse.next({ request });
