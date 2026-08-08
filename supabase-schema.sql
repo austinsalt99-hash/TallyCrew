@@ -719,3 +719,38 @@ CREATE POLICY quotes_admin_update ON quotes FOR UPDATE
 
 CREATE POLICY quotes_admin_delete ON quotes FOR DELETE
   USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+-- -------------------------------------------------------------
+-- 18. AVAILABILITY REQUESTS
+--     Employee time-off requests. Employees create their own
+--     ('pending'); admins approve/deny via PATCH on
+--     /api/availability, which is also what enforces the admin-only
+--     write checks — RLS here just keeps writes inside the
+--     requester's own company.
+-- -------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS availability_requests (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id  UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  employee_id UUID        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  date_start  DATE        NOT NULL,
+  date_end    DATE        NOT NULL,
+  status      TEXT        NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending','approved','denied')),
+  notes       TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE availability_requests ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY availability_requests_company_read ON availability_requests FOR SELECT
+  USING (company_id = get_my_company_id());
+
+CREATE POLICY availability_requests_employee_insert ON availability_requests FOR INSERT
+  WITH CHECK (employee_id = auth.uid() AND company_id = get_my_company_id());
+
+CREATE POLICY availability_requests_company_update ON availability_requests FOR UPDATE
+  USING (company_id = get_my_company_id())
+  WITH CHECK (company_id = get_my_company_id());
+
+CREATE POLICY availability_requests_company_delete ON availability_requests FOR DELETE
+  USING (company_id = get_my_company_id());

@@ -6,9 +6,9 @@ import Image from "next/image";
 import { REGISTER_URL, LOGIN_URL } from "../_lib/constants";
 
 const LINKS = [
-  { href: "/site/features", label: "Features" },
-  { href: "/site/pricing", label: "Pricing" },
-  { href: "/site/demo", label: "Live Demo" },
+  { href: "/features", label: "Features" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/demo", label: "Live Demo" },
 ];
 
 export default function SiteNav() {
@@ -17,7 +17,7 @@ export default function SiteNav() {
   return (
     <header className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-gray-200">
       <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
-        <Link href="/site" className="flex items-center" onClick={() => setOpen(false)}>
+        <Link href="/" className="flex items-center" onClick={() => setOpen(false)}>
           <Image src="/tally-wordmark.png" alt="TallyCrew" width={140} height={33} priority />
         </Link>
 

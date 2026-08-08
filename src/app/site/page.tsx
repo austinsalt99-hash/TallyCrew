@@ -58,7 +58,7 @@ export default function MarketingHome() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 mt-8">
               <Link
-                href="/site/demo"
+                href="/demo"
                 className="bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl px-6 py-3.5 text-center transition-colors"
               >
                 Try the Live Demo
@@ -115,7 +115,7 @@ export default function MarketingHome() {
               Say what needs to happen and TallyCrew turns it into a draft job on the calendar — parsed automatically, ready for
               an admin to review. No typing, no app-switching, no missed jobs because someone forgot to write it down.
             </p>
-            <Link href="/site/features#siri" className="text-blue-600 font-semibold text-sm hover:underline">
+            <Link href="/features#siri" className="text-blue-600 font-semibold text-sm hover:underline">
               See how voice logging works &rarr;
             </Link>
           </div>
@@ -137,7 +137,7 @@ export default function MarketingHome() {
             Build a field set for exactly how your trade works — truck numbers, load counts, machine hours, mileage —
             each priced per hour or per unit. Every company&apos;s config is their own.
           </p>
-          <Link href="/site/features#log-types" className="text-blue-600 font-semibold text-sm hover:underline">
+          <Link href="/features#log-types" className="text-blue-600 font-semibold text-sm hover:underline">
             See how custom types work &rarr;
           </Link>
         </div>
@@ -155,7 +155,7 @@ export default function MarketingHome() {
               Drag jobs onto the schedule, link them to logged hours, and keep drafts from Siri separate until an admin
               verifies them. Everyone always knows where they&apos;re headed.
             </p>
-            <Link href="/site/features#calendar" className="text-blue-600 font-semibold text-sm hover:underline">
+            <Link href="/features#calendar" className="text-blue-600 font-semibold text-sm hover:underline">
               See how scheduling works &rarr;
             </Link>
           </div>
@@ -179,7 +179,7 @@ export default function MarketingHome() {
             Start Free Trial
           </a>
           <Link
-            href="/site/demo"
+            href="/demo"
             className="bg-white border border-gray-200 hover:border-gray-300 text-gray-900 font-semibold rounded-xl px-6 py-3.5 transition-colors"
           >
             Try the Live Demo

@@ -52,7 +52,7 @@ export default function FeaturesPage() {
           <h1 className="font-display text-4xl md:text-5xl font-bold text-white mb-4">Built for how crews actually work</h1>
           <p className="text-navy-100 max-w-xl mx-auto">
             Every feature below is exactly what runs in the app today — take it for a spin on the{" "}
-            <Link href="/site/demo" className="text-orange-300 hover:text-orange-200 underline">live demo</Link>.
+            <Link href="/demo" className="text-orange-300 hover:text-orange-200 underline">live demo</Link>.
           </p>
         </div>
       </section>
@@ -133,7 +133,7 @@ export default function FeaturesPage() {
           <h2 className="font-display text-2xl md:text-3xl font-bold text-white mb-4">See it running for yourself</h2>
           <p className="text-navy-200 mb-8">No account needed — the live demo uses sample data so you can click around freely.</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/site/demo" className="bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl px-6 py-3.5 transition-colors">
+            <Link href="/demo" className="bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl px-6 py-3.5 transition-colors">
               Try the Live Demo
             </Link>
             <a href={REGISTER_URL} className="bg-white/10 hover:bg-white/15 text-white font-semibold rounded-xl px-6 py-3.5 border border-white/20 transition-colors">

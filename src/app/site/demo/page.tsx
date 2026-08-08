@@ -200,7 +200,7 @@ export default function DemoPage() {
             <a href={REGISTER_URL} className="bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl px-6 py-3.5 transition-colors">
               Start Free Trial
             </a>
-            <Link href="/site/features" className="bg-white border border-gray-200 hover:border-gray-300 text-gray-900 font-semibold rounded-xl px-6 py-3.5 transition-colors">
+            <Link href="/features" className="bg-white border border-gray-200 hover:border-gray-300 text-gray-900 font-semibold rounded-xl px-6 py-3.5 transition-colors">
               See All Features
             </Link>
           </div>

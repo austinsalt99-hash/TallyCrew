@@ -61,6 +61,16 @@ interface Submission {
   break_minutes?: number;
 }
 
+interface AvailabilityRequest {
+  id: string;
+  employee_id: string;
+  employee_name: string | null;
+  date_start: string;
+  date_end: string;
+  status: "pending" | "approved" | "denied";
+  notes?: string;
+}
+
 interface WorkItem {
   slug: string;
   hours?: string;
@@ -170,6 +180,8 @@ export default function Dashboard() {
   const [viewingEvent, setViewingEvent] = useState<DashJobEvent | null>(null);
   const [linkingTarget, setLinkingTarget] = useState<{ submissionId: string; entryIndex: number; date: string } | null>(null);
   const [linkWeekOffset, setLinkWeekOffset] = useState(0);
+  const [pendingTimeOff, setPendingTimeOff] = useState<AvailabilityRequest[]>([]);
+  const [timeOffActionLoading, setTimeOffActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/submissions", { credentials: "include" })
@@ -182,6 +194,25 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then((data) => setEvents(Array.isArray(data) ? data : []));
   }, []);
+
+  useEffect(() => {
+    fetch("/api/availability", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setPendingTimeOff(Array.isArray(data) ? data.filter((r: AvailabilityRequest) => r.status === "pending") : []))
+      .catch(() => {});
+  }, []);
+
+  async function handleTimeOffDecision(id: string, status: "approved" | "denied") {
+    setTimeOffActionLoading(id);
+    await fetch("/api/availability", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id, status }),
+    });
+    setPendingTimeOff((prev) => prev.filter((r) => r.id !== id));
+    setTimeOffActionLoading(null);
+  }
 
   async function handleAdminLink(event: JobEvent) {
     if (!linkingTarget) return;
@@ -213,6 +244,43 @@ export default function Dashboard() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Hour Logs</h1>
+
+      {pendingTimeOff.length > 0 && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
+            Time Off Requests · {pendingTimeOff.length} pending
+          </p>
+          <div className="space-y-2">
+            {pendingTimeOff.map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-3 bg-white rounded-lg border border-amber-100 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{r.employee_name ?? "Unknown"}</p>
+                  <p className="text-xs text-gray-500">
+                    {r.date_start === r.date_end ? formatShortDate(r.date_start) : `${formatShortDate(r.date_start)} – ${formatShortDate(r.date_end)}`}
+                    {r.notes ? ` · ${r.notes}` : ""}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => handleTimeOffDecision(r.id, "approved")}
+                    disabled={timeOffActionLoading === r.id}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white transition-colors"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => handleTimeOffDecision(r.id, "denied")}
+                    disabled={timeOffActionLoading === r.id}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 transition-colors"
+                  >
+                    Deny
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row gap-3 mb-6">
         <input

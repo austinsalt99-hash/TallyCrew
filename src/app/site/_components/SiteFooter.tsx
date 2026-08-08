@@ -15,9 +15,9 @@ export default function SiteFooter() {
         <div>
           <p className="text-xs font-semibold text-navy-400 uppercase tracking-wide mb-3">Product</p>
           <ul className="space-y-2 text-sm">
-            <li><Link href="/site/features" className="hover:text-white transition-colors">Features</Link></li>
-            <li><Link href="/site/pricing" className="hover:text-white transition-colors">Pricing</Link></li>
-            <li><Link href="/site/demo" className="hover:text-white transition-colors">Live Demo</Link></li>
+            <li><Link href="/features" className="hover:text-white transition-colors">Features</Link></li>
+            <li><Link href="/pricing" className="hover:text-white transition-colors">Pricing</Link></li>
+            <li><Link href="/demo" className="hover:text-white transition-colors">Live Demo</Link></li>
           </ul>
         </div>
 
