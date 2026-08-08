@@ -9,7 +9,13 @@ export async function middleware(request: NextRequest) {
 
   // robots.txt / sitemap.xml are single host-aware files at the app root
   // (src/app/robots.ts, src/app/sitemap.ts) — never rewritten to /site.
-  const isMetadataRoute = rawPathname === "/robots.txt" || rawPathname === "/sitemap.xml";
+  // Google/Bing site-verification HTML files (served as static files from
+  // /public) must also stay at the bare root path, unrewritten.
+  const isMetadataRoute =
+    rawPathname === "/robots.txt" ||
+    rawPathname === "/sitemap.xml" ||
+    /^\/google[0-9a-f]+\.html$/.test(rawPathname) ||
+    /^\/BingSiteAuth\.xml$/.test(rawPathname);
 
   // Only the bare apex serves the marketing site. www.tallycrew.ca must keep
   // serving the product — older native app builds (pre app.tallycrew.ca) are
