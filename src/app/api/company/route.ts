@@ -8,7 +8,7 @@ export async function GET() {
 
   const { data } = await supabase
     .from("companies")
-    .select("name, banner_url, timezone, pay_period_type, pay_period_anchor, morning_digest_time")
+    .select("name, banner_url, invoice_logo_url, timezone, pay_period_type, pay_period_anchor, morning_digest_time")
     .eq("id", profile.company_id)
     .single();
 

@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import type { ColumnDef } from "../_components/InvoiceForm";
 
 interface LineItem {
   description: string;
@@ -11,6 +12,8 @@ interface LineItem {
   date: string;
   hours: number | string;
   amount: number | string;
+  rate?: string;
+  customValues?: Record<string, string>;
 }
 
 interface Invoice {
@@ -23,6 +26,7 @@ interface Invoice {
   company_name?: string;
   company_address?: string;
   line_items: LineItem[];
+  column_config?: ColumnDef[];
   total: number;
   notes?: string;
   status: "draft" | "sent" | "paid";
@@ -33,6 +37,33 @@ const statusBadge: Record<string, string> = {
   sent: "bg-navy-100 text-navy-700",
   paid: "bg-green-100 text-green-700",
 };
+
+const DEFAULT_COLUMNS: ColumnDef[] = [
+  { id: "date",        label: "Date",        type: "date",        visible: true },
+  { id: "employee",    label: "Employee",    type: "employee",    visible: true },
+  { id: "description", label: "Description", type: "description", visible: true },
+  { id: "rate",        label: "Rate",        type: "rate",        visible: true },
+  { id: "hours",       label: "Hours",       type: "hours",       visible: true },
+  { id: "amount",      label: "Amount",      type: "amount",      visible: true },
+];
+
+function thClass(col: ColumnDef) {
+  const base = "text-xs font-semibold text-gray-500 uppercase tracking-wide py-2";
+  if (col.type === "hours" || col.type === "rate" || col.type === "amount") return `${base} text-right pr-4`;
+  return `${base} text-left pr-4`;
+}
+
+function cellValue(col: ColumnDef, item: LineItem): string {
+  switch (col.type) {
+    case "date": return item.date || "—";
+    case "employee": return item.employee || "—";
+    case "description": return item.description || "—";
+    case "rate": return item.rate ? `$${item.rate}` : "—";
+    case "hours": return item.hours !== "" && item.hours !== 0 ? `${item.hours}h` : "—";
+    case "amount": return `$${parseFloat(String(item.amount) || "0").toFixed(2)}`;
+    case "custom": return item.customValues?.[col.id] || "—";
+  }
+}
 
 function formatDate(d: string) {
   if (!d) return "";
@@ -46,12 +77,20 @@ export default function InvoiceDetailPage() {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/invoices/${id}`)
       .then((r) => r.json())
       .then((data) => { setInvoice(data); setLoading(false); });
   }, [id]);
+
+  useEffect(() => {
+    fetch("/api/company", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setLogoUrl(data.invoice_logo_url ?? null))
+      .catch(() => {});
+  }, []);
 
   async function setStatus(status: "draft" | "sent" | "paid") {
     await fetch(`/api/invoices/${id}`, {
@@ -75,6 +114,9 @@ export default function InvoiceDetailPage() {
   if (!invoice) return <p className="text-red-500">Invoice not found.</p>;
 
   const total = invoice.line_items.reduce((sum, item) => sum + (parseFloat(String(item.amount)) || 0), 0);
+  const columns = invoice.column_config && invoice.column_config.length > 0 ? invoice.column_config : DEFAULT_COLUMNS;
+  const visibleCols = columns.filter((c) => c.visible);
+  const colCount = Math.max(1, visibleCols.length);
 
   return (
     <div className="max-w-4xl">
@@ -139,6 +181,10 @@ export default function InvoiceDetailPage() {
         {/* Header */}
         <div className="flex justify-between items-start mb-8">
           <div>
+            {logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="" className="max-h-14 max-w-[220px] object-contain mb-2" />
+            )}
             {invoice.company_name && (
               <div className="text-xl font-bold text-gray-900 mb-1">{invoice.company_name}</div>
             )}
@@ -167,29 +213,28 @@ export default function InvoiceDetailPage() {
         {/* Line items */}
         <table className="w-full text-sm mb-8 border-collapse">
           <thead>
-            <tr className="border-b-2 border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              <th className="text-left py-2 pr-4">Date</th>
-              <th className="text-left py-2 pr-4">Employee</th>
-              <th className="text-left py-2 pr-4">Description</th>
-              <th className="text-right py-2 pr-4">Hours</th>
-              <th className="text-right py-2">Amount</th>
+            <tr className="border-b-2 border-gray-200">
+              {visibleCols.map((col) => <th key={col.id} className={thClass(col)}>{col.label}</th>)}
             </tr>
           </thead>
           <tbody>
             {invoice.line_items.map((item, i) => (
               <Fragment key={i}>
                 <tr className={item.notes ? "" : "border-b border-gray-100"}>
-                  <td className="py-2 pr-4 text-gray-600">{item.date}</td>
-                  <td className="py-2 pr-4 text-gray-700">{item.employee}</td>
-                  <td className="py-2 pr-4 text-gray-700">{item.description || "—"}</td>
-                  <td className="py-2 pr-4 text-right text-gray-500">{item.hours !== "" && item.hours !== 0 ? `${item.hours}h` : "—"}</td>
-                  <td className="py-2 text-right font-medium text-gray-900">
-                    ${parseFloat(String(item.amount) || "0").toFixed(2)}
-                  </td>
+                  {visibleCols.map((col) => (
+                    <td
+                      key={col.id}
+                      className={`py-2 pr-4 last:pr-0 text-gray-700 ${
+                        col.type === "amount" ? "text-right font-medium text-gray-900" : col.type === "hours" || col.type === "rate" ? "text-right text-gray-500" : ""
+                      }`}
+                    >
+                      {cellValue(col, item)}
+                    </td>
+                  ))}
                 </tr>
                 {item.notes && (
                   <tr className="border-b border-gray-100">
-                    <td colSpan={5} className="pb-2 pr-4 pt-0 text-xs text-gray-400 italic">{item.notes}</td>
+                    <td colSpan={colCount} className="pb-2 pr-4 pt-0 text-xs text-gray-400 italic">{item.notes}</td>
                   </tr>
                 )}
               </Fragment>
@@ -197,7 +242,7 @@ export default function InvoiceDetailPage() {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={4} className="text-right py-3 pr-4 font-bold text-gray-700 text-base">Total</td>
+              <td colSpan={Math.max(1, colCount - 1)} className="text-right py-3 pr-4 font-bold text-gray-700 text-base">Total</td>
               <td className="py-3 text-right font-bold text-navy-600 text-base">${total.toFixed(2)}</td>
             </tr>
           </tfoot>

@@ -249,11 +249,12 @@ function EditableCell({
 // ── Invoice preview ───────────────────────────────────────────────────────────
 
 function InvoicePreview({
-  invoiceNumber, invoiceDate, companyName, companyAddress, clientName,
+  invoiceNumber, invoiceDate, companyName, companyAddress, companyLogoUrl, clientName,
   dateFrom, dateTo, notes, lineItems, columns, activeItemId, onActivate,
   onUpdateItem, onUpdateCustomValue,
 }: {
   invoiceNumber: string; invoiceDate: string; companyName: string; companyAddress: string;
+  companyLogoUrl: string | null;
   clientName: string; dateFrom: string; dateTo: string; notes: string;
   lineItems: LineItemState[]; columns: ColumnDef[]; activeItemId: string | null;
   onActivate: (id: string) => void;
@@ -315,9 +316,13 @@ function InvoicePreview({
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 min-h-[600px]">
       <div className="flex justify-between items-start mb-8">
         <div>
+          {companyLogoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={companyLogoUrl} alt="" className="max-h-14 max-w-[220px] object-contain mb-2" />
+          )}
           {companyName && <div className="text-xl font-bold text-gray-900 mb-1">{companyName}</div>}
           {companyAddress && <div className="text-sm text-gray-500 whitespace-pre-line">{companyAddress}</div>}
-          {!companyName && !companyAddress && <div className="text-sm text-gray-300 italic">Your company name &amp; address</div>}
+          {!companyLogoUrl && !companyName && !companyAddress && <div className="text-sm text-gray-300 italic">Your company name &amp; address</div>}
         </div>
         <div className="text-right">
           <div className="text-3xl font-bold text-navy-600 mb-1">INVOICE</div>
@@ -622,6 +627,7 @@ export default function InvoiceForm({
   const [invoiceDate, setInvoiceDate]         = useState(todayStr());
   const [companyName, setCompanyName]         = useState("");
   const [companyAddress, setCompanyAddress]   = useState("");
+  const [companyLogoUrl, setCompanyLogoUrl]   = useState<string | null>(null);
   const [clientName, setClientName]           = useState("");
   const [dateFrom, setDateFrom]               = useState("");
   const [dateTo, setDateTo]                   = useState("");
@@ -656,6 +662,14 @@ export default function InvoiceForm({
   const [saveError, setSaveError]             = useState("");
   const [autoSaveStatus, setAutoSaveStatus]   = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [loadingInvoice, setLoadingInvoice]   = useState(mode === "edit");
+
+  // ── Company invoice logo ─────────────────────────────────────────────────
+  useEffect(() => {
+    fetch("/api/company", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setCompanyLogoUrl(data.invoice_logo_url ?? null))
+      .catch(() => {});
+  }, []);
 
   // ── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1363,7 +1377,7 @@ export default function InvoiceForm({
             <span className="normal-case font-normal ml-2 text-gray-300">· click any field to edit</span>
           </p>
           <InvoicePreview invoiceNumber={invoiceNumber} invoiceDate={invoiceDate} companyName={companyName}
-            companyAddress={companyAddress} clientName={clientName} dateFrom={dateFrom} dateTo={dateTo}
+            companyAddress={companyAddress} companyLogoUrl={companyLogoUrl} clientName={clientName} dateFrom={dateFrom} dateTo={dateTo}
             notes={notes} lineItems={lineItems} columns={columnConfig} activeItemId={activeItemId}
             onActivate={setActiveItemId} onUpdateItem={updateItem} onUpdateCustomValue={updateItemCustomValue} />
         </div>

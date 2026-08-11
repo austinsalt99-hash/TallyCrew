@@ -141,12 +141,12 @@ export default function AdminBottomNav() {
   return (
     <>
       {moreOpen && (
-        <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
+        <div className="print:hidden fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
       )}
 
       {/* More panel — slides up from bottom */}
       <div
-        className="fixed right-0 z-40 bg-white border-l border-t border-gray-200 rounded-tl-2xl shadow-xl transition-transform duration-300 ease-out"
+        className="print:hidden fixed right-0 z-40 bg-white border-l border-t border-gray-200 rounded-tl-2xl shadow-xl transition-transform duration-300 ease-out"
         style={{ bottom: "52px", transform: moreOpen ? "translateY(0)" : "translateY(calc(100% + 52px))" }}
       >
         {moreItems.map((item, i) => (
@@ -169,7 +169,7 @@ export default function AdminBottomNav() {
       </div>
 
       {/* Bottom nav bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm border-t border-gray-200 flex" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <nav className="print:hidden fixed bottom-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm border-t border-gray-200 flex" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         {tabs.map((tab) => {
           const active = pathname === tab.href;
           return (

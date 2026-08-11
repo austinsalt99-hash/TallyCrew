@@ -44,6 +44,9 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS pay_period_type TEXT NOT NULL DEF
   CHECK (pay_period_type IN ('weekly', 'biweekly', 'semimonthly', 'monthly'));
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS pay_period_anchor DATE NOT NULL DEFAULT '2024-01-01';
 
+-- Custom logo shown on invoices (PDF/print view) instead of TallyCrew branding.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS invoice_logo_url TEXT;
+
 
 -- -------------------------------------------------------------
 -- 2. PROFILES
@@ -590,10 +593,11 @@ CREATE POLICY reminders_admin_delete ON reminders FOR DELETE
 
 -- -------------------------------------------------------------
 -- 15. STORAGE BUCKETS
---     job-photos:     photos attached to billable job entries
+--     job-photos:      photos attached to billable job entries
 --     company-banners: custom dashboard banner images (admin upload)
+--     invoice-logos:   custom logo shown on invoices (admin upload)
 --
---     NOTE: Create both buckets manually in Supabase Dashboard →
+--     NOTE: Create all buckets manually in Supabase Dashboard →
 --     Storage → New bucket, with Public: ON, before using them.
 --     Then run the policies below.
 -- -------------------------------------------------------------
@@ -639,6 +643,29 @@ CREATE POLICY "company_banners_insert" ON storage.objects FOR INSERT
 CREATE POLICY "company_banners_delete" ON storage.objects FOR DELETE
   USING (
     bucket_id = 'company-banners'
+    AND get_my_role() = 'admin'
+    AND (storage.foldername(name))[1] = get_my_company_id()::text
+  );
+
+-- Invoice logos bucket
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('invoice-logos', 'invoice-logos', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Paths are `${company_id}/logo.ext` — insert/delete scoped to admins
+-- writing within their own company's folder, matching company_banners.
+CREATE POLICY "invoice_logos_read" ON storage.objects FOR SELECT USING (bucket_id = 'invoice-logos');
+
+CREATE POLICY "invoice_logos_insert" ON storage.objects FOR INSERT
+  WITH CHECK (
+    bucket_id = 'invoice-logos'
+    AND get_my_role() = 'admin'
+    AND (storage.foldername(name))[1] = get_my_company_id()::text
+  );
+
+CREATE POLICY "invoice_logos_delete" ON storage.objects FOR DELETE
+  USING (
+    bucket_id = 'invoice-logos'
     AND get_my_role() = 'admin'
     AND (storage.foldername(name))[1] = get_my_company_id()::text
   );

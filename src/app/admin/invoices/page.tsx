@@ -48,12 +48,21 @@ export default function InvoicesPage() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
-        <Link
-          href="/admin/invoices/new"
-          className="bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl px-4 py-2 text-sm"
-        >
-          + New Invoice
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/invoices/settings"
+            className="border border-gray-300 text-gray-500 hover:bg-gray-50 font-semibold rounded-xl px-3 py-2 text-sm"
+            title="Invoicing Settings"
+          >
+            ⚙ Invoicing Settings
+          </Link>
+          <Link
+            href="/admin/invoices/new"
+            className="bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl px-4 py-2 text-sm"
+          >
+            + New Invoice
+          </Link>
+        </div>
       </div>
 
       {/* Status filter tabs */}
