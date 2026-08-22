@@ -372,8 +372,8 @@ interface DroppableGridCellProps {
   isDraggingAny: boolean;
   onAddJob: () => void;
   onSelect: (ev: JobEvent) => void;
-  onDuplicate: (ev: JobEvent) => void;
-  onDelete: (ev: JobEvent) => void;
+  onDuplicate: (ev: JobEvent, dateStr: string) => void;
+  onDelete: (ev: JobEvent, dateStr: string, worker: string) => void;
 }
 
 function DroppableGridCell({ cellKey, dateStr, rowWorker, evs, overlapping, isToday, isDraggingAny, onAddJob, onSelect, onDuplicate, onDelete }: DroppableGridCellProps) {
@@ -403,7 +403,7 @@ function DroppableGridCell({ cellKey, dateStr, rowWorker, evs, overlapping, isTo
             return (
               <div key={ev.id} className="relative group">
                 <DraggableChip ev={ev} dateStr={dateStr} sourceWorker={rowWorker} isStart={isStart} isOverlapping={overlapping.has(ev.id)} onSelect={onSelect} />
-                <ActionIcons eventId={ev.id} dateStr={dateStr} onDuplicateClick={() => onDuplicate(ev)} onDelete={() => onDelete(ev)} />
+                <ActionIcons eventId={ev.id} dateStr={dateStr} onDuplicateClick={() => onDuplicate(ev, dateStr)} onDelete={() => onDelete(ev, dateStr, rowWorker)} />
                 {isEnd && <ResizeHandle eventId={ev.id} style={{ borderRadius: "0 0.5rem 0.5rem 0" }} />}
               </div>
             );
@@ -426,8 +426,8 @@ interface DroppableExpandedColumnProps {
   workerName: string;
   onAddJob: (dateStr: string, workerName: string) => void;
   onSelect: (ev: JobEvent) => void;
-  onDuplicate: (ev: JobEvent) => void;
-  onDelete: (ev: JobEvent) => void;
+  onDuplicate: (ev: JobEvent, dateStr: string) => void;
+  onDelete: (ev: JobEvent, dateStr: string, worker: string) => void;
 }
 
 function DroppableExpandedColumn({
@@ -473,7 +473,7 @@ function DroppableExpandedColumn({
             }}
           >
             <DraggableTimelineChip ev={ev} dateStr={dateStr} sourceWorker={workerName} isStart={isStart} isOverlap={overlapping.has(ev.id)} evHeight={evHeight} top={0} col={0} totalCols={1} onSelect={onSelect} />
-            <ActionIcons eventId={ev.id} dateStr={dateStr} onDuplicateClick={() => onDuplicate(ev)} onDelete={() => onDelete(ev)} />
+            <ActionIcons eventId={ev.id} dateStr={dateStr} onDuplicateClick={() => onDuplicate(ev, dateStr)} onDelete={() => onDelete(ev, dateStr, workerName)} />
             {isEnd && <ResizeHandle eventId={ev.id} />}
           </div>
         );
@@ -493,6 +493,8 @@ function DroppableExpandedColumn({
 
 // ── Main export ──
 
+const UNDO_LIMIT = 5;
+
 export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -502,6 +504,11 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
   const [activeEvent, setActiveEvent] = useState<JobEvent | null>(null);
   const [me, setMe] = useState<{ id: string; full_name: string } | null>(null);
   const dragSavingRef = useRef(false);
+  // Snapshots of `events` taken right before each board-mutating action, so a
+  // recent mistake (wrong delete, bad drag) can be walked back within this
+  // viewing session — not a durable history, just a short "oops" buffer.
+  const [undoStack, setUndoStack] = useState<JobEvent[][]>([]);
+  const [undoing, setUndoing] = useState(false);
 
   const sensors = useSensors(
     useSensor(MouseSensor),
@@ -524,6 +531,9 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
 
   useEffect(() => {
     setLoading(true);
+    // A new week is a new working set — an undo snapshot from a different
+    // week's events can't be meaningfully diffed against this one.
+    setUndoStack([]);
     fetch(`/api/events?from=${from}&to=${to}`)
       .then((r) => r.json())
       .then((data) => { setEvents(Array.isArray(data) ? data : []); setLoading(false); });
@@ -533,6 +543,12 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
     const res = await fetch(`/api/events?from=${from}&to=${to}`);
     const data = await res.json();
     setEvents(Array.isArray(data) ? data : []);
+  }
+
+  // Call at the top of any handler that's about to mutate job_events, before
+  // the mutation fires — captures the pre-mutation state to undo back to.
+  function pushUndoSnapshot() {
+    setUndoStack((prev) => [...prev, events].slice(-UNDO_LIMIT));
   }
 
   const crew = workers.filter((w) => w.role === "worker");
@@ -598,8 +614,11 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
     return created.id;
   }
 
-  // Click (no movement) duplicates onto the same day/worker as the original.
-  async function handleDuplicateJob(ev: JobEvent) {
+  // Click (no movement) duplicates just the single day/chip that was
+  // clicked — even if the underlying job spans multiple days, the copy is
+  // always a one-day job on that day, assigned to the same worker(s).
+  async function handleDuplicateJob(ev: JobEvent, dateStr: string) {
+    pushUndoSnapshot();
     dragSavingRef.current = true;
     try {
       const ongoingJobId = await ensureOngoingJobId(ev);
@@ -609,8 +628,8 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
         credentials: "include",
         body: JSON.stringify({
           title: ev.title,
-          date: ev.date,
-          end_date: ev.end_date ?? null,
+          date: dateStr,
+          end_date: null,
           client: ev.client,
           location: ev.location,
           description: ev.description,
@@ -649,16 +668,23 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
         if (targetWorker === "Unassigned") return;
         const newAssignedTo = addAssignedWorker(ev.assigned_to ?? "", targetWorker);
         if (newAssignedTo === (ev.assigned_to ?? "")) return;
-        await fetch("/api/events", {
-          method: "PUT",
+        pushUndoSnapshot();
+        // Routed through split-day rather than a plain PUT to assigned_to —
+        // a PUT would apply the new worker to every day in ev's range if
+        // it's a multi-day job. split-day carves sourceDate out into its
+        // own row first, so only that one day gains the new worker; the
+        // rest of the range, and whoever else is already on it, are untouched.
+        await fetch("/api/events/split-day", {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ id: eventId, assigned_to: newAssignedTo }),
+          body: JSON.stringify({ eventId, extractedDate: sourceDate, targetDate: sourceDate, assignedTo: newAssignedTo }),
         });
         await refetchEvents();
         return;
       }
 
+      pushUndoSnapshot();
       const ongoingJobId = await ensureOngoingJobId(ev);
       await fetch("/api/events", {
         method: "POST",
@@ -684,19 +710,110 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
     }
   }
 
-  async function handleDeleteJob(ev: JobEvent) {
-    if (!confirm(`Delete "${ev.title}"?`)) return;
+  // Deletes just this one day of this one worker's assignment — not the
+  // whole job_events row. For a plain single-day, single-worker job that's
+  // the same as deleting the row outright; for a multi-day and/or
+  // multi-worker job, delete-day splits the range so every other day, and
+  // every other worker on this same day, is left alone. (To remove an
+  // entire job in one shot regardless of span/crew, open it via the job
+  // panel and use its Delete button there.)
+  async function handleDeleteJob(ev: JobEvent, dateStr: string, worker: string) {
+    const assignedNames = (ev.assigned_to ?? "").split(",").map((n) => n.trim()).filter(Boolean);
+    const isSingleDay = ev.date === (ev.end_date || ev.date);
+    const isOnlyAssignee = worker === "Unassigned" || assignedNames.length <= 1;
+    const label = isSingleDay && isOnlyAssignee
+      ? `Delete "${ev.title}"?`
+      : `Remove "${ev.title}" on ${dateStr} for ${worker}? Other days and other crew members on this job won't be affected.`;
+    if (!confirm(label)) return;
+    pushUndoSnapshot();
     dragSavingRef.current = true;
     try {
-      await fetch("/api/events", {
-        method: "DELETE",
+      await fetch("/api/events/delete-day", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ id: ev.id }),
+        body: JSON.stringify({ eventId: ev.id, date: dateStr, worker }),
       });
       await refetchEvents();
     } finally {
       dragSavingRef.current = false;
+    }
+  }
+
+  // Walks back the most recent snapshot pushed by pushUndoSnapshot(), by
+  // diffing it against the current events and issuing whatever DELETE/POST/
+  // PUT calls are needed to reconcile the two. Rows re-created by a POST
+  // here get a new id (there's no way to resurrect the exact original id) —
+  // fine for "I just made a mistake," not meant as a durable history.
+  async function handleUndo() {
+    if (undoStack.length === 0 || dragSavingRef.current) return;
+    const prevSnapshot = undoStack[undoStack.length - 1];
+    setUndoStack((prev) => prev.slice(0, -1));
+    dragSavingRef.current = true;
+    setUndoing(true);
+    try {
+      const prevById = new Map(prevSnapshot.map((e) => [e.id, e]));
+      const currentById = new Map(events.map((e) => [e.id, e]));
+
+      for (const ev of events) {
+        if (!prevById.has(ev.id)) {
+          await fetch("/api/events", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ id: ev.id }),
+          });
+        }
+      }
+
+      for (const ev of prevSnapshot) {
+        const cur = currentById.get(ev.id);
+        if (!cur) {
+          await fetch("/api/events", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              title: ev.title,
+              date: ev.date,
+              end_date: ev.end_date ?? null,
+              client: ev.client,
+              location: ev.location,
+              description: ev.description,
+              start_time: ev.start_time || null,
+              end_time: ev.end_time || null,
+              assigned_to: ev.assigned_to,
+              is_verified: ev.is_verified,
+              ongoing_job_id: ev.ongoing_job_id ?? null,
+            }),
+          });
+        } else if (
+          cur.date !== ev.date ||
+          cur.end_date !== ev.end_date ||
+          cur.assigned_to !== ev.assigned_to ||
+          cur.start_time !== ev.start_time ||
+          cur.end_time !== ev.end_time
+        ) {
+          await fetch("/api/events", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              id: ev.id,
+              date: ev.date,
+              end_date: ev.end_date ?? null,
+              assigned_to: ev.assigned_to,
+              start_time: ev.start_time || null,
+              end_time: ev.end_time || null,
+            }),
+          });
+        }
+      }
+
+      await refetchEvents();
+    } finally {
+      dragSavingRef.current = false;
+      setUndoing(false);
     }
   }
 
@@ -710,6 +827,7 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
     const newEndDate = clampedTarget === ev.date ? undefined : clampedTarget;
     if ((ev.end_date || undefined) === newEndDate) return;
 
+    pushUndoSnapshot();
     setEvents((prev) => prev.map((e) => e.id === eventId ? { ...e, end_date: newEndDate } : e));
     dragSavingRef.current = true;
     try {
@@ -762,6 +880,7 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
     const dateUnchanged = (sourceDate ?? ev.date) === targetDate;
     if (dateUnchanged && newAssignedTo === currentNormalized) return;
 
+    pushUndoSnapshot();
     dragSavingRef.current = true;
     try {
       // Dragging a single day off a multi-day job detaches just that day —
@@ -895,6 +1014,19 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
             {weekOffset !== 0 && (
               <button onClick={() => setWeekOffset(0)} className="text-sm font-semibold text-navy-600 underline">
                 Today
+              </button>
+            )}
+            {undoStack.length > 0 && (
+              <button
+                onClick={handleUndo}
+                disabled={undoing}
+                title="Undo the last crew board change"
+                className="ml-1 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm font-semibold disabled:opacity-50 transition-colors"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 7v6h6" /><path d="M3 13a9 9 0 1 0 3-7.7L3 8" />
+                </svg>
+                {undoing ? "Undoing…" : `Undo${undoStack.length > 1 ? ` (${undoStack.length})` : ""}`}
               </button>
             )}
           </div>

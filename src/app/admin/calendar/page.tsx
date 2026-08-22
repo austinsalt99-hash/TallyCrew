@@ -11,6 +11,26 @@ import ScheduleSidebar from "./components/ScheduleSidebar";
 import PlanEventModal from "./components/PlanEventModal";
 import QuotesView, { Quote } from "./components/QuotesView";
 import { carveOutGeneral } from "@/lib/billableHours";
+import JobChecklist from "@/components/JobChecklist";
+import JobAttachments, { JobAttachment } from "@/components/JobAttachments";
+
+type JobStatus = "scheduled" | "in_progress" | "completed" | "invoiced" | "cancelled";
+
+const STATUS_LABELS: Record<JobStatus, string> = {
+  scheduled: "Scheduled",
+  in_progress: "In Progress",
+  completed: "Completed",
+  invoiced: "Invoiced",
+  cancelled: "Cancelled",
+};
+
+const STATUS_COLORS: Record<JobStatus, { bg: string; text: string }> = {
+  scheduled: { bg: "bg-gray-100", text: "text-gray-600" },
+  in_progress: { bg: "bg-blue-100", text: "text-blue-700" },
+  completed: { bg: "bg-green-100", text: "text-green-700" },
+  invoiced: { bg: "bg-purple-100", text: "text-purple-700" },
+  cancelled: { bg: "bg-red-100", text: "text-red-600" },
+};
 
 interface JobEvent {
   id: string;
@@ -25,6 +45,12 @@ interface JobEvent {
   assigned_to: string;
   is_verified: boolean;
   ongoing_job_id?: string | null;
+  status?: JobStatus;
+  quoted_price?: number | null;
+  po_number?: string | null;
+  internal_notes?: string | null;
+  equipment_needed?: string | null;
+  attachments?: JobAttachment[];
 }
 
 interface OngoingJob {
@@ -251,6 +277,11 @@ const EMPTY_FORM = {
   recurrence: "" as "" | "daily" | "weekly" | "biweekly" | "monthly",
   repeat_until: "",
   ongoing_job_id: "",
+  status: "scheduled" as JobStatus,
+  quoted_price: "",
+  po_number: "",
+  internal_notes: "",
+  equipment_needed: "",
 };
 
 // ── OngoingJobPicker: lets a job be linked to a reusable "parent" project so
@@ -382,6 +413,69 @@ function OngoingJobList({
           autoFocus
         />
       )}
+    </div>
+  );
+}
+
+// ── QuoteList: same "pick from a list" pattern as OngoingJobList, for the
+// Add Job "From quote" tab. Selecting a quote fills the form below (which
+// stays hidden until something's picked — see showAddJobFields). ──
+
+function QuoteList({
+  form, setForm, quotes, sourceQuoteId, setSourceQuoteId,
+}: {
+  form: typeof EMPTY_FORM;
+  setForm: (f: typeof EMPTY_FORM) => void;
+  quotes: Quote[];
+  sourceQuoteId: string;
+  setSourceQuoteId: (id: string) => void;
+}) {
+  const available = quotes.filter((q) => q.status !== "converted");
+  return (
+    <div className="mt-3">
+      <label className="block text-xs text-gray-500 mb-1">
+        Select a quote <span className="font-normal text-gray-400">(fills in title, client, location & notes)</span>
+      </label>
+      <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-56 overflow-y-auto">
+        {available.length === 0 && (
+          <p className="text-xs text-gray-400 px-3 py-3">No open quotes yet.</p>
+        )}
+        {available.map((q) => {
+          const selected = sourceQuoteId === q.id;
+          return (
+            <button
+              key={q.id}
+              type="button"
+              onClick={() => {
+                setSourceQuoteId(q.id);
+                setForm({
+                  ...form,
+                  title: q.title,
+                  client: q.client ?? "",
+                  location: q.location ?? "",
+                  description: q.description ?? "",
+                  date: form.date || q.target_date || "",
+                });
+              }}
+              className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-2 transition-colors ${
+                selected ? "bg-navy-50" : "hover:bg-gray-50"
+              }`}
+            >
+              <div className="min-w-0">
+                <p className={`text-sm font-medium truncate ${selected ? "text-navy-700" : "text-gray-900"}`}>{q.title}</p>
+                {(q.client || q.location) && (
+                  <p className="text-xs text-gray-400 truncate">{[q.client, q.location].filter(Boolean).join(" · ")}</p>
+                )}
+              </div>
+              {selected && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-navy-600 flex-shrink-0">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -578,6 +672,13 @@ export default function AdminCalendar() {
 
   const workerNames = workers.filter((w) => w.role === "worker").map((w) => w.full_name);
   const isPanelDirty = !!selectedEvent && JSON.stringify(panelForm) !== JSON.stringify(eventToForm(selectedEvent));
+  // Add-job form fields stay hidden while picking from the "ongoing job" or
+  // "quote" list — only reveal them once something's actually been chosen
+  // (or "+ New…" was clicked), so it feels like a list picker, not a form
+  // with a list bolted above it.
+  const showAddJobFields = !!editId || addSourceMode === "blank" ||
+    (addSourceMode === "ongoing" && !!form.ongoing_job_id) ||
+    (addSourceMode === "quote" && !!sourceQuoteId);
 
   const filteredJobEvents = events.filter((ev) => {
     if (filterEmployee && !ev.assigned_to?.toLowerCase().includes(filterEmployee.toLowerCase())) return false;
@@ -764,6 +865,17 @@ export default function AdminCalendar() {
     setShowForm(true);
   }
 
+  // Switching tabs clears whatever was picked (and any fields it filled in)
+  // so leftover data from one source doesn't leak into another — e.g.
+  // picking "Blank job" after selecting an ongoing job shouldn't leave that
+  // job's title/client sitting in the form.
+  function handleSourceModeChange(mode: "blank" | "ongoing" | "quote") {
+    setAddSourceMode(mode);
+    setSourceQuoteId("");
+    setNewOngoingJobTitle("");
+    setForm((f) => ({ ...EMPTY_FORM, date: f.date, start_time: f.start_time, assigned_to: f.assigned_to, is_verified: f.is_verified }));
+  }
+
   function eventToForm(ev: JobEvent) {
     return {
       ...EMPTY_FORM,
@@ -778,12 +890,21 @@ export default function AdminCalendar() {
       assigned_to: ev.assigned_to ?? "",
       is_verified: ev.is_verified !== false,
       ongoing_job_id: ev.ongoing_job_id ?? "",
+      status: ev.status ?? "scheduled",
+      quoted_price: ev.quoted_price != null ? String(ev.quoted_price) : "",
+      po_number: ev.po_number ?? "",
+      internal_notes: ev.internal_notes ?? "",
+      equipment_needed: ev.equipment_needed ?? "",
     };
   }
 
   async function selectEvent(ev: UnifiedEvent) {
     if (ev.source !== "job") return;
-    const jobEv = ev as unknown as JobEvent;
+    // UnifiedEvent only carries the fields the calendar grid renders — look
+    // up the full row so the panel doesn't show stale/blank data for
+    // description, status, pricing, checklist-relevant fields, etc.
+    const jobEv = events.find((e) => e.id === ev.id);
+    if (!jobEv) return;
     if (selectedEvent && selectedEvent.id !== ev.id && isPanelDirty) {
       await handleSavePanel(false);
     }
@@ -966,8 +1087,14 @@ export default function AdminCalendar() {
     const ongoingJobId = await resolveOngoingJobId(form, newOngoingJobTitle);
     const formToSave = { ...form, ongoing_job_id: ongoingJobId };
 
-    function clean<T extends { start_time: string; end_time: string; end_date: string }>(p: T) {
-      return { ...p, start_time: p.start_time || null, end_time: p.end_time || null, end_date: p.end_date || null };
+    function clean<T extends { start_time: string; end_time: string; end_date: string; quoted_price: string }>(p: T) {
+      return {
+        ...p,
+        start_time: p.start_time || null,
+        end_time: p.end_time || null,
+        end_date: p.end_date || null,
+        quoted_price: p.quoted_price ? Number(p.quoted_price) : null,
+      };
     }
     let firstCreatedId: string | null = null;
     if (!editId && formToSave.recurrence && formToSave.repeat_until) {
@@ -1052,7 +1179,14 @@ export default function AdminCalendar() {
     setSaving(true);
     const ongoingJobId = await resolveOngoingJobId(panelForm, panelNewOngoingJobTitle);
     const { recurrence: _r, repeat_until: _u, ...payload } = panelForm;
-    const cleanedPayload = { ...payload, ongoing_job_id: ongoingJobId, start_time: payload.start_time || null, end_time: payload.end_time || null, end_date: payload.end_date || null };
+    const cleanedPayload = {
+      ...payload,
+      ongoing_job_id: ongoingJobId,
+      start_time: payload.start_time || null,
+      end_time: payload.end_time || null,
+      end_date: payload.end_date || null,
+      quoted_price: payload.quoted_price ? Number(payload.quoted_price) : null,
+    };
     const body = { id: selectedEvent.id, ...cleanedPayload, ...(markVerified ? { is_verified: true } : {}) };
     await fetch("/api/events", {
       method: "PUT",
@@ -1070,6 +1204,22 @@ export default function AdminCalendar() {
     setSaving(false);
     setPanelNewOngoingJobTitle("");
     refreshDrafts();
+  }
+
+  // Attachments save immediately on change rather than waiting on the
+  // debounced panel form save, since uploading a photo is a distinct action
+  // from editing the other fields.
+  async function updateAttachments(next: JobAttachment[]) {
+    if (!selectedEvent) return;
+    setSelectedEvent({ ...selectedEvent, attachments: next });
+    await fetch("/api/events", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id: selectedEvent.id, attachments: next }),
+    });
+    const res = await fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`);
+    setEvents(await res.json());
   }
 
   function handleVoiceToggle() {
@@ -1554,6 +1704,79 @@ export default function AdminCalendar() {
               value={panelForm.description}
               onChange={(e) => setPanelForm({ ...panelForm, description: e.target.value })}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 resize-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Status</label>
+              <select
+                value={panelForm.status}
+                onChange={(e) => setPanelForm({ ...panelForm, status: e.target.value as JobStatus })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
+              >
+                {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
+                  <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Quoted price</label>
+              <input
+                type="number"
+                step="0.01"
+                value={panelForm.quoted_price}
+                onChange={(e) => setPanelForm({ ...panelForm, quoted_price: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">PO number</label>
+              <input
+                type="text"
+                value={panelForm.po_number}
+                onChange={(e) => setPanelForm({ ...panelForm, po_number: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+              Equipment needed <span className="font-normal text-gray-400 normal-case">(visible to employees)</span>
+            </label>
+            <textarea
+              rows={2}
+              value={panelForm.equipment_needed}
+              onChange={(e) => setPanelForm({ ...panelForm, equipment_needed: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">
+              Internal notes <span className="font-normal text-amber-600 normal-case">(admin only — not shown to employees)</span>
+            </label>
+            <textarea
+              rows={2}
+              value={panelForm.internal_notes}
+              onChange={(e) => setPanelForm({ ...panelForm, internal_notes: e.target.value })}
+              className="w-full border border-amber-200 bg-amber-50/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+            />
+          </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wide mb-3">Checklist</p>
+            <JobChecklist jobId={selectedEvent.id} canManage />
+          </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wide mb-3">Attachments</p>
+            <JobAttachments
+              jobId={selectedEvent.id}
+              attachments={selectedEvent.attachments ?? []}
+              onChange={updateAttachments}
+              canManage
             />
           </div>
 
@@ -2128,7 +2351,7 @@ export default function AdminCalendar() {
                     <button
                       key={m}
                       type="button"
-                      onClick={() => setAddSourceMode(m)}
+                      onClick={() => handleSourceModeChange(m)}
                       className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                         addSourceMode === m ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
                       }`}
@@ -2149,37 +2372,18 @@ export default function AdminCalendar() {
                 )}
 
                 {addSourceMode === "quote" && (
-                  <div className="mt-3">
-                    <label className="block text-xs text-gray-500 mb-1">Select a quote</label>
-                    <select
-                      value={sourceQuoteId}
-                      onChange={(e) => {
-                        const id = e.target.value;
-                        setSourceQuoteId(id);
-                        const q = quotes.find((qq) => qq.id === id);
-                        if (q) {
-                          setForm({
-                            ...form,
-                            title: q.title,
-                            client: q.client ?? "",
-                            location: q.location ?? "",
-                            description: q.description ?? "",
-                            date: form.date || q.target_date || "",
-                          });
-                        }
-                      }}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
-                    >
-                      <option value="">— Select a quote —</option>
-                      {quotes.filter((q) => q.status !== "converted").map((q) => (
-                        <option key={q.id} value={q.id}>{q.title}{q.client ? ` · ${q.client}` : ""}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <QuoteList
+                    form={form}
+                    setForm={setForm}
+                    quotes={quotes}
+                    sourceQuoteId={sourceQuoteId}
+                    setSourceQuoteId={setSourceQuoteId}
+                  />
                 )}
               </div>
             )}
 
+            {showAddJobFields && (
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">Job title *</label>
@@ -2260,6 +2464,42 @@ export default function AdminCalendar() {
                 <textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 resize-none" />
               </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Status</label>
+                <select
+                  value={form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value as JobStatus })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
+                >
+                  {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
+                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Quoted price</label>
+                <input type="number" step="0.01" value={form.quoted_price} onChange={(e) => setForm({ ...form, quoted_price: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">PO number</label>
+                <input type="text" value={form.po_number} onChange={(e) => setForm({ ...form, po_number: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">
+                  Equipment needed <span className="font-normal text-gray-400">(visible to employees)</span>
+                </label>
+                <textarea rows={2} value={form.equipment_needed} onChange={(e) => setForm({ ...form, equipment_needed: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 resize-none" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-amber-700 mb-1">
+                  Internal notes <span className="font-normal text-amber-600">(admin only — not shown to employees)</span>
+                </label>
+                <textarea rows={2} value={form.internal_notes} onChange={(e) => setForm({ ...form, internal_notes: e.target.value })}
+                  className="w-full border border-amber-200 bg-amber-50/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none" />
+              </div>
 
               {/* Recurring options (new jobs only) */}
               {!editId && (
@@ -2298,20 +2538,23 @@ export default function AdminCalendar() {
                 </>
               )}
             </div>
+            )}
 
             <div className="flex gap-3 pt-1">
               <button onClick={() => setShowForm(false)} className="flex-1 border border-gray-300 rounded-xl py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
                 Cancel
               </button>
-              <button
-                onClick={handleSave}
-                disabled={saving || !form.title || !form.date || (!!form.recurrence && !form.repeat_until)}
-                className="flex-1 bg-navy-600 hover:bg-navy-700 disabled:bg-navy-400 text-white rounded-xl py-2.5 text-sm font-bold"
-              >
-                {saving ? "Saving…" : form.recurrence && form.repeat_until
-                  ? `Create ${generateRecurrenceDates(form.date || "2000-01-01", form.recurrence, form.repeat_until).length} Jobs`
-                  : form.is_verified ? "Save" : "Save as Draft"}
-              </button>
+              {showAddJobFields && (
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !form.title || !form.date || (!!form.recurrence && !form.repeat_until)}
+                  className="flex-1 bg-navy-600 hover:bg-navy-700 disabled:bg-navy-400 text-white rounded-xl py-2.5 text-sm font-bold"
+                >
+                  {saving ? "Saving…" : form.recurrence && form.repeat_until
+                    ? `Create ${generateRecurrenceDates(form.date || "2000-01-01", form.recurrence, form.repeat_until).length} Jobs`
+                    : form.is_verified ? "Save" : "Save as Draft"}
+                </button>
+              )}
             </div>
           </div>
         </div>

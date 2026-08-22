@@ -1,37 +1,15 @@
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 import { getSubscriptionLabel } from "@/lib/subscription";
 import { getStripe } from "@/lib/stripe";
-import { getSupabaseAdmin, syncSubscriptionFromStripe } from "@/lib/subscriptionSync";
 import { redirect } from "next/navigation";
 import AdminBillingClient from "./AdminBillingClient";
 
-export default async function AdminBillingPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ success?: string; session_id?: string }>;
-}) {
+export default async function AdminBillingPage() {
   const supabase = await createSupabaseServer();
   const { user, profile } = await getSessionUser(supabase);
 
   if (!user || !profile || profile.role !== "admin") {
     redirect("/login");
-  }
-
-  const { success, session_id: sessionId } = await searchParams;
-
-  // Don't wait on the async Stripe webhook to unlock the account — reconcile
-  // the checkout result directly the moment the user lands back here.
-  if (success === "1" && sessionId && profile.company_id) {
-    try {
-      const session = await getStripe().checkout.sessions.retrieve(sessionId, {
-        expand: ["subscription"],
-      });
-      if (session.subscription && typeof session.subscription !== "string") {
-        await syncSubscriptionFromStripe(getSupabaseAdmin(), session.subscription, profile.company_id);
-      }
-    } catch (err) {
-      console.error("Checkout session reconciliation failed:", err);
-    }
   }
 
   const { data: company } = await supabase
@@ -54,8 +32,6 @@ export default async function AdminBillingPage({
     }
   }
 
-  const showSuccess = success === "1";
-
   const label = getSubscriptionLabel(
     company?.subscription_status ?? null,
     company?.subscription_period_end ?? null,
@@ -77,7 +53,6 @@ export default async function AdminBillingPage({
       subscriptionStatus={company?.subscription_status ?? null}
       nextBillingDate={nextBillingDate}
       hasStripeCustomer={!!company?.stripe_customer_id}
-      showSuccess={showSuccess}
     />
   );
 }

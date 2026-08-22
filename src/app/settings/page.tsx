@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import BottomNav from "@/components/BottomNav";
 import DesktopHeader from "@/components/DesktopHeader";
@@ -77,7 +76,6 @@ function NavRow({
 }
 
 export default function SettingsPage() {
-  const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -196,18 +194,6 @@ export default function SettingsPage() {
               label="Profile"
               description="Name, email, role"
               onClick={() => setActiveSection("profile")}
-            />
-            <div className="mx-4 border-t border-gray-100" />
-            <NavRow
-              iconBg="#F4A823"
-              icon={
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-                </svg>
-              }
-              label="Time Off"
-              description="Request time off"
-              onClick={() => router.push("/time-off")}
             />
             <div className="mx-4 border-t border-gray-100" />
             <NavRow

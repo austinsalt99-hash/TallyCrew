@@ -3,6 +3,26 @@
 import { useEffect, useState } from "react";
 import BottomNav from "@/components/BottomNav";
 import DesktopHeader from "@/components/DesktopHeader";
+import JobChecklist from "@/components/JobChecklist";
+import JobAttachments, { JobAttachment } from "@/components/JobAttachments";
+
+type JobStatus = "scheduled" | "in_progress" | "completed" | "invoiced" | "cancelled";
+
+const STATUS_LABELS: Record<JobStatus, string> = {
+  scheduled: "Scheduled",
+  in_progress: "In Progress",
+  completed: "Completed",
+  invoiced: "Invoiced",
+  cancelled: "Cancelled",
+};
+
+const STATUS_COLORS: Record<JobStatus, { bg: string; text: string }> = {
+  scheduled: { bg: "bg-gray-100", text: "text-gray-600" },
+  in_progress: { bg: "bg-blue-100", text: "text-blue-700" },
+  completed: { bg: "bg-green-100", text: "text-green-700" },
+  invoiced: { bg: "bg-purple-100", text: "text-purple-700" },
+  cancelled: { bg: "bg-red-100", text: "text-red-600" },
+};
 
 interface JobEvent {
   id: string;
@@ -15,6 +35,9 @@ interface JobEvent {
   start_time: string;
   end_time: string;
   assigned_to: string;
+  status?: JobStatus;
+  equipment_needed?: string | null;
+  attachments?: JobAttachment[];
 }
 
 type CalView = "month" | "week" | "day";
@@ -479,7 +502,14 @@ export default function SchedulePage() {
             <div className="mt-4 md:mt-0 md:w-1/2 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
               <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: ORANGE }}>Job Details</p>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: ORANGE }}>Job Details</p>
+                    {selectedEvent.status && (
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[selectedEvent.status].bg} ${STATUS_COLORS[selectedEvent.status].text}`}>
+                        {STATUS_LABELS[selectedEvent.status]}
+                      </span>
+                    )}
+                  </div>
                   <h2 className="text-lg font-bold text-gray-900 leading-snug">{selectedEvent.title}</h2>
                 </div>
                 <button
@@ -531,6 +561,20 @@ export default function SchedulePage() {
                     <p className="text-sm text-gray-800 whitespace-pre-wrap">{selectedEvent.description}</p>
                   </div>
                 )}
+                {selectedEvent.equipment_needed && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Equipment needed</p>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap">{selectedEvent.equipment_needed}</p>
+                  </div>
+                )}
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Checklist</p>
+                  <JobChecklist jobId={selectedEvent.id} canManage={false} />
+                </div>
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Attachments</p>
+                  <JobAttachments jobId={selectedEvent.id} attachments={selectedEvent.attachments ?? []} canManage={false} />
+                </div>
               </div>
             </div>
           )}

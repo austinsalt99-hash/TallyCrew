@@ -22,7 +22,18 @@ const EVENT_FIELDS = [
   "assigned_to",
   "is_verified",
   "ongoing_job_id",
+  "status",
+  "quoted_price",
+  "po_number",
+  "internal_notes",
+  "equipment_needed",
+  "attachments",
 ] as const;
+
+// Admin-only columns — stripped from GET responses for non-admin callers.
+// RLS (job_events_read) grants full-row SELECT to every company member, so
+// this filter is the only thing keeping pricing/internal notes from workers.
+const ADMIN_ONLY_FIELDS = ["quoted_price", "po_number", "internal_notes"] as const;
 
 function pickEventFields(body: Record<string, unknown>): Record<string, unknown> {
   const picked: Record<string, unknown> = {};
@@ -69,6 +80,14 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (profile.role !== "admin") {
+    const stripped = (data ?? []).map((row: Record<string, unknown>) => {
+      const copy = { ...row };
+      for (const field of ADMIN_ONLY_FIELDS) delete copy[field];
+      return copy;
+    });
+    return NextResponse.json(stripped);
+  }
   return NextResponse.json(data);
 }
 

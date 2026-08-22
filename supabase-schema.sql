@@ -16,7 +16,13 @@
 --  10.  log_entry_field_options (references log_entry_fields)
 --  11.  invoices              (references companies)
 --  12.  announcements         (references companies, profiles)
---  13.  Storage buckets       (job photos, company banners)
+--  13.  reminders             (references companies, profiles)
+--  14.  payroll_periods       (references companies, profiles)
+--  15.  Storage buckets       (job photos, company banners, invoice logos)
+--  16.  ongoing_jobs          (references companies)
+--  17.  quotes                (references companies, job_events)
+--  18.  availability_requests (references companies, profiles)
+--  19.  consent_log           (references auth.users)
 -- =============================================================
 
 
@@ -47,6 +53,21 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS pay_period_anchor DATE NOT NULL D
 -- Custom logo shown on invoices (PDF/print view) instead of TallyCrew branding.
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS invoice_logo_url TEXT;
 
+-- Stripe billing
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS subscription_period_end TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_companies_stripe_customer_id
+  ON companies (stripe_customer_id)
+  WHERE stripe_customer_id IS NOT NULL;
+
+-- Per-company configurable morning digest send time. morning_digest_time is
+-- local HH:MM in the company's timezone; morning_digest_last_sent_date
+-- prevents scheduling the same day's digest twice.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS morning_digest_time TEXT NOT NULL DEFAULT '07:00';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS morning_digest_last_sent_date TEXT;
+
 
 -- -------------------------------------------------------------
 -- 2. PROFILES
@@ -63,6 +84,14 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- Admins can set a per-worker billing rate
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS hourly_wage NUMERIC(10,2);
+
+-- Hashed bearer token so the "Hey Siri, add to my TallyCrew calendar..."
+-- shortcut can authenticate without a browser session. Only the SHA-256
+-- hash is stored; the raw token is shown once at mint time.
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS siri_token_hash TEXT UNIQUE;
 
 
 -- -------------------------------------------------------------
@@ -107,6 +136,11 @@ CREATE POLICY profiles_update ON profiles FOR UPDATE
     AND role = get_my_role()
     AND company_id = get_my_company_id()
   );
+
+-- Admins can update any profile within their company (e.g. setting hourly_wage)
+CREATE POLICY profiles_admin_update ON profiles FOR UPDATE
+  USING  (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
 
 
 -- -------------------------------------------------------------
@@ -458,6 +492,9 @@ CREATE TABLE invoices (
 
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 
+-- Lets admins choose which columns appear on the invoice
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS column_config JSONB NOT NULL DEFAULT '[]';
+
 CREATE POLICY invoices_admin_read ON invoices FOR SELECT
   USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
 
@@ -709,6 +746,18 @@ CREATE POLICY ongoing_jobs_admin_delete ON ongoing_jobs FOR DELETE
 
 ALTER TABLE job_events ADD COLUMN IF NOT EXISTS ongoing_job_id UUID REFERENCES ongoing_jobs(id) ON DELETE SET NULL;
 
+-- Job lifecycle status, invoicing reference fields, and crew-facing extras.
+-- quoted_price/po_number/internal_notes are admin-only — the /api/events GET
+-- handler strips them from the response for non-admin callers, since RLS
+-- (job_events_read) grants full-row SELECT to every company member.
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'scheduled'
+  CHECK (status IN ('scheduled', 'in_progress', 'completed', 'invoiced', 'cancelled'));
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS quoted_price NUMERIC;
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS po_number TEXT;
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS internal_notes TEXT;
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS equipment_needed TEXT;
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]';
+
 -- -------------------------------------------------------------
 -- 17. QUOTES
 --     A tentative job that isn't confirmed yet. Lives in its own
@@ -781,3 +830,69 @@ CREATE POLICY availability_requests_company_update ON availability_requests FOR 
 
 CREATE POLICY availability_requests_company_delete ON availability_requests FOR DELETE
   USING (company_id = get_my_company_id());
+
+
+-- -------------------------------------------------------------
+-- 19. CONSENT LOG
+--     Append-only log of Terms of Service / Privacy Policy acceptance.
+--     One row per document per acceptance, tied to the exact version shown
+--     at accept time, so we can prove which text a user agreed to even
+--     after the legal pages are edited later. All writes go through the
+--     service role (register-company / register-worker API routes) — no
+--     insert/update/delete policy is defined, so the log cannot be altered
+--     from the client.
+-- -------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS consent_log (
+  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  document_type    TEXT        NOT NULL CHECK (document_type IN ('terms', 'privacy')),
+  document_version TEXT        NOT NULL,
+  accepted_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_consent_log_user_id ON consent_log (user_id);
+
+ALTER TABLE consent_log ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY consent_log_read ON consent_log FOR SELECT
+  USING (user_id = auth.uid());
+
+
+-- -------------------------------------------------------------
+-- 20. JOB CHECKLIST ITEMS
+--     To-do items tied to a job_events row (e.g. "bring ladder", "get
+--     signature"). Admins create/edit/delete items; any company member,
+--     including workers, can check items off from the mobile schedule
+--     view. The UPDATE policy is intentionally company-wide (not
+--     admin-only) to allow that — the /api/job-checklist route only ever
+--     sends {is_done, done_by, done_at} for non-admin callers, and only
+--     lets admins change `text`/`position`.
+-- -------------------------------------------------------------
+CREATE TABLE job_checklist_items (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  company_id  UUID        REFERENCES companies(id),
+  job_id      UUID        REFERENCES job_events(id) ON DELETE CASCADE,
+  text        TEXT        NOT NULL,
+  is_done     BOOLEAN     NOT NULL DEFAULT false,
+  done_by     TEXT,
+  done_at     TIMESTAMPTZ,
+  position    INTEGER     NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_checklist_items_job_id ON job_checklist_items (job_id);
+
+ALTER TABLE job_checklist_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY job_checklist_items_read ON job_checklist_items FOR SELECT
+  USING (company_id = get_my_company_id());
+
+CREATE POLICY job_checklist_items_admin_insert ON job_checklist_items FOR INSERT
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE POLICY job_checklist_items_update ON job_checklist_items FOR UPDATE
+  USING (company_id = get_my_company_id())
+  WITH CHECK (company_id = get_my_company_id());
+
+CREATE POLICY job_checklist_items_admin_delete ON job_checklist_items FOR DELETE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');

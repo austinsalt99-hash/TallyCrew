@@ -413,6 +413,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     setNonBillable([]);
     setNotes("");
     setDate(today());
+    setWeekStripOffset(0);
     setErrorMsg("");
   }
 
@@ -864,6 +865,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       <LogHistoryPanel
         onLoadDate={(selectedDate) => {
           setDate(selectedDate);
+          setWeekStripOffset(0);
           loadPastLog(selectedDate);
         }}
         onClose={() => setShowHistory(false)}

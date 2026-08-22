@@ -9,7 +9,6 @@ interface Props {
   subscriptionStatus: string | null;
   nextBillingDate: string | null;
   hasStripeCustomer: boolean;
-  showSuccess: boolean;
 }
 
 export default function AdminBillingClient({
@@ -18,7 +17,6 @@ export default function AdminBillingClient({
   subscriptionStatus,
   nextBillingDate,
   hasStripeCustomer,
-  showSuccess,
 }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -49,17 +47,6 @@ export default function AdminBillingClient({
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-lg mx-auto px-4 pt-8">
         <h1 className="text-xl font-bold text-gray-900 mb-6">Billing</h1>
-
-        {showSuccess && (
-          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 flex items-center gap-2">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            <p className="text-sm text-green-800 font-medium">
-              You&apos;re all set! Enjoy TallyCrew.
-            </p>
-          </div>
-        )}
 
         {isPastDue && (
           <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 mb-4">

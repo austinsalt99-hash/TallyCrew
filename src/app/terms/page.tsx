@@ -15,8 +15,18 @@ export default function TermsPage() {
           <p>
             These terms govern your use of TallyCrew (the &quot;Service&quot;), a timesheet,
             scheduling, and crew management app. By creating an account or using the Service, you
-            agree to these terms.
+            agree to these terms and to our{" "}
+            <a href="/privacy" className="text-navy-600 underline">Privacy Policy</a>, which is
+            incorporated into these terms by reference.
           </p>
+
+          <section>
+            <h2 className="text-base font-semibold text-gray-900 mb-2">Eligibility</h2>
+            <p>
+              You must be at least 18 years old, or the age of legal majority in your jurisdiction,
+              and able to form a binding contract, to create an account or use the Service.
+            </p>
+          </section>
 
           <section>
             <h2 className="text-base font-semibold text-gray-900 mb-2">The Service</h2>
@@ -47,6 +57,44 @@ export default function TermsPage() {
               of the information you submit — including hours worked and job details. Admins are
               responsible for the accuracy of company configuration (log types, worker records,
               wages, and schedules) within their Company.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-base font-semibold text-gray-900 mb-2">Subscription &amp; billing</h2>
+            <p>
+              Company accounts are billed on a monthly or annual subscription, processed by Stripe.
+              New accounts may include a free trial period; unless you cancel before the trial ends,
+              the subscription begins and you will be charged. Subscriptions{" "}
+              <span className="font-medium text-gray-800">automatically renew</span> at the end of
+              each billing period until cancelled. You can cancel at any time from the billing page —
+              cancelling stops future renewals but does not refund the current billing period, and
+              you keep access through the end of the period you&apos;ve already paid for. If a
+              payment fails, we may suspend access to the Service until payment is resolved. All
+              fees are exclusive of applicable taxes unless stated otherwise.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-base font-semibold text-gray-900 mb-2">Data ownership</h2>
+            <p>
+              As between you and TallyCrew, your Company retains ownership of the timesheet, job,
+              and scheduling data it submits to the Service (&quot;Company Data&quot;). You grant us
+              a license to host, process, and display Company Data solely to provide and support the
+              Service. TallyCrew and its licensors retain all rights to the Service itself, including
+              its software, design, and trademarks.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-base font-semibold text-gray-900 mb-2">Indemnification</h2>
+            <p>
+              You agree to indemnify and hold TallyCrew and its operator harmless from any claims,
+              losses, or liabilities — including reasonable legal fees — arising from your
+              Company&apos;s use of the Service, your Company Data, or your violation of these
+              terms, including any claim that hours, wages, or job records maintained in the Service
+              did not comply with applicable employment or wage-and-hour law. Compliance with those
+              laws is your Company&apos;s responsibility, not ours.
             </p>
           </section>
 
@@ -86,6 +134,29 @@ export default function TermsPage() {
             <p>
               We may suspend or terminate access to the Service at any time, for any reason,
               including violation of these terms.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-base font-semibold text-gray-900 mb-2">Governing law &amp; disputes</h2>
+            <p>
+              These terms are governed by the laws of the Province of British Columbia and the
+              federal laws of Canada applicable therein, without regard to conflict-of-laws
+              principles. You agree that any dispute arising from these terms or the Service will be
+              subject to the exclusive jurisdiction of the courts located in British Columbia,
+              Canada.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-base font-semibold text-gray-900 mb-2">General</h2>
+            <p>
+              These terms, together with the Privacy Policy, are the entire agreement between you
+              and TallyCrew regarding the Service and supersede any prior agreements. If any
+              provision is found unenforceable, the rest remain in full effect. Our failure to
+              enforce a provision is not a waiver of it. You may not assign your account or these
+              terms without our consent; we may assign them in connection with a merger, sale, or
+              transfer of the business.
             </p>
           </section>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import BillableEntry, { BillableEntryData } from "@/components/BillableEntry";
 import TimesheetForm from "@/components/TimesheetForm";
 import type { LogEntryType, LogEntryField, LogEntryFieldOption, TypeWorkerRate } from "@/types/logConfig";
@@ -255,12 +256,20 @@ export default function LogConfigPage() {
             Define custom entry types that employees can choose when logging billable hours.
           </p>
         </div>
-        <button
-          onClick={() => setShowFormPreview(true)}
-          className="shrink-0 text-sm font-semibold text-navy-600 border border-navy-300 hover:bg-navy-50 rounded-lg px-3 py-2.5 md:py-1.5 transition-colors"
-        >
-          Preview Form
-        </button>
+        <div className="flex shrink-0 gap-2">
+          <Link
+            href="/admin/statistics"
+            className="text-sm font-semibold text-navy-600 border border-navy-300 hover:bg-navy-50 rounded-lg px-3 py-2.5 md:py-1.5 transition-colors"
+          >
+            View Statistics
+          </Link>
+          <button
+            onClick={() => setShowFormPreview(true)}
+            className="text-sm font-semibold text-navy-600 border border-navy-300 hover:bg-navy-50 rounded-lg px-3 py-2.5 md:py-1.5 transition-colors"
+          >
+            Preview Form
+          </button>
+        </div>
       </div>
 
       {types.length === 0 && (
