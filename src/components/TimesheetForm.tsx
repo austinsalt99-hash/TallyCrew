@@ -5,6 +5,7 @@ import BillableEntry, { BillableEntryData } from "./BillableEntry";
 import type { NonBillableEntryData } from "./NonBillableEntry";
 import JobEventPicker, { JobEvent } from "./JobEventPicker";
 import LogHistoryPanel from "./LogHistoryPanel";
+import { SkeletonJobCard } from "./Skeleton";
 import type { LogEntryType } from "@/types/logConfig";
 import { findBillableOverflow, timeRangeHours, carveOutGeneral } from "@/lib/billableHours";
 
@@ -690,23 +691,31 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       <section>
         <h2 className="text-base font-semibold text-gray-800 mb-3">Jobs</h2>
         <div className="space-y-3">
-          {billable.map((entry, idx) => (
-            <BillableEntry
-              key={entry.id}
-              entry={entry}
-              onChange={updateBillable}
-              onRemove={() => removeBillable(entry.id)}
-              showRemove={billable.length > 1}
-              entryTypes={entryTypes}
-              onLinkJob={() => { setLinkingEntryId(entry.id); setCalendarWeekOffset(0); }}
-              jobNumber={idx + 1}
-            />
-          ))}
+          {historyLoading ? (
+            <>
+              <SkeletonJobCard />
+              <SkeletonJobCard />
+            </>
+          ) : (
+            billable.map((entry, idx) => (
+              <BillableEntry
+                key={entry.id}
+                entry={entry}
+                onChange={updateBillable}
+                onRemove={() => removeBillable(entry.id)}
+                showRemove={billable.length > 1}
+                entryTypes={entryTypes}
+                onLinkJob={() => { setLinkingEntryId(entry.id); setCalendarWeekOffset(0); }}
+                jobNumber={idx + 1}
+              />
+            ))
+          )}
         </div>
         <button
           type="button"
           onClick={addBillable}
-          className="mt-3 w-full py-3 border-2 border-dashed border-navy-300 rounded-xl text-navy-600 font-medium text-sm hover:bg-navy-50 transition-colors"
+          disabled={historyLoading}
+          className="mt-3 w-full py-3 border-2 border-dashed border-navy-300 rounded-xl text-navy-600 font-medium text-sm hover:bg-navy-50 transition-colors disabled:opacity-50"
         >
           + Add another job
         </button>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import JobEventPicker, { type JobEvent } from "@/components/JobEventPicker";
+import { Skeleton, SkeletonCard } from "@/components/Skeleton";
 import { timeRangeHours, carveOutGeneral, formatHoursLabel } from "@/lib/billableHours";
 
 interface DashJobEvent extends JobEvent {
@@ -239,7 +240,22 @@ export default function Dashboard() {
     return true;
   });
 
-  if (loading) return <p className="text-gray-500">Loading submissions...</p>;
+  if (loading) {
+    return (
+      <div>
+        <Skeleton className="h-8 w-40 mb-6" />
+        <div className="flex flex-col md:flex-row gap-3 mb-4">
+          <Skeleton className="h-10 w-full md:w-48" />
+          <Skeleton className="h-10 w-full md:w-48" />
+        </div>
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
