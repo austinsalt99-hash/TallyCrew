@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isSubscriptionActive } from "@/lib/subscription";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const hostname = request.headers.get("host") ?? "";
   const isMarketingHost = hostname === "tallycrew.ca";
   const { pathname: rawPathname } = request.nextUrl;
