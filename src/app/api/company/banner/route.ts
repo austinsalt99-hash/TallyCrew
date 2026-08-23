@@ -36,9 +36,26 @@ export async function POST(req: Request) {
   if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 
   const { data } = admin.storage.from(BUCKET).getPublicUrl(path);
+  // The storage path is always the same for a given company (banner.<ext>), so
+  // the public URL never changes across re-uploads. Since Supabase Storage
+  // serves it with a 1-hour cache-control, browsers keep showing the old
+  // cached image at that URL unless we bust the cache in the stored URL itself.
+  const cacheBustedUrl = `${data.publicUrl}?v=${Date.now()}`;
 
   // Save URL to companies table
-  await admin.from("companies").update({ banner_url: data.publicUrl }).eq("id", profile.company_id);
+  const { data: updatedRows, error: updateError } = await admin
+    .from("companies")
+    .update({ banner_url: cacheBustedUrl })
+    .eq("id", profile.company_id)
+    .select("id, banner_url");
 
-  return NextResponse.json({ url: data.publicUrl });
+  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+  if (!updatedRows || updatedRows.length === 0) {
+    return NextResponse.json(
+      { error: `No company row matched id=${profile.company_id} — banner not saved.` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ url: cacheBustedUrl });
 }

@@ -35,10 +35,25 @@ export async function POST(req: Request) {
   if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 
   const { data } = admin.storage.from(BUCKET).getPublicUrl(path);
+  // Same path is reused on every re-upload, so the public URL never changes —
+  // bust the cache in the stored URL itself so browsers pick up the new file.
+  const cacheBustedUrl = `${data.publicUrl}?v=${Date.now()}`;
 
-  await admin.from("companies").update({ invoice_logo_url: data.publicUrl }).eq("id", profile.company_id);
+  const { data: updatedRows, error: updateError } = await admin
+    .from("companies")
+    .update({ invoice_logo_url: cacheBustedUrl })
+    .eq("id", profile.company_id)
+    .select("id, invoice_logo_url");
 
-  return NextResponse.json({ url: data.publicUrl });
+  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+  if (!updatedRows || updatedRows.length === 0) {
+    return NextResponse.json(
+      { error: `No company row matched id=${profile.company_id} — logo not saved.` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ url: cacheBustedUrl });
 }
 
 export async function DELETE() {

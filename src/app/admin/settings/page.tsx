@@ -289,7 +289,7 @@ export default function AdminSettingsPage() {
       const res = await fetch("/api/company/banner", { method: "POST", credentials: "include", body: fd });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Upload failed");
-      setBannerUrl(`${json.url}?t=${Date.now()}`);
+      setBannerUrl(json.url);
       setUploadSuccess(true);
       setSrcUrl(null);
       setStage("idle");

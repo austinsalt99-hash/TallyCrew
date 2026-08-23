@@ -31,7 +31,7 @@ export default function InvoicingSettingsPage() {
       const res = await fetch("/api/company/invoice-logo", { method: "POST", credentials: "include", body: fd });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Upload failed");
-      setLogoUrl(`${json.url}?t=${Date.now()}`);
+      setLogoUrl(json.url);
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
