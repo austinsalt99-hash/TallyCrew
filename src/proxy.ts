@@ -69,6 +69,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/") ||
     pathname.startsWith("/privacy") ||
     pathname.startsWith("/terms") ||
+    pathname.startsWith("/support") ||
     pathname.startsWith("/site");
 
   // Not logged in → send to login (except public routes), preserving where

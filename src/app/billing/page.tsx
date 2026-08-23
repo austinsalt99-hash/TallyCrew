@@ -2,11 +2,13 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import { Capacitor } from "@capacitor/core";
 
 export default function BillingPage() {
   const [selected, setSelected] = useState<"monthly" | "annual">("annual");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const isNative = Capacitor.isNativePlatform();
 
   async function startCheckout() {
     setLoading(true);
@@ -31,6 +33,23 @@ export default function BillingPage() {
       setError("Something went wrong. Please try again.");
       setLoading(false);
     }
+  }
+
+  if (isNative) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md text-center">
+          <div className="flex justify-center mb-5">
+            <Image src="/tally-wordmark.png" alt="TallyCrew" width={160} height={44} priority />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Start your free trial</h1>
+          <p className="text-sm text-gray-500 mt-3">
+            To start your trial or subscribe, please visit{" "}
+            <span className="font-semibold text-gray-700">tallycrew.ca</span> on the web.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
