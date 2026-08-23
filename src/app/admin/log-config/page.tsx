@@ -593,7 +593,7 @@ function WorkerRatesSection({ type, workers }: { type: LogEntryType; workers: { 
     <div className="bg-white border border-navy-200 rounded-lg p-3 space-y-2">
       <p className="text-xs font-semibold text-navy-700">Client billing rate — per worker</p>
       <p className="text-xs text-gray-400">
-        What to charge the client per hour of General work for each worker. Separate from the hourly wage under Workers, which is what they&apos;re paid.
+        What to charge the client per hour of General work for each worker.
       </p>
       {loading ? (
         <p className="text-xs text-gray-400">Loading…</p>

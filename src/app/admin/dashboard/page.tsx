@@ -170,12 +170,19 @@ function formatShortDate(dateStr: string): string {
   return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
+interface Worker {
+  id: string;
+  full_name: string;
+  role: string;
+}
+
 export default function Dashboard() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filterDate, setFilterDate] = useState("");
   const [filterName, setFilterName] = useState("");
+  const [workers, setWorkers] = useState<Worker[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [events, setEvents] = useState<DashJobEvent[]>([]);
   const [viewingEvent, setViewingEvent] = useState<DashJobEvent | null>(null);
@@ -200,6 +207,13 @@ export default function Dashboard() {
     fetch("/api/availability", { credentials: "include" })
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setPendingTimeOff(Array.isArray(data) ? data.filter((r: AvailabilityRequest) => r.status === "pending") : []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/admin/workers", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setWorkers(data.filter((w: Worker) => w.role === "worker")); })
       .catch(() => {});
   }, []);
 
@@ -236,7 +250,7 @@ export default function Dashboard() {
 
   const filtered = submissions.filter((s) => {
     if (filterDate && s.date !== filterDate) return false;
-    if (filterName && !s.employee_name.toLowerCase().includes(filterName.toLowerCase())) return false;
+    if (filterName && s.employee_name !== filterName) return false;
     return true;
   });
 
@@ -303,15 +317,18 @@ export default function Dashboard() {
           type="date"
           value={filterDate}
           onChange={(e) => setFilterDate(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 w-full md:w-auto"
+          className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 w-full min-w-0 md:w-44"
         />
-        <input
-          type="text"
-          placeholder="Filter by employee name"
+        <select
           value={filterName}
           onChange={(e) => setFilterName(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 w-full md:w-48"
-        />
+          className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-navy-400 w-full min-w-0 md:w-48"
+        >
+          <option value="">All employees</option>
+          {workers.map((w) => (
+            <option key={w.id} value={w.full_name}>{w.full_name}</option>
+          ))}
+        </select>
         {(filterDate || filterName) && (
           <button onClick={() => { setFilterDate(""); setFilterName(""); }} className="text-sm text-navy-600 underline self-start md:self-center">
             Clear filters

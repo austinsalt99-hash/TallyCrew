@@ -7,7 +7,6 @@ interface Profile {
   full_name: string;
   role: string;
   created_at: string;
-  hourly_wage: number | null;
 }
 
 interface InviteCode {
@@ -21,54 +20,6 @@ interface InviteCode {
 function formatDate(iso: string): string {
   const [y, mo, d] = iso.slice(0, 10).split("-").map(Number);
   return new Date(y, mo - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-function WageCell({ worker, onSave }: { worker: Profile; onSave: (id: string, wage: number | null) => Promise<void> }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(worker.hourly_wage != null ? String(worker.hourly_wage) : "");
-  const [saving, setSaving] = useState(false);
-
-  async function commit() {
-    setEditing(false);
-    const parsed = value.trim() === "" ? null : parseFloat(value);
-    if (parsed === worker.hourly_wage) return;
-    setSaving(true);
-    await onSave(worker.id, parsed != null && !isNaN(parsed) ? parsed : null);
-    setSaving(false);
-  }
-
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        type="number"
-        min="0"
-        step="0.01"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setValue(worker.hourly_wage != null ? String(worker.hourly_wage) : ""); setEditing(false); } }}
-        placeholder="0.00"
-        className="w-20 border border-navy-300 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-navy-400"
-      />
-    );
-  }
-
-  return (
-    <button
-      onClick={() => setEditing(true)}
-      title="Click to set hourly wage"
-      className="text-sm text-right tabular-nums hover:text-navy-700 transition-colors"
-    >
-      {saving ? (
-        <span className="text-gray-400">…</span>
-      ) : worker.hourly_wage != null ? (
-        <span className="text-gray-900">${Number(worker.hourly_wage).toFixed(2)}<span className="text-gray-400">/hr</span></span>
-      ) : (
-        <span className="text-gray-300 italic">Set wage</span>
-      )}
-    </button>
-  );
 }
 
 export default function WorkersPage() {
@@ -95,18 +46,6 @@ export default function WorkersPage() {
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data)) setCodes(data); })
       .finally(() => setLoadingCodes(false));
-  }
-
-  async function saveWage(workerId: string, wage: number | null) {
-    const res = await fetch("/api/admin/workers", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ workerId, hourly_wage: wage }),
-    });
-    if (res.ok) {
-      setWorkers((prev) => prev.map((w) => w.id === workerId ? { ...w, hourly_wage: wage } : w));
-    }
   }
 
   async function generateCode() {
@@ -152,7 +91,6 @@ export default function WorkersPage() {
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-700">Team members</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Click a wage to edit it — used for auto-pricing when jobs are linked to invoices.</p>
         </div>
         {loadingWorkers ? (
           <p className="px-5 py-4 text-sm text-gray-400">Loading…</p>
@@ -161,9 +99,8 @@ export default function WorkersPage() {
         ) : (
           <div className="divide-y divide-gray-100">
             {/* Desktop header row */}
-            <div className="hidden md:grid px-5 py-2 grid-cols-[1fr_auto_auto] gap-4 items-center">
+            <div className="hidden md:grid px-5 py-2 grid-cols-[1fr_auto] gap-4 items-center">
               <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Name</span>
-              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Hourly Wage</span>
               <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Role</span>
             </div>
             {workers.map((w) => (
@@ -179,18 +116,13 @@ export default function WorkersPage() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-400">Joined {formatDate(w.created_at)}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs text-gray-500">Hourly wage:</span>
-                    <WageCell worker={w} onSave={saveWage} />
-                  </div>
                 </div>
                 {/* Desktop grid row */}
-                <div className="hidden md:grid px-5 py-3 grid-cols-[1fr_auto_auto] gap-4 items-center">
+                <div className="hidden md:grid px-5 py-3 grid-cols-[1fr_auto] gap-4 items-center">
                   <div>
                     <p className="font-semibold text-gray-900 text-sm">{w.full_name}</p>
                     <p className="text-xs text-gray-400">Joined {formatDate(w.created_at)}</p>
                   </div>
-                  <WageCell worker={w} onSave={saveWage} />
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                     w.role === "admin" ? "bg-navy-100 text-navy-700" : "bg-gray-100 text-gray-600"
                   }`}>

@@ -87,6 +87,8 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const [announcementsExpanded, setAnnouncementsExpanded] = useState(false);
+  const [remindersExpanded, setRemindersExpanded] = useState(false);
 
   // Announcement form
   const [showAnnForm, setShowAnnForm] = useState(false);
@@ -385,36 +387,53 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
               <p className="text-xs text-gray-400 mt-0.5">Post one to notify your team</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {announcements.map((a) => (
-                <div key={a.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                  {a.pinned && <div className="h-0.5" style={{ backgroundColor: ORANGE }} />}
-                  <div className="p-4 flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      {a.pinned && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{ color: ORANGE }}>
-                          Pinned
-                        </span>
-                      )}
-                      <p className="font-semibold text-gray-900 text-sm leading-snug">{a.title}</p>
-                      {a.body && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{a.body}</p>}
-                      <p className="text-[10px] text-gray-300 mt-2">
-                        {new Date(a.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                      </p>
+            <>
+              <div className={announcementsExpanded ? "space-y-2 max-h-96 overflow-y-auto pr-0.5" : "space-y-2"}>
+                {(announcementsExpanded ? announcements : announcements.slice(0, 3)).map((a) => (
+                  <div key={a.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    {a.pinned && <div className="h-0.5" style={{ backgroundColor: ORANGE }} />}
+                    <div className="p-4 flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        {a.pinned && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{ color: ORANGE }}>
+                            Pinned
+                          </span>
+                        )}
+                        <p className="font-semibold text-gray-900 text-sm leading-snug">{a.title}</p>
+                        {a.body && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{a.body}</p>}
+                        <p className="text-[10px] text-gray-300 mt-2">
+                          {new Date(a.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteAnn(a.id)}
+                        className="shrink-0 p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                          <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                        </svg>
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleDeleteAnn(a.id)}
-                      className="shrink-0 p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                        <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-                      </svg>
-                    </button>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {announcements.length > 3 && (
+                <button
+                  onClick={() => setAnnouncementsExpanded((v) => !v)}
+                  className="w-full flex items-center justify-center gap-1 mt-2 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700"
+                >
+                  {announcementsExpanded ? "Show less" : `Show ${announcements.length - 3} more`}
+                  <svg
+                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                    strokeLinecap="round" strokeLinejoin="round"
+                    className={`transition-transform duration-200 ${announcementsExpanded ? "rotate-180" : ""}`}
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+              )}
+            </>
           )}
         </section>
 
@@ -595,66 +614,83 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
               <p className="text-xs text-gray-400 mt-0.5">Create one to schedule timed notifications</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {reminders.map((r) => (
-                <div
-                  key={r.id}
-                  className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
-                  style={{ opacity: r.active ? 1 : 0.5 }}
-                >
-                  <div className="p-4 flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-900 text-sm leading-snug">{r.title}</p>
-                      {r.body && <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{r.body}</p>}
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${NAVY}15`, color: NAVY }}>
-                          {fmt12(r.send_time)}
-                        </span>
-                        <span className="text-[10px] text-gray-400 font-medium">{fmtSchedule(r)}</span>
-                        <span className="text-[10px] text-gray-400">
-                          {r.target_type === "all" ? "Everyone" : `${r.target_user_ids?.length ?? 0} employee${(r.target_user_ids?.length ?? 0) !== 1 ? "s" : ""}`}
-                        </span>
+            <>
+              <div className={remindersExpanded ? "space-y-2 max-h-96 overflow-y-auto pr-0.5" : "space-y-2"}>
+                {(remindersExpanded ? reminders : reminders.slice(0, 3)).map((r) => (
+                  <div
+                    key={r.id}
+                    className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
+                    style={{ opacity: r.active ? 1 : 0.5 }}
+                  >
+                    <div className="p-4 flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 text-sm leading-snug">{r.title}</p>
+                        {r.body && <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{r.body}</p>}
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${NAVY}15`, color: NAVY }}>
+                            {fmt12(r.send_time)}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-medium">{fmtSchedule(r)}</span>
+                          <span className="text-[10px] text-gray-400">
+                            {r.target_type === "all" ? "Everyone" : `${r.target_user_ids?.length ?? 0} employee${(r.target_user_ids?.length ?? 0) !== 1 ? "s" : ""}`}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Edit */}
+                        <button
+                          onClick={() => openEditReminderForm(r)}
+                          className="p-1.5 rounded-lg text-gray-300 hover:text-navy-600 hover:bg-gray-50 transition-colors"
+                          title="Edit reminder"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
+                        </button>
+                        {/* Active toggle */}
+                        <button
+                          onClick={() => handleToggleReminder(r.id, !r.active)}
+                          className="w-8 h-5 rounded-full relative transition-colors"
+                          style={{ backgroundColor: r.active ? ORANGE : "#d1d5db" }}
+                          title={r.active ? "Pause reminder" : "Enable reminder"}
+                        >
+                          <div
+                            className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                            style={{ transform: r.active ? "translateX(14px)" : "translateX(2px)" }}
+                          />
+                        </button>
+                        {/* Delete */}
+                        <button
+                          onClick={() => handleDeleteReminder(r.id)}
+                          className="p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                            <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                          </svg>
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {/* Edit */}
-                      <button
-                        onClick={() => openEditReminderForm(r)}
-                        className="p-1.5 rounded-lg text-gray-300 hover:text-navy-600 hover:bg-gray-50 transition-colors"
-                        title="Edit reminder"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                        </svg>
-                      </button>
-                      {/* Active toggle */}
-                      <button
-                        onClick={() => handleToggleReminder(r.id, !r.active)}
-                        className="w-8 h-5 rounded-full relative transition-colors"
-                        style={{ backgroundColor: r.active ? ORANGE : "#d1d5db" }}
-                        title={r.active ? "Pause reminder" : "Enable reminder"}
-                      >
-                        <div
-                          className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
-                          style={{ transform: r.active ? "translateX(14px)" : "translateX(2px)" }}
-                        />
-                      </button>
-                      {/* Delete */}
-                      <button
-                        onClick={() => handleDeleteReminder(r.id)}
-                        className="p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                          <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-                        </svg>
-                      </button>
-                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {reminders.length > 3 && (
+                <button
+                  onClick={() => setRemindersExpanded((v) => !v)}
+                  className="w-full flex items-center justify-center gap-1 mt-2 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700"
+                >
+                  {remindersExpanded ? "Show less" : `Show ${reminders.length - 3} more`}
+                  <svg
+                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                    strokeLinecap="round" strokeLinejoin="round"
+                    className={`transition-transform duration-200 ${remindersExpanded ? "rotate-180" : ""}`}
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+              )}
+            </>
           )}
         </section>
 

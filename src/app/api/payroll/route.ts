@@ -22,7 +22,6 @@ interface TypeBucket {
 interface EmployeeAgg {
   userId: string;
   employeeName: string;
-  hourlyWage: number | null;
   billableHours: number;
   nonBillableHours: number;
   byType: Map<string, TypeBucket>;
@@ -85,13 +84,6 @@ export async function GET(req: NextRequest) {
     .gte("date", start)
     .lte("date", end);
 
-  const { data: workerProfiles } = await supabase
-    .from("profiles")
-    .select("id, hourly_wage")
-    .eq("company_id", profile.company_id);
-  const wageMap: Record<string, number | null> = {};
-  for (const p of workerProfiles ?? []) wageMap[p.id] = p.hourly_wage != null ? Number(p.hourly_wage) : null;
-
   const { data: rawTypes } = await supabase
     .from("log_entry_types")
     .select("slug, name, time_mode")
@@ -120,7 +112,6 @@ export async function GET(req: NextRequest) {
     const agg = employees.get(userId) ?? {
       userId,
       employeeName: sub.employee_name as string,
-      hourlyWage: wageMap[userId] ?? null,
       billableHours: 0,
       nonBillableHours: 0,
       byType: new Map(),
@@ -173,11 +164,9 @@ export async function GET(req: NextRequest) {
       return {
         userId: agg.userId,
         employeeName: agg.employeeName,
-        hourlyWage: agg.hourlyWage,
         billableHours: Math.round(agg.billableHours * 100) / 100,
         nonBillableHours: Math.round(agg.nonBillableHours * 100) / 100,
         totalHours,
-        totalPay: agg.hourlyWage != null ? Math.round(totalHours * agg.hourlyWage * 100) / 100 : null,
         byType,
         byJob,
       };

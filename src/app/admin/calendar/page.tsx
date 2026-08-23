@@ -83,7 +83,6 @@ interface Worker {
   id: string;
   full_name: string;
   role: string;
-  hourly_wage?: number | null;
 }
 
 interface BillableSubEntry {

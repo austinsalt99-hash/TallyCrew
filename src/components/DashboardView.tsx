@@ -123,6 +123,8 @@ export default function DashboardView({ userName }: { userName: string }) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [announcementsExpanded, setAnnouncementsExpanded] = useState(false);
+  const [remindersExpanded, setRemindersExpanded] = useState(false);
 
   const weekDays = getWeekDays();
   const todayStr = fmtDate(new Date());
@@ -256,32 +258,51 @@ export default function DashboardView({ userName }: { userName: string }) {
                 <div className="h-16 bg-gray-100 rounded-2xl animate-pulse" />
               </div>
             ) : (
-              <div className="space-y-2">
-                {announcements.map((a) => (
-                  <div
-                    key={a.id}
-                    className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden"
-                  >
-                    {a.pinned && (
-                      <div className="h-0.5" style={{ backgroundColor: ORANGE }} />
-                    )}
-                    <div className="p-4">
+              <>
+                <div
+                  className={announcementsExpanded ? "space-y-2 max-h-80 overflow-y-auto pr-0.5" : "space-y-2"}
+                >
+                  {(announcementsExpanded ? announcements : announcements.slice(0, 3)).map((a) => (
+                    <div
+                      key={a.id}
+                      className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden"
+                    >
                       {a.pinned && (
-                        <span
-                          className="text-[10px] font-bold uppercase tracking-wider mb-1 block"
-                          style={{ color: ORANGE }}
-                        >
-                          Pinned
-                        </span>
+                        <div className="h-0.5" style={{ backgroundColor: ORANGE }} />
                       )}
-                      <p className="font-semibold text-gray-900 text-sm leading-snug">{a.title}</p>
-                      {a.body && (
-                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{a.body}</p>
-                      )}
+                      <div className="p-4">
+                        {a.pinned && (
+                          <span
+                            className="text-[10px] font-bold uppercase tracking-wider mb-1 block"
+                            style={{ color: ORANGE }}
+                          >
+                            Pinned
+                          </span>
+                        )}
+                        <p className="font-semibold text-gray-900 text-sm leading-snug">{a.title}</p>
+                        {a.body && (
+                          <p className="text-xs text-gray-500 mt-1 leading-relaxed">{a.body}</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+                {announcements.length > 3 && (
+                  <button
+                    onClick={() => setAnnouncementsExpanded((v) => !v)}
+                    className="w-full flex items-center justify-center gap-1 mt-2 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700"
+                  >
+                    {announcementsExpanded ? "Show less" : `Show ${announcements.length - 3} more`}
+                    <svg
+                      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                      strokeLinecap="round" strokeLinejoin="round"
+                      className={`transition-transform duration-200 ${announcementsExpanded ? "rotate-180" : ""}`}
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                )}
+              </>
             )}
           </section>
         )}
@@ -295,23 +316,42 @@ export default function DashboardView({ userName }: { userName: string }) {
                 <div className="h-14 bg-gray-100 rounded-2xl animate-pulse" />
               </div>
             ) : (
-              <div className="space-y-2">
-                {reminders.map((r) => (
-                  <div key={r.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                    <div className="h-0.5" style={{ backgroundColor: NAVY }} />
-                    <div className="p-4">
-                      <p className="font-semibold text-gray-900 text-sm leading-snug">{r.title}</p>
-                      {r.body && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{r.body}</p>}
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${NAVY}15`, color: NAVY }}>
-                          {fmt12(r.send_time)}
-                        </span>
-                        <span className="text-[10px] text-gray-400 font-medium">{fmtSchedule(r)}</span>
+              <>
+                <div
+                  className={remindersExpanded ? "space-y-2 max-h-80 overflow-y-auto pr-0.5" : "space-y-2"}
+                >
+                  {(remindersExpanded ? reminders : reminders.slice(0, 3)).map((r) => (
+                    <div key={r.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                      <div className="h-0.5" style={{ backgroundColor: NAVY }} />
+                      <div className="p-4">
+                        <p className="font-semibold text-gray-900 text-sm leading-snug">{r.title}</p>
+                        {r.body && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{r.body}</p>}
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${NAVY}15`, color: NAVY }}>
+                            {fmt12(r.send_time)}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-medium">{fmtSchedule(r)}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+                {reminders.length > 3 && (
+                  <button
+                    onClick={() => setRemindersExpanded((v) => !v)}
+                    className="w-full flex items-center justify-center gap-1 mt-2 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700"
+                  >
+                    {remindersExpanded ? "Show less" : `Show ${reminders.length - 3} more`}
+                    <svg
+                      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                      strokeLinecap="round" strokeLinejoin="round"
+                      className={`transition-transform duration-200 ${remindersExpanded ? "rotate-180" : ""}`}
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                )}
+              </>
             )}
           </section>
         )}

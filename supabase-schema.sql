@@ -85,9 +85,6 @@ CREATE TABLE IF NOT EXISTS profiles (
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
--- Admins can set a per-worker billing rate
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS hourly_wage NUMERIC(10,2);
-
 -- Hashed bearer token so the "Hey Siri, add to my TallyCrew calendar..."
 -- shortcut can authenticate without a browser session. Only the SHA-256
 -- hash is stored; the raw token is shown once at mint time.
@@ -137,7 +134,7 @@ CREATE POLICY profiles_update ON profiles FOR UPDATE
     AND company_id = get_my_company_id()
   );
 
--- Admins can update any profile within their company (e.g. setting hourly_wage)
+-- Admins can update any profile within their company
 CREATE POLICY profiles_admin_update ON profiles FOR UPDATE
   USING  (company_id = get_my_company_id() AND get_my_role() = 'admin')
   WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
@@ -415,11 +412,8 @@ CREATE POLICY log_options_admin_delete ON log_entry_field_options FOR DELETE
 -- 10a. LOG ENTRY TYPE WORKER RATES
 --      Per-worker override of the client billing rate for a given
 --      log entry type — e.g. a different $/hr to charge the client
---      for each worker's General time. Distinct from
---      profiles.hourly_wage, which is what the company pays the
---      worker. Invoice pricing prefers this over
---      log_entry_types.rate_amount, which in turn beats falling
---      back to the worker's hourly_wage.
+--      for each worker's General time. Invoice pricing prefers this
+--      over log_entry_types.rate_amount.
 -- -------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS log_entry_type_worker_rates (
   id          UUID    PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -136,18 +136,6 @@ export async function GET(req: NextRequest) {
     .eq("company_id", profile.company_id)
     .filter("billable_entries", "cs", JSON.stringify([{ linkedEventId: eventId }]));
 
-  const userIds = [...new Set((submissions ?? []).map((s) => s.user_id).filter(Boolean))];
-  const wageMap: Record<string, number> = {};
-  if (userIds.length > 0) {
-    const { data: wageProfiles } = await supabase
-      .from("profiles")
-      .select("id, hourly_wage")
-      .in("id", userIds);
-    for (const p of wageProfiles ?? []) {
-      if (p.hourly_wage != null) wageMap[p.id] = Number(p.hourly_wage);
-    }
-  }
-
   const { data: rawTypes } = await supabase
     .from("log_entry_types")
     .select("id, slug, name, time_mode, rate_type, rate_amount")
@@ -156,7 +144,7 @@ export async function GET(req: NextRequest) {
   const allTypeIds = (rawTypes ?? []).map((t) => t.id);
 
   // Per-worker override of the client billing rate for a type (e.g. General).
-  // Takes priority over the flat type rate_amount and the worker's payroll wage.
+  // Takes priority over the flat type rate_amount.
   const workerTypeRates: Record<string, Record<string, number>> = {};
   if (allTypeIds.length > 0) {
     const { data: typeWorkerRateRows } = await supabase
@@ -236,14 +224,13 @@ export async function GET(req: NextRequest) {
     employee: string;
     workerId: string;
     date: string;
-    wage: number;
   }
 
   interface EntryGroup {
     slug: string;
     typeInfo: TypeInfo | undefined;
     dropdownFields: Record<string, string>;
-    entries: { employee: string; workerId: string; date: string; hours: number; numberFields: Record<string, number>; wage: number }[];
+    entries: { employee: string; workerId: string; date: string; hours: number; numberFields: Record<string, number> }[];
   }
 
   interface LineItemResponse {
@@ -272,7 +259,6 @@ export async function GET(req: NextRequest) {
     employeeName: string,
     workerId: string,
     date: string,
-    wage: number,
   ): RawEntry[] {
     const result: RawEntry[] = [];
     const parentHours = calcHours(
@@ -307,13 +293,13 @@ export async function GET(req: NextRequest) {
         }
       );
       for (const rh of rawHours) {
-        result.push({ slug: rh.slug, customFields: rh.customFields, hours: rh.hours, employee: employeeName, workerId, date, wage });
+        result.push({ slug: rh.slug, customFields: rh.customFields, hours: rh.hours, employee: employeeName, workerId, date });
       }
     } else {
       const activeSlug = (entry.entryType as string) || "standard";
       const activeHasData = parentHours > 0 || Object.values(parentCustomFields).some(Boolean);
       if (activeHasData) {
-        result.push({ slug: activeSlug, customFields: parentCustomFields, hours: parentHours, employee: employeeName, workerId, date, wage });
+        result.push({ slug: activeSlug, customFields: parentCustomFields, hours: parentHours, employee: employeeName, workerId, date });
       }
       const typeData = (entry._typeData as Record<string, Record<string, unknown>> | undefined) ?? {};
       for (const [tdSlug, snapshot] of Object.entries(typeData)) {
@@ -323,7 +309,7 @@ export async function GET(req: NextRequest) {
         const tdHours = calcHours(snapshot.startTime as string | undefined, snapshot.endTime as string | undefined, snapshot.manualHours as number | null | undefined);
         const isTimedType = !tdTypeInfo || tdTypeInfo.timeMode !== "none";
         const hours = tdHours > 0 ? tdHours : (isTimedType ? parentHours : 0);
-        result.push({ slug: tdSlug, customFields: tdCustomFields, hours, employee: employeeName, workerId, date, wage });
+        result.push({ slug: tdSlug, customFields: tdCustomFields, hours, employee: employeeName, workerId, date });
       }
     }
 
@@ -352,7 +338,7 @@ export async function GET(req: NextRequest) {
         for (const k of ddKeys) { if (re.customFields[k]) ddFields[k] = re.customFields[k]; }
         groups.set(gk, { slug: re.slug, typeInfo, dropdownFields: ddFields, entries: [] });
       }
-      groups.get(gk)!.entries.push({ employee: re.employee, workerId: re.workerId, date: re.date, hours: re.hours, numberFields, wage: re.wage });
+      groups.get(gk)!.entries.push({ employee: re.employee, workerId: re.workerId, date: re.date, hours: re.hours, numberFields });
     }
 
     const lineItems: LineItemResponse[] = [];
@@ -381,11 +367,10 @@ export async function GET(req: NextRequest) {
       let rate = fieldRate;
 
       if (!amount) {
-        // Per-worker client billing rate for this type (e.g. General) takes
-        // priority over falling back to the worker's payroll wage.
+        // Per-worker client billing rate for this type (e.g. General).
         const rateEntries = entries
           .filter((e) => e.hours > 0)
-          .map((e) => ({ ...e, effectiveRate: (typeInfo ? workerTypeRates[typeInfo.id]?.[e.workerId] : undefined) ?? e.wage }))
+          .map((e) => ({ ...e, effectiveRate: (typeInfo ? workerTypeRates[typeInfo.id]?.[e.workerId] : undefined) ?? 0 }))
           .filter((e) => e.effectiveRate > 0);
         const rateTotal = rateEntries.reduce((sum, e) => sum + e.hours * e.effectiveRate, 0);
         if (rateTotal > 0) {
@@ -434,13 +419,12 @@ export async function GET(req: NextRequest) {
   }[] = [];
 
   for (const sub of submissions ?? []) {
-    const subWage = wageMap[sub.user_id as string] ?? 0;
     const entries = (sub.billable_entries as Record<string, unknown>[]) ?? [];
 
     const subRawEntries: RawEntry[] = [];
     for (const entry of entries) {
       if ((entry.linkedEventId as string) !== eventId) continue;
-      subRawEntries.push(...collectRawEntries(entry, sub.employee_name, sub.user_id as string, sub.date, subWage));
+      subRawEntries.push(...collectRawEntries(entry, sub.employee_name, sub.user_id as string, sub.date));
     }
 
     if (subRawEntries.length === 0) continue;

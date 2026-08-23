@@ -23,7 +23,7 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-base font-semibold text-gray-900 mb-2">Information we collect</h2>
             <ul className="list-disc pl-5 space-y-1.5">
               <li><span className="font-medium text-gray-800">Account information:</span> name, email address, role (admin or worker), and the Company you&apos;re associated with.</li>
-              <li><span className="font-medium text-gray-800">Timesheet entries:</span> hours worked, job/client details, descriptions, wage or billing rates, and any custom fields your Company has configured, submitted by Workers each day.</li>
+              <li><span className="font-medium text-gray-800">Timesheet entries:</span> hours worked, job/client details, descriptions, billing rates, and any custom fields your Company has configured, submitted by Workers each day.</li>
               <li><span className="font-medium text-gray-800">Scheduling data:</span> jobs, meetings, tasks, and calendar entries created by admins, including who they&apos;re assigned to.</li>
               <li><span className="font-medium text-gray-800">Voice input:</span> if you use the Voice or Siri Shortcut feature to create a job, the spoken text is sent to an AI service (Anthropic) to be parsed into a structured job entry. It is processed to generate that entry and is not otherwise stored or used by us.</li>
               <li><span className="font-medium text-gray-800">Photos:</span> admins can optionally upload a company banner or invoice logo image, and Workers can optionally attach job-site photos to a billable entry, from their camera or photo library.</li>

@@ -46,8 +46,7 @@ export async function PUT(request: Request) {
   if (!(await assertOwnsType(supabase, profile.company_id, type_id)))
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Empty/blank rate clears the override, falling back to the flat type
-  // rate or the worker's payroll wage.
+  // Empty/blank rate clears the override, falling back to the flat type rate.
   if (rate_amount == null || rate_amount === "") {
     const { error } = await supabase
       .from("log_entry_type_worker_rates")
