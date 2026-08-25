@@ -5,6 +5,10 @@
 /.next/
 /out/
 
+# serwist (generated service worker, built from src/app/sw.ts)
+/public/sw*
+/public/swe-worker*
+
 # environment variables — never upload these
 .env
 .env.local

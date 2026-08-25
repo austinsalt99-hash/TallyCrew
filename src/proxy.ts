@@ -70,7 +70,13 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/privacy") ||
     pathname.startsWith("/terms") ||
     pathname.startsWith("/support") ||
-    pathname.startsWith("/site");
+    pathname.startsWith("/site") ||
+    // Service worker script (+ its cacheOnNavigation companion worker) and
+    // offline fallback page must be reachable even when logged out, or
+    // offline caching breaks on every /login visit.
+    pathname === "/sw.js" ||
+    /^\/swe-worker-[^/]+\.js$/.test(pathname) ||
+    pathname.startsWith("/~offline");
 
   // Not logged in → send to login (except public routes), preserving where
   // they were headed so e.g. a Stripe checkout return isn't lost mid-flow

@@ -313,12 +313,23 @@ export default function Dashboard() {
       )}
 
       <div className="flex flex-col md:flex-row gap-3 mb-6">
-        <input
-          type="date"
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 w-full min-w-0 md:w-44"
-        />
+        <label className="relative flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white w-full min-w-0 md:w-44 overflow-hidden cursor-pointer focus-within:ring-2 focus-within:ring-navy-400">
+          <svg className="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          <span className={`truncate ${filterDate ? "text-gray-900" : "text-gray-400"}`}>
+            {filterDate ? formatShortDate(filterDate) : "Date"}
+          </span>
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          />
+        </label>
         <select
           value={filterName}
           onChange={(e) => setFilterName(e.target.value)}

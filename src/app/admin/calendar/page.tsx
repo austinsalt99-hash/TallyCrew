@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { App } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import CrewBoard from "./components/CrewBoard";
 import WorkloadView from "./components/WorkloadView";
 import AvailabilityGrid from "./components/AvailabilityGrid";
@@ -535,6 +536,51 @@ function layoutEvents(evs: UnifiedEvent[]): { ev: UnifiedEvent; col: number; tot
       if (s < ej && e > sj) maxCol = Math.max(maxCol, cols[j]);
     }
     return { ev, col: cols[i], totalCols: maxCol + 1 };
+  });
+}
+
+interface AllDayBar {
+  ev: UnifiedEvent;
+  lane: number;
+  startIdx: number;
+  endIdx: number;
+  // true when the event's real start/end falls outside `dates` — the bar is
+  // truncated at that edge rather than showing its actual endpoint, so the
+  // rounded cap and resize handle are suppressed there.
+  clippedStart: boolean;
+  clippedEnd: boolean;
+}
+
+// Lays out all-day / multi-day events as continuous bars spanning the date
+// columns they cover, stacking overlapping ones into lanes (top to bottom)
+// like a standard calendar's all-day row / month grid.
+function layoutAllDayBars(dates: Date[], evs: UnifiedEvent[]): AllDayBar[] {
+  const rangeStart = fmt(dates[0]);
+  const rangeEnd = fmt(dates[dates.length - 1]);
+  const items = evs
+    .map((ev) => {
+      const evStart = ev.date;
+      const evEnd = ev.end_date || ev.date;
+      if (evEnd < rangeStart || evStart > rangeEnd) return null;
+      const clippedStart = evStart < rangeStart;
+      const clippedEnd = evEnd > rangeEnd;
+      const startIdx = clippedStart ? 0 : dates.findIndex((d) => fmt(d) === evStart);
+      const endIdx = clippedEnd ? dates.length - 1 : dates.findIndex((d) => fmt(d) === evEnd);
+      return { ev, startIdx, endIdx, clippedStart, clippedEnd };
+    })
+    .filter((x): x is Exclude<typeof x, null> => x !== null)
+    .sort((a, b) => a.startIdx - b.startIdx || (b.endIdx - b.startIdx) - (a.endIdx - a.startIdx));
+
+  const laneEnds: number[] = [];
+  return items.map((item) => {
+    let lane = laneEnds.findIndex((end) => end < item.startIdx);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(item.endIdx);
+    } else {
+      laneEnds[lane] = item.endIdx;
+    }
+    return { ...item, lane };
   });
 }
 
@@ -1291,7 +1337,15 @@ export default function AdminCalendar() {
       setTranscript("");
       const err = event.error;
       if (err === "not-allowed") {
-        alert("Microphone access was denied. Click the lock/camera icon in your browser's address bar and allow microphone access, then try again.");
+        if (Capacitor.isNativePlatform()) {
+          alert(
+            Capacitor.getPlatform() === "ios"
+              ? "Microphone access was denied. Go to Settings > TallyCrew and turn on Microphone and Speech Recognition, then try again."
+              : "Microphone access was denied. Go to your phone's Settings > Apps > TallyCrew > Permissions and allow Microphone, then try again."
+          );
+        } else {
+          alert("Microphone access was denied. Click the lock/camera icon in your browser's address bar and allow microphone access, then try again.");
+        }
       } else if (err === "no-speech") {
         alert("No speech was detected. Please try again and speak clearly.");
       } else if (err === "audio-capture") {
@@ -1309,23 +1363,122 @@ export default function AdminCalendar() {
     }
   }
 
+  function renderMonthGrid() {
+    const displayedMonth = new Date(
+      new Date().getFullYear(), new Date().getMonth() + monthOffset, 1
+    ).getMonth();
+    const jobEvents = unifiedEvents.filter((e) => e.source === "job");
+    const weeks: Date[][] = [];
+    for (let i = 0; i < monthDays.length; i += 7) weeks.push(monthDays.slice(i, i + 7));
+    const BAR_H = 15;
+    const BAR_TOP = 24;
+
+    return weeks.map((week, weekIdx) => {
+      const bars = layoutAllDayBars(week, jobEvents);
+      const laneCount = bars.reduce((max, b) => Math.max(max, b.lane + 1), 0);
+      return (
+        <div key={weekIdx} className="relative">
+          <div className="grid grid-cols-7">
+            {week.map((date, idx) => {
+              const dateStr = fmt(date);
+              const isCurrentMonth = date.getMonth() === displayedMonth;
+              const isToday = dateStr === todayStr;
+              const planEvents = unifiedEvents.filter((e) => e.source !== "job" && e.date === dateStr);
+              return (
+                <div
+                  key={dateStr}
+                  onClick={() => { if (isDraggingRef.current) return; setDayOffset(dayDiff(date, new Date())); setCalView("day"); }}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverKey(`month:${dateStr}`); }}
+                  onDragLeave={() => setDragOverKey((k) => k === `month:${dateStr}` ? null : k)}
+                  onDrop={(e) => { setDragOverKey(null); handleWholeDayDrop(dateStr, e); }}
+                  className={`min-h-[72px] p-1 border-t border-gray-100 cursor-pointer active:bg-gray-100 hover:bg-gray-50 transition-colors ${
+                    dragOverKey === `month:${dateStr}` ? "bg-blue-100 ring-2 ring-inset ring-blue-400" : !isCurrentMonth ? "bg-gray-50/60" : ""
+                  } ${idx % 7 !== 6 ? "border-r border-gray-100" : ""}`}
+                >
+                  <div className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full mb-1 ${
+                    isToday ? "bg-navy-600 text-white" : isCurrentMonth ? "text-gray-800" : "text-gray-300"
+                  }`}>
+                    {date.getDate()}
+                  </div>
+                  {/* Reserves space for the job-bar overlay so plan pills start below it */}
+                  {laneCount > 0 && <div style={{ height: laneCount * BAR_H }} />}
+                  {planEvents.slice(0, 2).map((ev) => {
+                    const { color, bg } = getEventStyle(ev.type);
+                    return (
+                      <div
+                        key={ev.id}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-0.5 text-[9px] leading-tight px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer"
+                        style={{ backgroundColor: bg, borderLeft: `2px solid ${color}` }}
+                        title={ev.title}
+                      >
+                        <span className="truncate font-medium" style={{ color }}>{ev.title}</span>
+                      </div>
+                    );
+                  })}
+                  {planEvents.length > 2 && (
+                    <div className="text-[9px] text-gray-400 px-0.5">+{planEvents.length - 2}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {laneCount > 0 && (
+            <div className="absolute pointer-events-none" style={{ top: BAR_TOP, left: 0, right: 0, height: laneCount * BAR_H }}>
+              {bars.map(({ ev, lane, startIdx, endIdx, clippedStart, clippedEnd }) => {
+                const { color, bg } = getEventStyle(ev.type);
+                return (
+                  <div
+                    key={ev.id}
+                    className={`absolute pointer-events-auto text-[9px] font-semibold px-1 truncate leading-tight cursor-grab active:cursor-grabbing ${clippedStart ? "" : "rounded-l"} ${clippedEnd ? "" : "rounded-r"}`}
+                    style={{
+                      left: `${(startIdx / 7) * 100}%`,
+                      width: `${((endIdx - startIdx + 1) / 7) * 100}%`,
+                      top: lane * BAR_H,
+                      height: BAR_H - 3,
+                      backgroundColor: bg,
+                      borderLeft: clippedStart ? "none" : `2px solid ${color}`,
+                      color,
+                    }}
+                    draggable
+                    onDragStart={(e) => { e.stopPropagation(); handleWholeDayDragStart(e, ev.id, ev.date); }}
+                    onDragEnd={() => setDragOverKey(null)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const original = events.find((j) => j.id === ev.id);
+                      if (original) selectEvent(ev);
+                    }}
+                    title={ev.title}
+                  >
+                    {ev.title}
+                    {!clippedEnd && (
+                      <div
+                        draggable
+                        onDragStart={(e) => { e.stopPropagation(); handleResizeDragStart(e, ev.id); }}
+                        onDragEnd={() => setDragOverKey(null)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute top-0 right-0 h-full w-2 cursor-ew-resize hover:bg-black/10"
+                        title="Drag to extend across more days"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    });
+  }
+
   function renderTimeGrid(dates: Date[], headerRow?: ReactNode) {
-    // All-day events (no start_time) per date, including multi-day job spans
-    const allDayByDate = new Map<string, UnifiedEvent[]>();
-    let hasAnyAllDay = false;
-    for (const date of dates) {
-      const dateStr = fmt(date);
-      const evs = unifiedEvents.filter(e => {
-        if (e.start_time) return false;
-        if (e.source === "job") {
-          const evEnd = e.end_date || e.date;
-          return dateStr >= e.date && dateStr <= evEnd;
-        }
-        return e.date === dateStr;
-      });
-      allDayByDate.set(dateStr, evs);
-      if (evs.length > 0) hasAnyAllDay = true;
-    }
+    // All-day events (no start_time), including multi-day job spans, laid
+    // out as continuous bars across the date columns they cover.
+    const allDayEvents = unifiedEvents.filter((e) => !e.start_time);
+    const bars = layoutAllDayBars(dates, allDayEvents);
+    const laneCount = bars.reduce((max, b) => Math.max(max, b.lane + 1), 0);
+    const hasAnyAllDay = bars.length > 0;
+    const BAR_H = 22;
 
     return (
       <>
@@ -1335,55 +1488,66 @@ export default function AdminCalendar() {
             {headerRow}
             {/* All-day events strip */}
             {hasAnyAllDay && (
-              <div className="flex border-b border-gray-100 bg-gray-50/40">
+              <div className="relative flex border-b border-gray-100 bg-gray-50/40" style={{ height: laneCount * BAR_H + 4 }}>
                 <div className="sticky left-0 z-20 flex-shrink-0 bg-gray-50/40" style={{ width: 56 }} />
-                {dates.map(date => {
-                  const dateStr = fmt(date);
-                  const evs = allDayByDate.get(dateStr) ?? [];
-                  const isToday = dateStr === todayStr;
-                  return (
-                    <div
-                      key={dateStr}
-                      className={`flex-1 min-w-0 min-h-[26px] p-0.5 border-l border-gray-100 transition-colors ${
-                        dragOverKey === `allday:${dateStr}` ? "bg-blue-100 ring-2 ring-inset ring-blue-400" : isToday ? "bg-navy-50/30" : ""
-                      }`}
-                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverKey(`allday:${dateStr}`); }}
-                      onDragLeave={() => setDragOverKey((k) => k === `allday:${dateStr}` ? null : k)}
-                      onDrop={(e) => { setDragOverKey(null); handleWholeDayDrop(dateStr, e); }}
-                    >
-                      {evs.map(ev => {
-                        const { color, bg } = getEventStyle(ev.type);
-                        const isJob = ev.source === "job";
-                        const isStart = ev.date === dateStr;
-                        const isEnd = (ev.end_date || ev.date) === dateStr;
-                        return (
+                <div className="relative flex-1 min-w-0">
+                  {/* Drop-target columns */}
+                  <div className="absolute inset-0 flex">
+                    {dates.map((date) => {
+                      const dateStr = fmt(date);
+                      const isToday = dateStr === todayStr;
+                      return (
+                        <div
+                          key={dateStr}
+                          className={`flex-1 min-w-0 border-l border-gray-100 transition-colors ${
+                            dragOverKey === `allday:${dateStr}` ? "bg-blue-100 ring-2 ring-inset ring-blue-400" : isToday ? "bg-navy-50/30" : ""
+                          }`}
+                          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverKey(`allday:${dateStr}`); }}
+                          onDragLeave={() => setDragOverKey((k) => k === `allday:${dateStr}` ? null : k)}
+                          onDrop={(e) => { setDragOverKey(null); handleWholeDayDrop(dateStr, e); }}
+                        />
+                      );
+                    })}
+                  </div>
+                  {/* Bars */}
+                  {bars.map(({ ev, lane, startIdx, endIdx, clippedStart, clippedEnd }) => {
+                    const { color, bg } = getEventStyle(ev.type);
+                    const isJob = ev.source === "job";
+                    const n = dates.length;
+                    return (
+                      <div
+                        key={ev.id}
+                        className={`absolute text-[10px] font-semibold px-1.5 py-0.5 truncate leading-tight ${clippedStart ? "" : "rounded-l"} ${clippedEnd ? "" : "rounded-r"} ${isJob ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                        style={{
+                          left: `${(startIdx / n) * 100}%`,
+                          width: `${((endIdx - startIdx + 1) / n) * 100}%`,
+                          top: lane * BAR_H + 2,
+                          height: BAR_H - 4,
+                          backgroundColor: bg,
+                          borderLeft: clippedStart ? "none" : `2px solid ${color}`,
+                          color,
+                        }}
+                        draggable={isJob}
+                        onDragStart={isJob ? (e) => handleWholeDayDragStart(e, ev.id, ev.date) : undefined}
+                        onDragEnd={() => setDragOverKey(null)}
+                        onClick={() => { if (isJob) { const orig = events.find((j) => j.id === ev.id); if (orig) selectEvent(ev); } }}
+                        title={ev.title}
+                      >
+                        {ev.title}
+                        {isJob && !clippedEnd && (
                           <div
-                            key={ev.id}
-                            className={`relative text-[10px] font-semibold px-1.5 py-1 rounded mb-0.5 truncate leading-tight border-l-2 ${isJob ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
-                            style={{ backgroundColor: bg, borderLeftColor: color, color }}
-                            draggable={isJob}
-                            onDragStart={isJob ? (e) => handleWholeDayDragStart(e, ev.id, dateStr) : undefined}
+                            draggable
+                            onDragStart={(e) => { e.stopPropagation(); handleResizeDragStart(e, ev.id); }}
                             onDragEnd={() => setDragOverKey(null)}
-                            onClick={() => { if (isJob) { const orig = events.find(j => j.id === ev.id); if (orig) selectEvent(ev); } }}
-                            title={!isStart ? `${ev.title} (continues from ${ev.date})` : ev.title}
-                          >
-                            {!isStart && "↔ "}{ev.title}
-                            {isJob && isEnd && (
-                              <div
-                                draggable
-                                onDragStart={(e) => { e.stopPropagation(); handleResizeDragStart(e, ev.id); }}
-                                onDragEnd={() => setDragOverKey(null)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="absolute top-0 right-0 h-full w-2.5 cursor-ew-resize hover:bg-black/10"
-                                title="Drag to extend across more days"
-                              />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute top-0 right-0 h-full w-2.5 cursor-ew-resize hover:bg-black/10"
+                            title="Drag to extend across more days"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -2091,82 +2255,7 @@ export default function AdminCalendar() {
                       <div key={d} className="py-2 text-center text-xs font-semibold text-gray-400">{d}</div>
                     ))}
                   </div>
-                  <div className="grid grid-cols-7">
-                    {(() => {
-                      const displayedMonth = new Date(
-                        new Date().getFullYear(), new Date().getMonth() + monthOffset, 1
-                      ).getMonth();
-                      return monthDays.map((date, idx) => {
-                        const dateStr = fmt(date);
-                        const isCurrentMonth = date.getMonth() === displayedMonth;
-                        const isToday = dateStr === todayStr;
-                        const dayEvents = unifiedEvents.filter(e => {
-                        if (e.source === "job") {
-                          const evEnd = e.end_date || e.date;
-                          return dateStr >= e.date && dateStr <= evEnd;
-                        }
-                        return e.date === dateStr;
-                      });
-                        return (
-                          <div
-                            key={dateStr}
-                            onClick={() => { if (isDraggingRef.current) return; setDayOffset(dayDiff(date, new Date())); setCalView("day"); }}
-                            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverKey(`month:${dateStr}`); }}
-                            onDragLeave={() => setDragOverKey((k) => k === `month:${dateStr}` ? null : k)}
-                            onDrop={(e) => { setDragOverKey(null); handleWholeDayDrop(dateStr, e); }}
-                            className={`min-h-[72px] p-1 border-t border-gray-100 cursor-pointer active:bg-gray-100 hover:bg-gray-50 transition-colors ${
-                              dragOverKey === `month:${dateStr}` ? "bg-blue-100 ring-2 ring-inset ring-blue-400" : !isCurrentMonth ? "bg-gray-50/60" : ""
-                            } ${idx % 7 !== 6 ? "border-r border-gray-100" : ""}`}
-                          >
-                            <div className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full mb-1 ${
-                              isToday ? "bg-navy-600 text-white" : isCurrentMonth ? "text-gray-800" : "text-gray-300"
-                            }`}>
-                              {date.getDate()}
-                            </div>
-                            {dayEvents.slice(0, 2).map((ev) => {
-                              const { color, bg } = getEventStyle(ev.type);
-                              const isJob = ev.source === "job";
-                              const isStart = ev.date === dateStr;
-                              const isEnd = (ev.end_date || ev.date) === dateStr;
-                              return (
-                                <div
-                                  key={ev.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (isJob) {
-                                      const original = events.find((j) => j.id === ev.id);
-                                      if (original) selectEvent(ev);
-                                    }
-                                  }}
-                                  draggable={isJob}
-                                  onDragStart={isJob ? (e) => { e.stopPropagation(); handleWholeDayDragStart(e, ev.id, dateStr); } : undefined}
-                                  onDragEnd={() => setDragOverKey(null)}
-                                  className={`relative flex items-center gap-0.5 text-[9px] leading-tight px-1 py-0.5 rounded mb-0.5 truncate ${isJob ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
-                                  style={{ backgroundColor: bg, borderLeft: `2px solid ${color}` }}
-                                  title={!isStart ? `${ev.title} (continues from ${ev.date})` : ev.title}
-                                >
-                                  <span className="truncate font-medium" style={{ color }}>{!isStart && "↔ "}{ev.title}</span>
-                                  {isJob && isEnd && (
-                                    <div
-                                      draggable
-                                      onDragStart={(e) => { e.stopPropagation(); handleResizeDragStart(e, ev.id); }}
-                                      onDragEnd={() => setDragOverKey(null)}
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="absolute top-0 right-0 h-full w-2 cursor-ew-resize hover:bg-black/10"
-                                      title="Drag to extend across more days"
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })}
-                            {dayEvents.length > 2 && (
-                              <div className="text-[9px] text-gray-400 px-0.5">+{dayEvents.length - 2}</div>
-                            )}
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
+                  {renderMonthGrid()}
                 </div>
               )}
 

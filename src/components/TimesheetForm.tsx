@@ -8,6 +8,7 @@ import LogHistoryPanel from "./LogHistoryPanel";
 import { SkeletonJobCard } from "./Skeleton";
 import type { LogEntryType } from "@/types/logConfig";
 import { findBillableOverflow, timeRangeHours, carveOutGeneral } from "@/lib/billableHours";
+import { enqueueSubmission } from "@/lib/offlineQueue";
 
 interface DayEntry {
   id: string;
@@ -75,7 +76,7 @@ function calcDayTotalHours(dayStartTime: string, dayEndTime: string, breakMinute
   return raw > 0 ? raw : 0;
 }
 
-type SubmitState = "idle" | "submitting" | "success" | "error";
+type SubmitState = "idle" | "submitting" | "success" | "queued" | "error";
 
 interface TimesheetFormProps {
   previewMode?: boolean;
@@ -270,6 +271,32 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     setSubmitState((s) => (s === "success" ? "idle" : s));
   }, [loaded, dayStartTime, dayEndTime, billable, nonBillable, notes, breakMinutes, dayEntries]);
 
+  // SyncManager flushes queued offline submissions in the background — pick
+  // up the result here only if it's for the date currently on screen.
+  useEffect(() => {
+    function onFlushed(e: Event) {
+      const detail = (e as CustomEvent).detail as { date?: string; id?: string } | undefined;
+      if (!detail || detail.date !== date) return;
+      if (detail.id) setSubmittedId(detail.id);
+      localStorage.removeItem(storageKey(userId, today()));
+      setIsEditing(true);
+      setSubmitState("success");
+      setSubmittedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    }
+    function onSyncError(e: Event) {
+      const detail = (e as CustomEvent).detail as { date?: string } | undefined;
+      if (!detail || detail.date !== date) return;
+      setSubmitState("error");
+      setErrorMsg("A queued submission for this date was rejected by the server. Review and resubmit.");
+    }
+    window.addEventListener("tallycrew:offline-sync-flushed", onFlushed);
+    window.addEventListener("tallycrew:offline-sync-error", onSyncError);
+    return () => {
+      window.removeEventListener("tallycrew:offline-sync-flushed", onFlushed);
+      window.removeEventListener("tallycrew:offline-sync-error", onSyncError);
+    };
+  }, [date, userId]);
+
   async function loadPastLog(overrideDate?: string) {
     const targetDate = overrideDate ?? date;
     setHistoryLoading(true);
@@ -341,32 +368,33 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     }
     setSubmitState("submitting");
     setErrorMsg("");
+    const totalBillableHours = calcTotalBillable(billable);
+    const dayTotalHours = calcDayTotalHours(dayStartTime, dayEndTime, breakMinutes);
+    const { generalHours: autoNonBillableHours } = carveOutGeneral(dayTotalHours, [
+      totalBillableHours,
+      calcTotalNonBillable(nonBillable),
+    ]);
+    const nonBillablePayload =
+      autoNonBillableHours > 0
+        ? [...nonBillable, { id: uuid(), description: "Unaccounted time (auto-calculated)", hours: String(autoNonBillableHours) }]
+        : nonBillable;
+    const method = isEditing && submittedId ? "PUT" : "POST";
+    const payload = {
+      date,
+      dayStartTime,
+      dayEndTime,
+      billable,
+      nonBillable: nonBillablePayload,
+      dailyEntries: dayEntries,
+      notes,
+      totalBillableHours,
+      totalNonBillableHours: calcTotalNonBillable(nonBillablePayload),
+      breakMinutes: parseFloat(breakMinutes) || 0,
+      ...(isEditing && submittedId ? { id: submittedId } : {}),
+    };
     try {
-      const totalBillableHours = calcTotalBillable(billable);
-      const dayTotalHours = calcDayTotalHours(dayStartTime, dayEndTime, breakMinutes);
-      const { generalHours: autoNonBillableHours } = carveOutGeneral(dayTotalHours, [
-        totalBillableHours,
-        calcTotalNonBillable(nonBillable),
-      ]);
-      const nonBillablePayload =
-        autoNonBillableHours > 0
-          ? [...nonBillable, { id: uuid(), description: "Unaccounted time (auto-calculated)", hours: String(autoNonBillableHours) }]
-          : nonBillable;
-      const payload = {
-        date,
-        dayStartTime,
-        dayEndTime,
-        billable,
-        nonBillable: nonBillablePayload,
-        dailyEntries: dayEntries,
-        notes,
-        totalBillableHours,
-        totalNonBillableHours: calcTotalNonBillable(nonBillablePayload),
-        breakMinutes: parseFloat(breakMinutes) || 0,
-        ...(isEditing && submittedId ? { id: submittedId } : {}),
-      };
       const res = await fetch("/api/submit", {
-        method: isEditing && submittedId ? "PUT" : "POST",
+        method,
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(payload),
@@ -386,6 +414,14 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
         [date]: { billable: totalBillableHours, nonBillable: calcTotalNonBillable(nonBillablePayload) },
       }));
     } catch (err) {
+      if (err instanceof TypeError) {
+        // fetch() never reached the server — a real network failure, not a
+        // rejection. Queue it so SyncManager can retry once back online.
+        // Don't clear the draft: only a confirmed server success does that.
+        await enqueueSubmission(method, payload);
+        setSubmitState("queued");
+        return;
+      }
       setErrorMsg(err instanceof Error ? err.message : "Something went wrong. Try again.");
       setSubmitState("error");
     }
@@ -832,6 +868,13 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
             <circle cx="12" cy="12" r="10"/><polyline points="8,12.5 11,15.5 16,9"/>
           </svg>
           Submitted{submittedAt ? ` at ${submittedAt}` : ""}
+        </div>
+      )}
+
+      {/* Queued offline indicator */}
+      {submitState === "queued" && (
+        <div className="flex items-center justify-center gap-1.5 text-amber-600 text-sm font-semibold">
+          Saved — will submit automatically when you&rsquo;re back online
         </div>
       )}
 

@@ -57,5 +57,9 @@
 	<string>TallyCrew uses your camera to let you take a photo for your company banner.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>TallyCrew may use your location to support job scheduling features.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TallyCrew uses your microphone to let you create calendar events by voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>TallyCrew uses speech recognition to turn your voice into calendar event details.</string>
 </dict>
 </plist>
