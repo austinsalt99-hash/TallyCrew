@@ -4,6 +4,7 @@
 # next.js
 /.next/
 /out/
+*.tsbuildinfo
 
 # serwist (generated service worker, built from src/app/sw.ts)
 /public/sw*
