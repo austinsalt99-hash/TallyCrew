@@ -170,6 +170,34 @@ function formatShortDate(dateStr: string): string {
   return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// monthsAgo=0 is the current calendar month, 1 is the month before, etc.
+function monthStart(monthsAgo: number): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+}
+function monthEnd(monthsAgo: number): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() - monthsAgo + 1, 0);
+}
+
+// A fetch for [from, to] is authoritative for that span — replace anything
+// previously loaded that falls inside it, keep everything outside it (a
+// different loaded month, or a one-off date-filter fetch), then re-sort
+// since merges can interleave data from different fetches out of order.
+function mergeSubmissionsForRange(prev: Submission[], from: string, to: string, incoming: Submission[]): Submission[] {
+  const outsideRange = prev.filter((s) => s.date < from || s.date > to);
+  const merged = [...outsideRange, ...incoming];
+  merged.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return a.submitted_at < b.submitted_at ? 1 : a.submitted_at > b.submitted_at ? -1 : 0;
+  });
+  return merged;
+}
+
 interface Worker {
   id: string;
   full_name: string;
@@ -179,6 +207,8 @@ interface Worker {
 export default function Dashboard() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [monthsLoaded, setMonthsLoaded] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filterDate, setFilterDate] = useState("");
   const [filterName, setFilterName] = useState("");
@@ -192,10 +222,42 @@ export default function Dashboard() {
   const [timeOffActionLoading, setTimeOffActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/submissions", { credentials: "include" })
+    const from = toISODate(monthStart(0));
+    const to = toISODate(monthEnd(0));
+    fetch(`/api/submissions?from=${from}&to=${to}`, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => { setSubmissions(Array.isArray(data) ? data : []); setLoading(false); });
   }, []);
+
+  // The date filter lets an admin jump to any date, not just what's been
+  // loaded via "Load more" — fetch it on demand if it's outside that range.
+  useEffect(() => {
+    if (!filterDate) return;
+    const lowerBound = toISODate(monthStart(monthsLoaded - 1));
+    const upperBound = toISODate(monthEnd(0));
+    if (filterDate >= lowerBound && filterDate <= upperBound) return;
+    fetch(`/api/submissions?from=${filterDate}&to=${filterDate}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setSubmissions((prev) => mergeSubmissionsForRange(prev, filterDate, filterDate, data));
+      })
+      .catch(() => {});
+  }, [filterDate, monthsLoaded]);
+
+  async function handleLoadMoreMonth() {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    const from = toISODate(monthStart(monthsLoaded));
+    const to = toISODate(monthEnd(monthsLoaded));
+    try {
+      const res = await fetch(`/api/submissions?from=${from}&to=${to}`, { credentials: "include" });
+      const data = await res.json();
+      if (Array.isArray(data)) setSubmissions((prev) => mergeSubmissionsForRange(prev, from, to, data));
+      setMonthsLoaded((n) => n + 1);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     fetch("/api/events", { credentials: "include" })
@@ -579,6 +641,16 @@ export default function Dashboard() {
           })}
         </div>
       )}
+
+      <div className="mt-4 text-center">
+        <button
+          onClick={handleLoadMoreMonth}
+          disabled={loadingMore}
+          className="text-sm font-semibold text-navy-600 hover:text-navy-700 disabled:opacity-50 underline"
+        >
+          {loadingMore ? "Loading…" : "Load more"}
+        </button>
+      </div>
 
       {/* Event detail modal */}
       {viewingEvent && (

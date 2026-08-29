@@ -24,3 +24,21 @@
     padding-top: 0;
   }
 }
+
+/* Marketing site body typeface (scoped; the app keeps the Tailwind default stack). */
+.site-shell {
+  font-family: var(--font-sans-site), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.site-shell ::selection {
+  background: #1C1B18;
+  color: #F2F1EC;
+}
+/* Smooth in-page anchor scrolling, marketing site only. */
+html:has(.site-shell) {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html:has(.site-shell) {
+    scroll-behavior: auto;
+  }
+}

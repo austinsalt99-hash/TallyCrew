@@ -139,6 +139,8 @@ CREATE POLICY profiles_admin_update ON profiles FOR UPDATE
   USING  (company_id = get_my_company_id() AND get_my_role() = 'admin')
   WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
 
+CREATE INDEX IF NOT EXISTS idx_profiles_company_id ON profiles (company_id);
+
 
 -- -------------------------------------------------------------
 -- 5. INVITE CODES
@@ -218,6 +220,15 @@ CREATE POLICY submissions_update ON submissions FOR UPDATE
 CREATE POLICY submissions_delete ON submissions FOR DELETE
   USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
 
+-- company_id+date covers the admin dashboard (scoped by company, filtered/
+-- sorted by date); user_id+date covers an employee's own submissions
+-- (GET /api/submissions/employee). GIN index backs the "linked job" lookup,
+-- which does a JSONB containment check (.filter(..., "cs", ...)) on
+-- billable_entries — jsonb_path_ops is the compact op class for @>.
+CREATE INDEX IF NOT EXISTS idx_submissions_company_id_date ON submissions (company_id, date);
+CREATE INDEX IF NOT EXISTS idx_submissions_user_id_date ON submissions (user_id, date);
+CREATE INDEX IF NOT EXISTS idx_submissions_billable_entries_gin ON submissions USING GIN (billable_entries jsonb_path_ops);
+
 
 -- -------------------------------------------------------------
 -- 7. JOB EVENTS
@@ -252,6 +263,8 @@ CREATE POLICY job_events_admin_update ON job_events FOR UPDATE
 
 CREATE POLICY job_events_admin_delete ON job_events FOR DELETE
   USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE INDEX IF NOT EXISTS idx_job_events_company_id_date ON job_events (company_id, date);
 
 
 -- -------------------------------------------------------------
@@ -890,3 +903,66 @@ CREATE POLICY job_checklist_items_update ON job_checklist_items FOR UPDATE
 
 CREATE POLICY job_checklist_items_admin_delete ON job_checklist_items FOR DELETE
   USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+
+-- -------------------------------------------------------------
+-- 21. ACCOUNT DELETION SUPPORT
+--     profiles.id already cascades from auth.users (see section 2), so
+--     admin.auth.admin.deleteUser() removes the profile automatically.
+--     But several tables reference profiles(id) — or, for submissions,
+--     auth.users(id) directly — with Postgres's default RESTRICT
+--     behavior, which would make that delete fail with a foreign-key
+--     error the moment the departing user has any submissions, created
+--     an announcement/reminder, or was involved with an invite code
+--     (i.e. almost every real user). We want the business record to
+--     survive (an invoice or timesheet shouldn't disappear because the
+--     worker who logged it left) with the personal link nulled out, not
+--     the row cascade-deleted — so these become ON DELETE SET NULL
+--     instead. log_entry_type_worker_rates.worker_id and
+--     availability_requests.employee_id are left as ON DELETE CASCADE
+--     on purpose: they're forward-looking config/requests, not
+--     historical financial records, so it's fine for them to disappear.
+-- -------------------------------------------------------------
+CREATE OR REPLACE FUNCTION _drop_fk_on_column(p_table TEXT, p_column TEXT) RETURNS void AS $$
+DECLARE
+  fk_name TEXT;
+BEGIN
+  SELECT conname INTO fk_name
+  FROM pg_constraint
+  WHERE conrelid = p_table::regclass
+    AND contype = 'f'
+    AND conkey = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = p_table::regclass AND attname = p_column)];
+  IF fk_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', p_table, fk_name);
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT _drop_fk_on_column('submissions', 'user_id');
+ALTER TABLE submissions
+  ADD CONSTRAINT submissions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+SELECT _drop_fk_on_column('invite_codes', 'created_by');
+ALTER TABLE invite_codes ALTER COLUMN created_by DROP NOT NULL;
+ALTER TABLE invite_codes
+  ADD CONSTRAINT invite_codes_created_by_fkey FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL;
+
+SELECT _drop_fk_on_column('invite_codes', 'used_by');
+ALTER TABLE invite_codes
+  ADD CONSTRAINT invite_codes_used_by_fkey FOREIGN KEY (used_by) REFERENCES profiles(id) ON DELETE SET NULL;
+
+SELECT _drop_fk_on_column('announcements', 'created_by');
+ALTER TABLE announcements ALTER COLUMN created_by DROP NOT NULL;
+ALTER TABLE announcements
+  ADD CONSTRAINT announcements_created_by_fkey FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL;
+
+SELECT _drop_fk_on_column('reminders', 'created_by');
+ALTER TABLE reminders ALTER COLUMN created_by DROP NOT NULL;
+ALTER TABLE reminders
+  ADD CONSTRAINT reminders_created_by_fkey FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL;
+
+SELECT _drop_fk_on_column('payroll_periods', 'paid_by');
+ALTER TABLE payroll_periods
+  ADD CONSTRAINT payroll_periods_paid_by_fkey FOREIGN KEY (paid_by) REFERENCES profiles(id) ON DELETE SET NULL;
+
+DROP FUNCTION _drop_fk_on_column(TEXT, TEXT);

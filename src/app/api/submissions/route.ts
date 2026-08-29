@@ -10,6 +10,8 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const eventId = searchParams.get("eventId");
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
 
   let query = supabase
     .from("submissions")
@@ -19,7 +21,12 @@ export async function GET(request: Request) {
     .order("submitted_at", { ascending: false });
 
   if (eventId) {
+    // Targeted lookup for a specific linked job — searches full history,
+    // not bounded by date like the default list view below.
     query = query.filter("billable_entries", "cs", JSON.stringify([{ linkedEventId: eventId }]));
+  } else {
+    if (from) query = query.gte("date", from);
+    if (to) query = query.lte("date", to);
   }
 
   const { data, error } = await query;

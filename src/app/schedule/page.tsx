@@ -129,6 +129,19 @@ function eventSpansDate(ev: JobEvent, dateStr: string): boolean {
   return dateStr >= ev.date && dateStr <= evEnd;
 }
 
+// A fetch for [from, to] is authoritative for that span — replace anything
+// previously loaded that falls inside it (so edits/deletions show up), but
+// keep events from other spans that were loaded separately (e.g. an earlier
+// wide prefetch, or a different week the employee already viewed), so
+// browsing between them still works offline.
+function mergeEventsForRange(prev: JobEvent[], from: string, to: string, incoming: JobEvent[]): JobEvent[] {
+  const outsideRange = prev.filter((e) => {
+    const evEnd = e.end_date || e.date;
+    return evEnd < from || e.date > to;
+  });
+  return [...outsideRange, ...incoming];
+}
+
 function layoutEvents(evs: JobEvent[]): { ev: JobEvent; col: number; totalCols: number }[] {
   const sorted = [...evs].sort((a, b) => toDecimalHour(a.start_time) - toDecimalHour(b.start_time));
   const cols = new Array(sorted.length).fill(0);
@@ -229,10 +242,29 @@ export default function SchedulePage() {
       .then(d => { if (d?.full_name) setMyName(d.full_name); });
   }, []);
 
+  // Wide prefetch (previous/current/next month, once on load) so offline
+  // browsing isn't limited to whatever single week/day happened to be on
+  // screen when connectivity dropped.
+  useEffect(() => {
+    const from = fmt(getMonthDays(-1)[0]);
+    const to = fmt(getMonthDays(1)[getMonthDays(1).length - 1]);
+    fetch(`/api/events?from=${from}&to=${to}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        setEvents((prev) => mergeEventsForRange(prev, from, to, data));
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`)
       .then((r) => r.json())
-      .then((data) => setEvents(Array.isArray(data) ? data : []));
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        setEvents((prev) => mergeEventsForRange(prev, fetchFrom, fetchTo, data));
+      })
+      .catch(() => {});
   }, [fetchFrom, fetchTo]);
 
   function renderTimeGrid(dates: Date[]) {

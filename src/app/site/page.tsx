@@ -1,209 +1,180 @@
-import Link from "next/link";
-import PhoneFrame from "./_components/mockups/PhoneFrame";
-import TimesheetMockup from "./_components/mockups/TimesheetMockup";
-import SiriMockup from "./_components/mockups/SiriMockup";
-import LogTypeBuilderMockup from "./_components/mockups/LogTypeBuilderMockup";
-import CalendarMockup from "./_components/mockups/CalendarMockup";
+import Image from "next/image";
 import { REGISTER_URL } from "./_lib/constants";
 
-const FEATURES = [
+const REASONS = [
   {
-    title: "Voice-powered logging",
-    body: "“Hey Siri, add to my TallyCrew calendar…” Crew leads log jobs hands-free, right from the truck.",
-    icon: "mic",
+    t: "It fits how your trade bills.",
+    b: "Build the job types you actually run. Trucking by the load, machine time by the hour, general labor. Each one carries its own fields and its own rate.",
   },
   {
-    title: "Custom job types",
-    body: "Trucking, machine operating, general labor — build the exact fields your trade needs, with per-hour or per-unit rates.",
-    icon: "layers",
+    t: "Your crew will actually log it.",
+    b: "Add a job by voice from the truck, or tap through a form that only asks what that job needs. It keeps working when there is no signal on site.",
   },
   {
-    title: "Visual scheduling",
-    body: "Drag and drop jobs onto a shared calendar so every crew member knows where to be.",
-    icon: "calendar",
-  },
-  {
-    title: "Instant invoicing",
-    body: "Logged hours turn into client invoices automatically — no re-entering numbers.",
-    icon: "invoice",
-  },
-  {
-    title: "Native mobile app",
-    body: "iOS and Android apps built for job sites — fast, offline-friendly, and always in your pocket.",
-    icon: "phone",
-  },
-  {
-    title: "Built for teams",
-    body: "Multi-company support, worker roles, and an admin dashboard that scopes everything correctly.",
-    icon: "team",
+    t: "Hours become invoices on their own.",
+    b: "Approved hours turn into client-ready line items. Nobody re-types a paper timesheet into separate software at the end of the month.",
   },
 ];
+
+const FEATURES = [
+  { t: "Voice logging", b: "“Hey Siri, add to my TallyCrew calendar.” Hands-free from the cab." },
+  { t: "Custom job types", b: "Fields and rates for every kind of work your company takes on." },
+  { t: "Shared schedule", b: "Drag jobs onto one calendar the whole crew can see." },
+  { t: "Instant invoicing", b: "Logged hours out, client invoice in. No re-keying numbers." },
+  { t: "Built for crews", b: "Roles, multiple companies, and an admin view that keeps it straight." },
+  { t: "Works offline", b: "Log on site with no bars. It syncs once you are back in range." },
+];
+
+const btnGhost =
+  "inline-flex items-center justify-center font-display font-semibold text-[.95rem] rounded-[3px] border border-ink text-ink px-6 py-[15px] transition-colors hover:bg-ink hover:text-paper active:translate-y-px";
+
+const h2Class =
+  "font-display font-semibold text-[clamp(1.6rem,3.4vw,2.5rem)] leading-[1.1] tracking-[-0.02em] max-w-[20ch]";
+
+const secWrap =
+  "max-w-6xl mx-auto px-5 py-[clamp(4rem,12vh,8rem)] grid grid-cols-1 md:grid-cols-[92px_1fr] gap-4 md:gap-[clamp(1rem,4vw,3.25rem)]";
+
+const secNum = "font-label font-semibold text-[clamp(1.4rem,2.6vw,1.9rem)] text-clay";
 
 export default function MarketingHome() {
   return (
     <>
       {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-navy-900 via-navy-700 to-navy-600">
-        <div className="max-w-6xl mx-auto px-5 pt-16 pb-20 md:pt-24 md:pb-28 grid md:grid-cols-2 gap-12 items-center">
-          <div>
-            <div className="inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1.5 mb-6">
-              <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-              <span className="text-xs font-semibold text-white/80">Built for trades &amp; field crews</span>
-            </div>
-            <h1 className="font-display text-4xl md:text-5xl font-bold text-white leading-tight tracking-tight">
-              Timesheets built for crews, not spreadsheets.
+      <section className="relative min-h-[86dvh] grid grid-rows-[1fr_auto_1fr_auto] justify-items-center text-center px-5 pt-10 pb-[clamp(2.5rem,8vh,5rem)]">
+        <div aria-hidden className="pointer-events-none absolute inset-[18px] rounded-[3px] border border-ink/15" />
+
+        <div className="row-start-2 grid justify-items-center gap-[clamp(1.25rem,3.5vw,2.375rem)] w-full">
+          <Image
+            src="/tally-wordmark-transparent.png"
+            alt="TallyCrew"
+            width={584}
+            height={136}
+            priority
+            className="w-[min(400px,74vw)] h-auto"
+          />
+          <div className="grid justify-items-center gap-3.5">
+            <h1 className="font-display font-semibold text-[clamp(1.3rem,2.7vw,2rem)] leading-[1.12] tracking-[-0.02em] text-ink/60 max-w-[24ch] text-balance">
+              The timesheet your crew will actually use.
             </h1>
-            <p className="text-navy-100 text-lg mt-5 max-w-md">
-              Voice-powered job logging, custom field types for any trade, and a schedule your whole crew can see — all in one app.
+            <p className="font-label text-xs uppercase tracking-[0.22em] text-ink/50">
+              simple and effective
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 mt-8">
-              <Link
-                href="/demo"
-                className="bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl px-6 py-3.5 text-center transition-colors"
-              >
-                Try the Live Demo
-              </Link>
-              <a
-                href={REGISTER_URL}
-                className="bg-white/10 hover:bg-white/15 text-white font-semibold rounded-xl px-6 py-3.5 text-center border border-white/20 transition-colors"
-              >
-                Start Free Trial
-              </a>
-            </div>
-            <p className="text-navy-300 text-xs mt-4">14-day free trial · No credit card required</p>
           </div>
+        </div>
 
-          <div className="hidden md:block">
-            <PhoneFrame>
-              <TimesheetMockup />
-            </PhoneFrame>
+        <div className="row-start-4 grid grid-cols-1 sm:grid-cols-2 gap-3.5 w-full max-w-[540px]">
+          <a href="#why" className={btnGhost}>Why choose TallyCrew</a>
+          <a href="#features" className={btnGhost}>View features</a>
+        </div>
+      </section>
+
+      {/* 01 - Why choose TallyCrew */}
+      <section id="why" className="scroll-mt-20 border-t border-hairline">
+        <div className={secWrap}>
+          <div className={secNum}>01</div>
+          <div>
+            <h2 className={h2Class}>Made for the trades, not the office.</h2>
+            <p className="mt-4 text-ink/60 max-w-[56ch] text-[1.05rem] leading-relaxed">
+              Most time trackers assume a desk and a nine to five. TallyCrew is built around job sites, trucks, and crews that bill by the load.
+            </p>
+            <ul className="mt-10 border-t border-hairline">
+              {REASONS.map((r) => (
+                <li
+                  key={r.t}
+                  className="py-6 border-b border-hairline grid grid-cols-1 sm:grid-cols-[minmax(0,22ch)_1fr] gap-1.5 sm:gap-[clamp(0.75rem,3vw,2.5rem)]"
+                >
+                  <h3 className="font-display font-semibold text-[1.05rem]">{r.t}</h3>
+                  <p className="text-ink/60 text-[.97rem] leading-relaxed">{r.b}</p>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </section>
 
-      {/* Feature grid */}
-      <section className="max-w-6xl mx-auto px-5 py-20 md:py-28">
-        <div className="max-w-xl mb-12">
-          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Everything in one app</p>
-          <h2 className="font-display text-3xl font-bold text-gray-900">
-            From the job site to the invoice, without switching apps.
-          </h2>
+      {/* 02 - Features */}
+      <section id="features" className="scroll-mt-20 border-t border-hairline">
+        <div className={secWrap}>
+          <div className={secNum}>02</div>
+          <div>
+            <h2 className={h2Class}>Everything the day runs on.</h2>
+            <ol className="mt-10 grid grid-cols-1 sm:grid-cols-2 sm:gap-x-[clamp(1.5rem,5vw,4rem)]">
+              {FEATURES.map((f, i) => (
+                <li key={f.t} className="grid grid-cols-[42px_1fr] gap-3.5 py-5 border-b border-hairline">
+                  <span className="font-label text-[.82rem] text-ink/55 pt-0.5">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <h3 className="font-display font-semibold text-base">{f.t}</h3>
+                    <p className="text-ink/60 text-[.92rem] mt-0.5 leading-relaxed">{f.b}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
+      </section>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {FEATURES.map((f) => (
-            <div key={f.title} className="bg-white rounded-2xl border border-gray-200 p-6 hover:border-gray-300 hover:shadow-sm transition-all">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center mb-4">
-                <FeatureIcon name={f.icon} />
+      {/* 03 - In depth: voice logging */}
+      <section id="depth" className="bg-sand border-y border-hairline">
+        <div className="max-w-6xl mx-auto px-5 py-[clamp(4rem,12vh,8rem)] grid grid-cols-1 md:grid-cols-2 gap-[clamp(1.75rem,6vw,4.75rem)] items-center">
+          <div>
+            <p className="font-label text-[.7rem] uppercase tracking-[0.16em] text-ink/55 mb-3.5">
+              Voice logging
+            </p>
+            <h2 className={h2Class}>Log a job without taking your gloves off.</h2>
+            <p className="mt-4 text-ink/60 max-w-[56ch] text-[1.05rem] leading-relaxed">
+              Say what happened the same way you would tell the foreman. TallyCrew turns it into a draft on the calendar, flagged until an admin signs off. No unlocking a phone, no typing, no job forgotten because nobody wrote it down.
+            </p>
+          </div>
+          <figure className="border border-hairline rounded-[3px] bg-paper p-[clamp(1.125rem,3vw,1.625rem)]">
+            <div className="font-display font-medium text-[1.02rem] leading-[1.45] pb-[18px] border-b border-hairline">
+              &ldquo;Add to my TallyCrew calendar: pour the footings at the Halvorsen lot tomorrow at seven.&rdquo;
+            </div>
+            <div className="mt-[18px]">
+              <div className="font-label text-[.82rem] text-ink/55 py-2.5">Parsed on the phone</div>
+              <div className="h-px bg-hairline" />
+              <div className="font-label text-[.82rem] text-ink/55 py-2.5">Lands as a draft on the calendar</div>
+              <div className="h-px bg-hairline" />
+              <div className="relative font-label text-[.82rem] text-ink py-2.5 pl-4">
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-clay rounded-[1px]" />
+                Admin reviews and approves
               </div>
-              <p className="font-semibold text-gray-900 mb-1.5">{f.title}</p>
-              <p className="text-sm text-gray-500 leading-relaxed">{f.body}</p>
             </div>
-          ))}
+          </figure>
         </div>
       </section>
 
-      {/* Deep dive: Siri */}
-      <section className="bg-gray-50 border-y border-gray-200">
-        <div className="max-w-6xl mx-auto px-5 py-20 md:py-24 grid md:grid-cols-2 gap-12 items-center">
-          <div>
-            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Siri Shortcuts</p>
-            <h3 className="font-display text-2xl md:text-3xl font-bold text-gray-900 mb-4">
-              Add a job without taking your gloves off.
-            </h3>
-            <p className="text-gray-500 leading-relaxed mb-6">
-              Say what needs to happen and TallyCrew turns it into a draft job on the calendar — parsed automatically, ready for
-              an admin to review. No typing, no app-switching, no missed jobs because someone forgot to write it down.
-            </p>
-            <Link href="/features#siri" className="text-blue-600 font-semibold text-sm hover:underline">
-              See how voice logging works &rarr;
-            </Link>
+      {/* Closing CTA */}
+      <section className="bg-navy-600 text-white text-center">
+        <div className="max-w-6xl mx-auto px-5 py-[clamp(4rem,12vh,8rem)]">
+          <Image
+            src="/tally-wordmark-white.png"
+            alt="TallyCrew"
+            width={200}
+            height={69}
+            className="w-[184px] h-auto mx-auto mb-6"
+          />
+          <h2 className="font-display font-semibold text-[clamp(1.6rem,3.4vw,2.5rem)] leading-[1.1] tracking-[-0.02em] text-white max-w-[18ch] mx-auto">
+            Get your crew off paper this week.
+          </h2>
+          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3.5 w-full max-w-[540px] mx-auto">
+            <a
+              href={REGISTER_URL}
+              className="inline-flex items-center justify-center font-display font-semibold text-[.95rem] rounded-[3px] border border-paper bg-paper text-navy-600 px-6 py-[15px] transition-colors hover:bg-white active:translate-y-px"
+            >
+              Start free trial
+            </a>
+            <a
+              href="/demo"
+              className="inline-flex items-center justify-center font-display font-semibold text-[.95rem] rounded-[3px] border border-white/55 text-white px-6 py-[15px] transition-colors hover:bg-white/10 active:translate-y-px"
+            >
+              Try the live demo
+            </a>
           </div>
-          <SiriMockup />
-        </div>
-      </section>
-
-      {/* Deep dive: Custom log types */}
-      <section className="max-w-6xl mx-auto px-5 py-20 md:py-24 grid md:grid-cols-2 gap-12 items-center">
-        <div className="order-2 md:order-1">
-          <LogTypeBuilderMockup />
-        </div>
-        <div className="order-1 md:order-2">
-          <p className="text-xs font-semibold text-orange-500 uppercase tracking-wide mb-2">Custom Log Types</p>
-          <h3 className="font-display text-2xl md:text-3xl font-bold text-gray-900 mb-4">
-            Not every job is billed by the hour.
-          </h3>
-          <p className="text-gray-500 leading-relaxed mb-6">
-            Build a field set for exactly how your trade works — truck numbers, load counts, machine hours, mileage —
-            each priced per hour or per unit. Every company&apos;s config is their own.
-          </p>
-          <Link href="/features#log-types" className="text-blue-600 font-semibold text-sm hover:underline">
-            See how custom types work &rarr;
-          </Link>
-        </div>
-      </section>
-
-      {/* Deep dive: Calendar */}
-      <section className="bg-gray-50 border-y border-gray-200">
-        <div className="max-w-6xl mx-auto px-5 py-20 md:py-24 grid md:grid-cols-2 gap-12 items-center">
-          <div>
-            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Scheduling</p>
-            <h3 className="font-display text-2xl md:text-3xl font-bold text-gray-900 mb-4">
-              One calendar the whole crew can see.
-            </h3>
-            <p className="text-gray-500 leading-relaxed mb-6">
-              Drag jobs onto the schedule, link them to logged hours, and keep drafts from Siri separate until an admin
-              verifies them. Everyone always knows where they&apos;re headed.
-            </p>
-            <Link href="/features#calendar" className="text-blue-600 font-semibold text-sm hover:underline">
-              See how scheduling works &rarr;
-            </Link>
-          </div>
-          <CalendarMockup />
-        </div>
-      </section>
-
-      {/* Final CTA */}
-      <section className="max-w-6xl mx-auto px-5 py-20 md:py-28 text-center">
-        <h2 className="font-display text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-          Get your crew off paper timesheets.
-        </h2>
-        <p className="text-gray-500 max-w-lg mx-auto mb-8">
-          Try TallyCrew free for 14 days, or take the interactive demo for a spin — no account needed.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <a
-            href={REGISTER_URL}
-            className="bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl px-6 py-3.5 transition-colors"
-          >
-            Start Free Trial
-          </a>
-          <Link
-            href="/demo"
-            className="bg-white border border-gray-200 hover:border-gray-300 text-gray-900 font-semibold rounded-xl px-6 py-3.5 transition-colors"
-          >
-            Try the Live Demo
-          </Link>
+          <p className="mt-[18px] text-[.82rem] text-white/60">14-day trial. No credit card to start.</p>
         </div>
       </section>
     </>
   );
-}
-
-function FeatureIcon({ name }: { name: string }) {
-  const common = { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "#2563eb", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-  switch (name) {
-    case "mic":
-      return <svg {...common}><path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M19 11a7 7 0 01-14 0M12 18v4"/></svg>;
-    case "layers":
-      return <svg {...common}><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5"/></svg>;
-    case "calendar":
-      return <svg {...common}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>;
-    case "invoice":
-      return <svg {...common}><path d="M6 2h9l5 5v15H6z"/><path d="M9 13h6M9 17h6M9 9h3"/></svg>;
-    case "phone":
-      return <svg {...common}><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>;
-    default:
-      return <svg {...common}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>;
-  }
 }

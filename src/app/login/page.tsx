@@ -25,6 +25,18 @@ function LoginForm() {
     setError("");
     setLoading(true);
 
+    const guardRes = await fetch("/api/auth/login-guard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    if (!guardRes.ok) {
+      const { error: guardError } = await guardRes.json().catch(() => ({ error: "Too many login attempts. Please try again later." }));
+      setError(guardError);
+      setLoading(false);
+      return;
+    }
+
     const supabase = createSupabaseBrowser();
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
 

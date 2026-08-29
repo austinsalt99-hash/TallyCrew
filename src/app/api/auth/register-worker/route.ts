@@ -21,6 +21,9 @@ export async function POST(req: NextRequest) {
   if (!code || !fullName || !email || !password) {
     return NextResponse.json({ error: "All fields are required." }, { status: 400 });
   }
+  if (password.length < 8) {
+    return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
+  }
   if (!agreedToTerms) {
     return NextResponse.json(
       { error: "You must agree to the Terms of Service and Privacy Policy." },

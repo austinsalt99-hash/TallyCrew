@@ -10,6 +10,8 @@ const config: Config = {
     extend: {
       fontFamily: {
         display: ["var(--font-display)", "sans-serif"],
+        // Marketing-site mono, scoped via --font-label (app's `font-mono` is untouched).
+        label: ["var(--font-label)", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       colors: {
         navy: {
@@ -24,6 +26,12 @@ const config: Config = {
           800: "#060b47",
           900: "#040832",
         },
+        // Marketing-site "field manual" palette (additive; not used by the app).
+        paper:    "#F2F1EC",
+        sand:     "#E9E7DF",
+        ink:      "#1C1B18",
+        hairline: "#D8D5CA",
+        clay:     "#C9501E",
       },
     },
   },
