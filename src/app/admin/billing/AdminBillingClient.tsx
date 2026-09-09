@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Capacitor } from "@capacitor/core";
 
 interface Props {
   companyName: string;
@@ -21,6 +22,7 @@ export default function AdminBillingClient({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const isNative = Capacitor.isNativePlatform();
 
   async function openPortal() {
     setLoading(true);
@@ -80,7 +82,12 @@ export default function AdminBillingClient({
 
         {/* Actions */}
         <div className="space-y-3">
-          {hasStripeCustomer ? (
+          {isNative ? (
+            <p className="text-sm text-center text-gray-500 bg-white rounded-xl border border-gray-200 px-4 py-3">
+              To subscribe or manage billing, please visit{" "}
+              <span className="font-semibold text-gray-700">tallycrew.ca</span> on the web.
+            </p>
+          ) : hasStripeCustomer ? (
             <>
               <button
                 onClick={openPortal}
