@@ -2,13 +2,23 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
+import { createSupabaseBrowser } from "@/lib/supabase-browser";
 
 export default function BillingPage() {
+  const router = useRouter();
   const [selected, setSelected] = useState<"monthly" | "annual">("annual");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const isNative = Capacitor.isNativePlatform();
+
+  async function signOut() {
+    const supabase = createSupabaseBrowser();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
 
   async function startCheckout() {
     setLoading(true);
@@ -47,6 +57,12 @@ export default function BillingPage() {
             To start your trial or subscribe, please visit{" "}
             <span className="font-semibold text-gray-700">tallycrew.ca</span> on the web.
           </p>
+          <button
+            onClick={signOut}
+            className="mt-6 text-sm text-gray-500 underline underline-offset-2"
+          >
+            Sign out
+          </button>
         </div>
       </div>
     );
