@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
+import { Capacitor } from "@capacitor/core";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function RegisterPage() {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const isNative = Capacitor.isNativePlatform();
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -73,6 +75,29 @@ export default function RegisterPage() {
     router.push("/billing");
     router.refresh();
   };
+
+  if (isNative) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md text-center">
+          <div className="flex justify-center mb-5">
+            <Image src="/tally-wordmark.png" alt="TallyCrew" width={160} height={44} priority />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Create your company account</h1>
+          <p className="text-sm text-gray-500 mt-3">
+            To create a new company account, please visit{" "}
+            <span className="font-semibold text-gray-700">tallycrew.ca</span> on the web.
+          </p>
+          <p className="text-sm text-gray-500 mt-4">
+            Already have an account?{" "}
+            <a href="/login" className="text-navy-600 hover:underline font-medium">
+              Sign in
+            </a>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-10">

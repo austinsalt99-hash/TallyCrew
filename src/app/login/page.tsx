@@ -4,6 +4,7 @@ import Image from "next/image";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
+import { Capacitor } from "@capacitor/core";
 
 // Only ever redirect to a same-origin relative path — never let a query
 // param send the user off-site.
@@ -19,6 +20,7 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const isNative = Capacitor.isNativePlatform();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,12 +125,14 @@ function LoginForm() {
             </form>
 
             <div className="mt-5 pt-5 border-t border-gray-100 space-y-2 text-center text-sm text-gray-500">
-              <p>
-                New company?{" "}
-                <a href="/register" className="text-green-600 hover:underline font-medium">
-                  Create an account
-                </a>
-              </p>
+              {!isNative && (
+                <p>
+                  New company?{" "}
+                  <a href="/register" className="text-green-600 hover:underline font-medium">
+                    Create an account
+                  </a>
+                </p>
+              )}
               <p>
                 Have an invite code?{" "}
                 <a href="/register/join" className="text-green-600 hover:underline font-medium">
