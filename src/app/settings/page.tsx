@@ -166,23 +166,19 @@ export default function SettingsPage() {
                     {profile.role.charAt(0).toUpperCase() + profile.role.slice(1)}
                   </span>
                 </div>
+                <div className="border-t border-gray-100 pt-3.5">
+                  <button
+                    type="button"
+                    onClick={openDeleteModal}
+                    className="text-sm text-red-600 hover:text-red-700"
+                  >
+                    Delete account
+                  </button>
+                </div>
               </div>
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
                 <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#F4A823" }}>Company</p>
                 <Field label="Company name" value={profile.companyName} />
-              </div>
-              <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-5 space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-red-600">Danger zone</p>
-                <p className="text-sm text-gray-500">
-                  Permanently delete your account and sign-in. This can&apos;t be undone.
-                </p>
-                <button
-                  type="button"
-                  onClick={openDeleteModal}
-                  className="text-sm font-semibold text-red-600 hover:text-red-700"
-                >
-                  Delete account
-                </button>
               </div>
             </div>
           )}

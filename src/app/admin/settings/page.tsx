@@ -349,23 +349,19 @@ export default function AdminSettingsPage() {
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Role</p>
                 <span className="inline-block text-xs font-semibold px-2.5 py-1 rounded-full bg-navy-100 text-navy-700">Admin</span>
               </div>
+              <div className="border-t border-gray-100 pt-3.5">
+                <button
+                  type="button"
+                  onClick={openDeleteModal}
+                  className="text-sm text-red-600 hover:text-red-700"
+                >
+                  Delete account
+                </button>
+              </div>
             </div>
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
               <p className="text-xs font-semibold text-navy-600 uppercase tracking-wide">Company</p>
               <Field label="Company name" value={profile.companyName} />
-            </div>
-            <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-5 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-red-600">Danger zone</p>
-              <p className="text-sm text-gray-500">
-                Permanently delete your account and sign-in. This can&apos;t be undone.
-              </p>
-              <button
-                type="button"
-                onClick={openDeleteModal}
-                className="text-sm font-semibold text-red-600 hover:text-red-700"
-              >
-                Delete account
-              </button>
             </div>
           </div>
         )}

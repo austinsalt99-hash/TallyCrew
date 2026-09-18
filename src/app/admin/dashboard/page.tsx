@@ -174,15 +174,19 @@ function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// monthsAgo=0 is the current calendar month, 1 is the month before, etc.
-function monthStart(monthsAgo: number): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+function daysAgo(n: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d;
 }
-function monthEnd(monthsAgo: number): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() - monthsAgo + 1, 0);
-}
+
+const RANGE_OPTIONS: { label: string; days: number | null }[] = [
+  { label: "Past month", days: 30 },
+  { label: "Past 3 months", days: 90 },
+  { label: "Past 6 months", days: 180 },
+  { label: "Past year", days: 365 },
+  { label: "All time", days: null },
+];
 
 // A fetch for [from, to] is authoritative for that span — replace anything
 // previously loaded that falls inside it, keep everything outside it (a
@@ -207,7 +211,7 @@ interface Worker {
 export default function Dashboard() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
-  const [monthsLoaded, setMonthsLoaded] = useState(1);
+  const [rangeDays, setRangeDays] = useState<number | null>(30);
   const [loadingMore, setLoadingMore] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filterDate, setFilterDate] = useState("");
@@ -221,20 +225,25 @@ export default function Dashboard() {
   const [pendingTimeOff, setPendingTimeOff] = useState<AvailabilityRequest[]>([]);
   const [timeOffActionLoading, setTimeOffActionLoading] = useState<string | null>(null);
 
+  async function loadRange(days: number | null) {
+    const to = toISODate(new Date());
+    const from = days === null ? "" : toISODate(daysAgo(days - 1));
+    const url = from ? `/api/submissions?from=${from}&to=${to}` : `/api/submissions?to=${to}`;
+    const res = await fetch(url, { credentials: "include" });
+    const data = await res.json();
+    if (Array.isArray(data)) setSubmissions((prev) => mergeSubmissionsForRange(prev, from, to, data));
+  }
+
   useEffect(() => {
-    const from = toISODate(monthStart(0));
-    const to = toISODate(monthEnd(0));
-    fetch(`/api/submissions?from=${from}&to=${to}`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => { setSubmissions(Array.isArray(data) ? data : []); setLoading(false); });
+    loadRange(30).finally(() => setLoading(false));
   }, []);
 
   // The date filter lets an admin jump to any date, not just what's been
-  // loaded via "Load more" — fetch it on demand if it's outside that range.
+  // loaded via the time range — fetch it on demand if it's outside that range.
   useEffect(() => {
     if (!filterDate) return;
-    const lowerBound = toISODate(monthStart(monthsLoaded - 1));
-    const upperBound = toISODate(monthEnd(0));
+    const lowerBound = rangeDays === null ? "" : toISODate(daysAgo(rangeDays - 1));
+    const upperBound = toISODate(new Date());
     if (filterDate >= lowerBound && filterDate <= upperBound) return;
     fetch(`/api/submissions?from=${filterDate}&to=${filterDate}`, { credentials: "include" })
       .then((r) => r.json())
@@ -242,18 +251,27 @@ export default function Dashboard() {
         if (Array.isArray(data)) setSubmissions((prev) => mergeSubmissionsForRange(prev, filterDate, filterDate, data));
       })
       .catch(() => {});
-  }, [filterDate, monthsLoaded]);
+  }, [filterDate, rangeDays]);
 
-  async function handleLoadMoreMonth() {
-    if (loadingMore) return;
+  async function handleRangeChange(days: number | null) {
+    setRangeDays(days);
     setLoadingMore(true);
-    const from = toISODate(monthStart(monthsLoaded));
-    const to = toISODate(monthEnd(monthsLoaded));
     try {
-      const res = await fetch(`/api/submissions?from=${from}&to=${to}`, { credentials: "include" });
-      const data = await res.json();
-      if (Array.isArray(data)) setSubmissions((prev) => mergeSubmissionsForRange(prev, from, to, data));
-      setMonthsLoaded((n) => n + 1);
+      await loadRange(days);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function handleLoadMore() {
+    if (loadingMore || rangeDays === null) return;
+    const steps = RANGE_OPTIONS.map((o) => o.days);
+    const idx = steps.indexOf(rangeDays);
+    const next = idx >= 0 && idx < steps.length - 1 ? steps[idx + 1] : null;
+    setLoadingMore(true);
+    try {
+      await loadRange(next);
+      setRangeDays(next);
     } finally {
       setLoadingMore(false);
     }
@@ -400,6 +418,16 @@ export default function Dashboard() {
           <option value="">All employees</option>
           {workers.map((w) => (
             <option key={w.id} value={w.full_name}>{w.full_name}</option>
+          ))}
+        </select>
+        <select
+          value={rangeDays === null ? "all" : String(rangeDays)}
+          onChange={(e) => handleRangeChange(e.target.value === "all" ? null : Number(e.target.value))}
+          disabled={loadingMore}
+          className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-navy-400 w-full min-w-0 md:w-40 disabled:opacity-50"
+        >
+          {RANGE_OPTIONS.map((opt) => (
+            <option key={opt.label} value={opt.days === null ? "all" : String(opt.days)}>{opt.label}</option>
           ))}
         </select>
         {(filterDate || filterName) && (
@@ -642,15 +670,17 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="mt-4 text-center">
-        <button
-          onClick={handleLoadMoreMonth}
-          disabled={loadingMore}
-          className="text-sm font-semibold text-navy-600 hover:text-navy-700 disabled:opacity-50 underline"
-        >
-          {loadingMore ? "Loading…" : "Load more"}
-        </button>
-      </div>
+      {rangeDays !== null && (
+        <div className="mt-4 text-center">
+          <button
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            className="text-sm font-semibold text-navy-600 hover:text-navy-700 disabled:opacity-50 underline"
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
+        </div>
+      )}
 
       {/* Event detail modal */}
       {viewingEvent && (
