@@ -52,10 +52,9 @@ export default function BillingPage() {
           <div className="flex justify-center mb-5">
             <Image src="/tally-wordmark.png" alt="TallyCrew" width={160} height={44} priority />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Start your free trial</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Subscription required</h1>
           <p className="text-sm text-gray-500 mt-3">
-            To start your trial or subscribe, please visit{" "}
-            <span className="font-semibold text-gray-700">tallycrew.ca</span> on the web.
+            Your company&apos;s subscription isn&apos;t active right now.
           </p>
           <button
             onClick={signOut}

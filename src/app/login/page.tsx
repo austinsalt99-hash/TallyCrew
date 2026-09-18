@@ -71,14 +71,6 @@ function LoginForm() {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        {isNative && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 text-center">
-            <p className="text-sm text-blue-800">
-              New here? Visit <span className="font-semibold">tallycrew.ca</span> on the web to
-              create a company account and start your free trial.
-            </p>
-          </div>
-        )}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
           {/* Branded header */}
           <div className="bg-white border-b border-gray-100 px-6 py-6 flex flex-col items-center gap-1">
@@ -132,22 +124,22 @@ function LoginForm() {
               </button>
             </form>
 
-            <div className="mt-5 pt-5 border-t border-gray-100 space-y-2 text-center text-sm text-gray-500">
-              {!isNative && (
+            {!isNative && (
+              <div className="mt-5 pt-5 border-t border-gray-100 space-y-2 text-center text-sm text-gray-500">
                 <p>
                   New company?{" "}
                   <a href="/register" className="text-green-600 hover:underline font-medium">
                     Create an account
                   </a>
                 </p>
-              )}
-              <p>
-                Have an invite code?{" "}
-                <a href="/register/join" className="text-green-600 hover:underline font-medium">
-                  Join your team
-                </a>
-              </p>
-            </div>
+                <p>
+                  Have an invite code?{" "}
+                  <a href="/register/join" className="text-green-600 hover:underline font-medium">
+                    Join your team
+                  </a>
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>

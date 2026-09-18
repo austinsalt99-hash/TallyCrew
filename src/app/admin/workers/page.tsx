@@ -74,8 +74,12 @@ export default function WorkersPage() {
     await loadCodes();
   }
 
+  function inviteLink(code: string): string {
+    return `${window.location.origin}/register/join?code=${code}`;
+  }
+
   async function copyCode(code: string) {
-    await navigator.clipboard.writeText(code);
+    await navigator.clipboard.writeText(inviteLink(code));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -153,13 +157,15 @@ export default function WorkersPage() {
             <div className="flex-1">
               <p className="text-xs text-green-600 font-semibold uppercase tracking-wide mb-0.5">New invite code</p>
               <p className="font-mono text-xl font-bold text-green-800 tracking-widest">{newCode}</p>
-              <p className="text-xs text-green-600 mt-1">Share this with your worker. It can only be used once.</p>
+              <p className="text-xs text-green-600 mt-1">
+                Send your worker the link below — it can only be used once.
+              </p>
             </div>
             <button
               onClick={() => copyCode(newCode)}
               className="shrink-0 text-sm font-semibold text-green-700 border border-green-300 hover:bg-green-100 rounded-lg px-3 py-2 transition-colors"
             >
-              {copied ? "Copied!" : "Copy"}
+              {copied ? "Copied!" : "Copy link"}
             </button>
           </div>
         )}
@@ -179,7 +185,7 @@ export default function WorkersPage() {
                       <div key={c.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
                         <span className="font-mono font-bold text-gray-800 tracking-widest">{c.code}</span>
                         <div className="flex items-center gap-2">
-                          <button onClick={() => copyCode(c.code)} className="text-xs text-navy-600 hover:underline">Copy</button>
+                          <button onClick={() => copyCode(c.code)} className="text-xs text-navy-600 hover:underline">Copy link</button>
                           <button onClick={() => revokeCode(c.id)} className="text-xs text-red-500 hover:underline">Revoke</button>
                         </div>
                       </div>
@@ -208,9 +214,9 @@ export default function WorkersPage() {
       <div className="bg-navy-50 border border-navy-200 rounded-xl px-5 py-4">
         <p className="text-sm text-navy-800 font-semibold mb-1">How invite codes work</p>
         <p className="text-sm text-navy-700">
-          Generate a code and share it with your worker. They go to{" "}
-          <span className="font-mono bg-navy-100 px-1 rounded">/register/join</span>, enter the code,
-          and create their account. Each code can only be used once.
+          Generate a code and text or email your worker the invite link. They tap it, it opens in
+          their phone&apos;s browser with the code already filled in, and they create their account
+          from there. Each code can only be used once.
         </p>
       </div>
     </div>

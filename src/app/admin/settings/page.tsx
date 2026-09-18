@@ -7,6 +7,7 @@ import "react-image-crop/dist/ReactCrop.css";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import SiriToken from "@/lib/siriPlugin";
 import type { PayPeriodType } from "@/lib/payPeriod";
+import DeleteAccountModal from "@/components/DeleteAccountModal";
 
 const PAY_PERIOD_OPTIONS: { value: PayPeriodType; label: string }[] = [
   { value: "weekly", label: "Weekly" },
@@ -146,6 +147,29 @@ export default function AdminSettingsPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
+
+  // Account deletion
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isSoleAdmin, setIsSoleAdmin] = useState(false);
+  const [checkingSoleAdmin, setCheckingSoleAdmin] = useState(false);
+
+  async function openDeleteModal() {
+    setShowDeleteModal(true);
+    setCheckingSoleAdmin(true);
+    try {
+      const res = await fetch("/api/admin/workers");
+      const data = await res.json();
+      // /api/admin/workers returns a bare array of the company's profiles.
+      const adminCount = (Array.isArray(data) ? (data as { role: string }[]) : []).filter(
+        (p) => p.role === "admin"
+      ).length;
+      setIsSoleAdmin(adminCount <= 1);
+    } catch {
+      setIsSoleAdmin(false);
+    } finally {
+      setCheckingSoleAdmin(false);
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -330,7 +354,27 @@ export default function AdminSettingsPage() {
               <p className="text-xs font-semibold text-navy-600 uppercase tracking-wide">Company</p>
               <Field label="Company name" value={profile.companyName} />
             </div>
+            <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-5 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-red-600">Danger zone</p>
+              <p className="text-sm text-gray-500">
+                Permanently delete your account and sign-in. This can&apos;t be undone.
+              </p>
+              <button
+                type="button"
+                onClick={openDeleteModal}
+                className="text-sm font-semibold text-red-600 hover:text-red-700"
+              >
+                Delete account
+              </button>
+            </div>
           </div>
+        )}
+        {showDeleteModal && (
+          <DeleteAccountModal
+            isSoleAdmin={isSoleAdmin}
+            checkingSoleAdmin={checkingSoleAdmin}
+            onClose={() => setShowDeleteModal(false)}
+          />
         )}
       </div>
     );

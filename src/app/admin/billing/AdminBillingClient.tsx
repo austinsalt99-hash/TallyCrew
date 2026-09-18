@@ -82,12 +82,7 @@ export default function AdminBillingClient({
 
         {/* Actions */}
         <div className="space-y-3">
-          {isNative ? (
-            <p className="text-sm text-center text-gray-500 bg-white rounded-xl border border-gray-200 px-4 py-3">
-              To subscribe or manage billing, please visit{" "}
-              <span className="font-semibold text-gray-700">tallycrew.ca</span> on the web.
-            </p>
-          ) : hasStripeCustomer ? (
+          {isNative ? null : hasStripeCustomer ? (
             <>
               <button
                 onClick={openPortal}

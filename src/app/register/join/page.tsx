@@ -1,13 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
+import { Capacitor } from "@capacitor/core";
 
-export default function JoinPage() {
+function JoinForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Invite links look like /register/join?code=A3F7K2QX so a worker can just
+  // tap a link instead of copying the code in by hand.
   const [form, setForm] = useState({
-    code: "",
+    code: (searchParams.get("code") ?? "").toUpperCase(),
     fullName: "",
     email: "",
     password: "",
@@ -16,6 +20,16 @@ export default function JoinPage() {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const isNative = Capacitor.isNativePlatform();
+
+  // No account-registration screens of any kind in the iOS/Android app —
+  // App Store Guideline 3.1.1. Bounce straight to sign-in instead of
+  // rendering this screen at all.
+  useEffect(() => {
+    if (isNative) {
+      router.replace("/login");
+    }
+  }, [isNative, router]);
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -72,6 +86,10 @@ export default function JoinPage() {
     router.push("/");
     router.refresh();
   };
+
+  if (isNative) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-10">
@@ -192,5 +210,13 @@ export default function JoinPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function JoinPage() {
+  return (
+    <Suspense>
+      <JoinForm />
+    </Suspense>
   );
 }
