@@ -3,7 +3,7 @@ import PricingCard from "./_PricingCard";
 
 export const metadata: Metadata = {
   title: "Pricing — TallyCrew",
-  description: "One plan, everything included. Try TallyCrew free for 14 days.",
+  description: "Pick the tier that fits your crew. Try TallyCrew free for 14 days.",
 };
 
 const FAQS = [
@@ -17,7 +17,7 @@ const FAQS = [
   },
   {
     q: "Is there a limit on crew members?",
-    a: "No — every plan includes unlimited workers and unlimited custom log types.",
+    a: "Each plan has a worker limit based on your tier — Solo (1 worker), Team (up to 5), or Business (up to 15). Custom log types are unlimited on every plan.",
   },
   {
     q: "Do I need a credit card to try it?",
@@ -31,7 +31,7 @@ export default function PricingPage() {
       <section className="bg-gray-50 border-b border-gray-200 py-16 md:py-20 text-center">
         <div className="max-w-2xl mx-auto px-5">
           <h1 className="font-display text-4xl md:text-5xl font-bold text-gray-900 mb-4">Simple, all-inclusive pricing</h1>
-          <p className="text-gray-500">One plan. Every feature. No per-seat pricing to worry about.</p>
+          <p className="text-gray-500">Every feature included. Pick the tier that fits your crew size.</p>
         </div>
       </section>
 

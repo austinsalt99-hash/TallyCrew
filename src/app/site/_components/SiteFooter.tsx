@@ -25,6 +25,7 @@ export default function SiteFooter() {
             <li><Link href="/features" className="text-ink/55 hover:text-ink transition-colors">Features</Link></li>
             <li><Link href="/pricing" className="text-ink/55 hover:text-ink transition-colors">Pricing</Link></li>
             <li><Link href="/demo" className="text-ink/55 hover:text-ink transition-colors">Live Demo</Link></li>
+            <li><Link href="/help" className="text-ink/55 hover:text-ink transition-colors">Help</Link></li>
           </ul>
         </div>
 

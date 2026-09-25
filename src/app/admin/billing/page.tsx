@@ -14,7 +14,7 @@ export default async function AdminBillingPage() {
 
   const { data: company } = await supabase
     .from("companies")
-    .select("name, stripe_customer_id, stripe_subscription_id, subscription_status, subscription_period_end")
+    .select("name, stripe_customer_id, stripe_subscription_id, subscription_status, subscription_period_end, plan_tier")
     .eq("id", profile.company_id)
     .single();
 
@@ -53,6 +53,7 @@ export default async function AdminBillingPage() {
       subscriptionStatus={company?.subscription_status ?? null}
       nextBillingDate={nextBillingDate}
       hasStripeCustomer={!!company?.stripe_customer_id}
+      planTier={company?.plan_tier ?? null}
     />
   );
 }

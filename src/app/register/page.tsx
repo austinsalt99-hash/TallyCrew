@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import { Capacitor } from "@capacitor/core";
+import { PLAN_TIER_ORDER, PLAN_TIERS, type PlanTierKey } from "@/lib/pricingTiers";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -15,6 +16,7 @@ export default function RegisterPage() {
     password: "",
     confirmPassword: "",
   });
+  const [tier, setTier] = useState<PlanTierKey>("team");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -81,8 +83,20 @@ export default function RegisterPage() {
       return;
     }
 
-    router.push("/billing");
-    router.refresh();
+    const checkoutRes = await fetch("/api/stripe/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier }),
+    });
+    const checkoutData = await checkoutRes.json();
+    if (!checkoutRes.ok || !checkoutData.url) {
+      setError(checkoutData.error ?? "Account created but checkout failed. Please go to the billing page.");
+      setLoading(false);
+      router.push("/billing");
+      return;
+    }
+
+    window.location.href = checkoutData.url;
   };
 
   if (isNative) {
@@ -170,6 +184,44 @@ export default function RegisterPage() {
                   />
                 </div>
               </div>
+            </div>
+
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Choose your plan</p>
+              <div className="space-y-2">
+                {PLAN_TIER_ORDER.map((key) => {
+                  const t = PLAN_TIERS[key];
+                  const selected = tier === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setTier(key)}
+                      className={`w-full text-left rounded-xl border-2 px-4 py-3 transition-colors flex items-center justify-between ${
+                        selected ? "border-navy-600 bg-navy-50" : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
+                    >
+                      <div>
+                        <p className="font-semibold text-gray-900 text-sm">{t.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {t.workerLimit === 1 ? "You + 1 worker" : `Up to ${t.workerLimit} workers`}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <p className="text-sm font-bold text-gray-900">${t.priceMonthly}/mo</p>
+                        <div
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                            selected ? "border-navy-600 bg-navy-600" : "border-gray-300"
+                          }`}
+                        >
+                          {selected && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-400 mt-2">14 days free, then billing starts. Cancel anytime.</p>
             </div>
 
             <label className="flex items-start gap-2.5 cursor-pointer">

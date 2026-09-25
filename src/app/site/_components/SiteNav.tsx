@@ -4,11 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { REGISTER_URL, LOGIN_URL } from "../_lib/constants";
+import StoreButton from "./StoreButton";
 
 const LINKS = [
   { href: "/features", label: "Features" },
   { href: "/pricing", label: "Pricing" },
   { href: "/demo", label: "Live Demo" },
+  { href: "/help", label: "Help" },
 ];
 
 export default function SiteNav() {
@@ -40,7 +42,12 @@ export default function SiteNav() {
           ))}
         </nav>
 
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-5">
+          <StoreButton
+            className="font-display text-sm font-semibold text-ink/55 hover:text-ink transition-colors"
+            iosLabel="Get the App"
+            androidLabel="Get the App"
+          />
           <a
             href={LOGIN_URL}
             className="font-display text-sm font-semibold text-ink/55 hover:text-ink transition-colors"
@@ -89,6 +96,11 @@ export default function SiteNav() {
             <a href={LOGIN_URL} className="font-display text-sm font-semibold text-ink/60 py-1.5">
               Log in
             </a>
+            <StoreButton
+              className="font-display text-sm font-semibold text-ink/60 py-1.5"
+              iosLabel="Get the App"
+              androidLabel="Get the App"
+            />
             <a
               href={REGISTER_URL}
               className="font-display text-sm font-semibold text-ink border border-ink rounded-[3px] px-4 py-3 text-center hover:bg-ink hover:text-paper transition-colors"

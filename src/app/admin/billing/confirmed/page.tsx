@@ -24,7 +24,7 @@ export default async function BillingConfirmedPage({
   if (sessionId && profile.company_id) {
     try {
       const session = await getStripe().checkout.sessions.retrieve(sessionId, {
-        expand: ["subscription"],
+        expand: ["subscription", "subscription.items.data.price"],
       });
       if (session.subscription && typeof session.subscription !== "string") {
         await syncSubscriptionFromStripe(getSupabaseAdmin(), session.subscription, profile.company_id);

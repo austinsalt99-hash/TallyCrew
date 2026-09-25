@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 import { getStripe } from "@/lib/stripe";
+import { isPlanTierKey, getTierPriceId } from "@/lib/pricingTiers";
 
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -13,13 +14,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { plan } = await req.json();
-  const priceId =
-    plan === "annual"
-      ? process.env.STRIPE_ANNUAL_PRICE_ID
-      : plan === "monthly"
-      ? process.env.STRIPE_MONTHLY_PRICE_ID
-      : null;
+  const { plan, tier } = await req.json();
+
+  let priceId: string | null | undefined;
+  let metadataExtra: Record<string, string> = {};
+
+  if (isPlanTierKey(tier)) {
+    priceId = getTierPriceId(tier);
+    metadataExtra = { plan_tier: tier };
+  } else {
+    // Legacy flat-price path — untouched, kept for grandfathered accounts.
+    priceId =
+      plan === "annual"
+        ? process.env.STRIPE_ANNUAL_PRICE_ID
+        : plan === "monthly"
+        ? process.env.STRIPE_MONTHLY_PRICE_ID
+        : null;
+  }
 
   if (!priceId) {
     return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
@@ -42,10 +53,10 @@ export async function POST(req: NextRequest) {
       line_items: [{ price: priceId, quantity: 1 }],
       subscription_data: {
         trial_period_days: 14,
-        metadata: { company_id: profile.company_id },
+        metadata: { company_id: profile.company_id, ...metadataExtra },
       },
       allow_promotion_codes: true,
-      metadata: { company_id: profile.company_id },
+      metadata: { company_id: profile.company_id, ...metadataExtra },
       success_url: `${origin}/admin/billing/confirmed?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/billing`,
     });

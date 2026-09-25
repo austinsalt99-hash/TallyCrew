@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { REGISTER_URL } from "./_lib/constants";
+import StoreButton from "./_components/StoreButton";
 
 const REASONS = [
   {
@@ -62,9 +63,12 @@ export default function MarketingHome() {
           </div>
         </div>
 
-        <div className="row-start-4 grid grid-cols-1 sm:grid-cols-2 gap-3.5 w-full max-w-[540px]">
-          <a href="#why" className={btnGhost}>Why choose TallyCrew</a>
-          <a href="#features" className={btnGhost}>View features</a>
+        <div className="row-start-4 grid justify-items-center gap-4 w-full max-w-[540px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 w-full">
+            <a href="#why" className={btnGhost}>Why choose TallyCrew</a>
+            <a href="#features" className={btnGhost}>View features</a>
+          </div>
+          <StoreButton className="inline-flex items-center justify-center font-display font-semibold text-base rounded-[3px] bg-ink text-paper px-9 py-4 w-full transition-colors hover:bg-ink/85 active:translate-y-px" />
         </div>
       </section>
 
@@ -149,22 +153,23 @@ export default function MarketingHome() {
       <section className="bg-navy-600 text-white text-center">
         <div className="max-w-6xl mx-auto px-5 py-[clamp(4rem,12vh,8rem)]">
           <Image
-            src="/tally-wordmark-white.png"
+            src="/tally-wordmark-transparent.png"
             alt="TallyCrew"
-            width={200}
-            height={69}
+            width={584}
+            height={136}
             className="w-[184px] h-auto mx-auto mb-6"
           />
           <h2 className="font-display font-semibold text-[clamp(1.6rem,3.4vw,2.5rem)] leading-[1.1] tracking-[-0.02em] text-white max-w-[18ch] mx-auto">
             Get your crew off paper this week.
           </h2>
-          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3.5 w-full max-w-[540px] mx-auto">
+          <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3.5 w-full max-w-[760px] mx-auto">
             <a
               href={REGISTER_URL}
               className="inline-flex items-center justify-center font-display font-semibold text-[.95rem] rounded-[3px] border border-paper bg-paper text-navy-600 px-6 py-[15px] transition-colors hover:bg-white active:translate-y-px"
             >
               Start free trial
             </a>
+            <StoreButton className="inline-flex items-center justify-center font-display font-semibold text-[.95rem] rounded-[3px] border border-white/55 text-white px-6 py-[15px] transition-colors hover:bg-white/10 active:translate-y-px" />
             <a
               href="/demo"
               className="inline-flex items-center justify-center font-display font-semibold text-[.95rem] rounded-[3px] border border-white/55 text-white px-6 py-[15px] transition-colors hover:bg-white/10 active:translate-y-px"

@@ -18,6 +18,38 @@ export async function POST(req: NextRequest) {
   if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  const { data: company } = await supabase
+    .from("companies")
+    .select("worker_limit")
+    .eq("id", profile.company_id)
+    .single();
+
+  if (company?.worker_limit != null) {
+    const { count: activeWorkers } = await supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", profile.company_id)
+      .eq("role", "worker")
+      .eq("is_removed", false);
+
+    const { count: pendingCodes } = await supabase
+      .from("invite_codes")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", profile.company_id)
+      .eq("is_active", true)
+      .is("used_at", null);
+
+    const occupied = (activeWorkers ?? 0) + (pendingCodes ?? 0);
+    if (occupied >= company.worker_limit) {
+      return NextResponse.json(
+        {
+          error: `You've reached your plan's worker limit (${company.worker_limit}). Remove a worker or upgrade your plan to add more.`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   // Generate a unique code (retry up to 5 times on collision)
   let code = "";
   for (let attempt = 0; attempt < 5; attempt++) {

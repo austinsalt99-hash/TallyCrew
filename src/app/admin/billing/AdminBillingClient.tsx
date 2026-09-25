@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
+import { PLAN_TIER_ORDER, PLAN_TIERS, isPlanTierKey, type PlanTierKey } from "@/lib/pricingTiers";
 
 interface Props {
   companyName: string;
@@ -10,6 +11,7 @@ interface Props {
   subscriptionStatus: string | null;
   nextBillingDate: string | null;
   hasStripeCustomer: boolean;
+  planTier: string | null;
 }
 
 export default function AdminBillingClient({
@@ -18,11 +20,36 @@ export default function AdminBillingClient({
   subscriptionStatus,
   nextBillingDate,
   hasStripeCustomer,
+  planTier,
 }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [changingTier, setChangingTier] = useState<PlanTierKey | null>(null);
   const isNative = Capacitor.isNativePlatform();
+
+  async function changePlan(tier: PlanTierKey) {
+    setChangingTier(tier);
+    setError("");
+    try {
+      const res = await fetch("/api/stripe/change-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Could not change plan. Please try again.");
+        setChangingTier(null);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError("Could not change plan. Please try again.");
+    } finally {
+      setChangingTier(null);
+    }
+  }
 
   async function openPortal() {
     setLoading(true);
@@ -79,6 +106,45 @@ export default function AdminBillingClient({
             </p>
           )}
         </div>
+
+        {/* Change plan (only for companies on the new tier system) */}
+        {isPlanTierKey(planTier) && !isNative && (
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Change plan</p>
+            <div className="space-y-2">
+              {PLAN_TIER_ORDER.map((key) => {
+                const t = PLAN_TIERS[key];
+                const isCurrent = key === planTier;
+                return (
+                  <div
+                    key={key}
+                    className={`flex items-center justify-between rounded-xl border-2 px-4 py-3 ${
+                      isCurrent ? "border-blue-600 bg-blue-50" : "border-gray-200"
+                    }`}
+                  >
+                    <div>
+                      <p className="font-semibold text-gray-900 text-sm">
+                        {t.name} {isCurrent && <span className="text-xs font-normal text-blue-600">(current)</span>}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {t.workerLimit === 1 ? "You + 1 worker" : `Up to ${t.workerLimit} workers`} · ${t.priceMonthly}/mo
+                      </p>
+                    </div>
+                    {!isCurrent && (
+                      <button
+                        onClick={() => changePlan(key)}
+                        disabled={changingTier !== null}
+                        className="text-xs font-semibold text-navy-600 hover:underline disabled:opacity-50"
+                      >
+                        {changingTier === key ? "Switching…" : "Switch"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="space-y-3">

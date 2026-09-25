@@ -966,3 +966,33 @@ ALTER TABLE payroll_periods
   ADD CONSTRAINT payroll_periods_paid_by_fkey FOREIGN KEY (paid_by) REFERENCES profiles(id) ON DELETE SET NULL;
 
 DROP FUNCTION _drop_fk_on_column(TEXT, TEXT);
+
+
+-- -------------------------------------------------------------
+-- 22. PLAN TIERS & SEAT LIMITS
+--     Three worker-count-based tiers for new signups going forward
+--     (see src/lib/pricingTiers.ts). plan_tier/worker_limit are NULL
+--     for companies that predate this system — still on the legacy
+--     STRIPE_MONTHLY_PRICE_ID/STRIPE_ANNUAL_PRICE_ID prices via a
+--     promo code — and NULL worker_limit means "no seat limit
+--     enforced," which keeps those accounts working exactly as
+--     before. Only a subscription whose Stripe price resolves to one
+--     of the new tiers ever gets these fields written
+--     (src/lib/subscriptionSync.ts).
+-- -------------------------------------------------------------
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan_tier TEXT
+  CHECK (plan_tier IN ('solo', 'team', 'business'));
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS worker_limit INTEGER;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_price_id TEXT;
+
+-- profiles: soft-removal for the admin "remove a worker" action. A removed
+-- worker keeps their row — and all their historical submissions, which are
+-- attributed independently via submissions.employee_name captured at submit
+-- time — but is banned at the Supabase Auth layer (see
+-- src/app/api/admin/workers/[id]/route.ts) and excluded from seat counts and
+-- active-worker views.
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_removed BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_profiles_company_role_removed
+  ON profiles (company_id, role, is_removed);

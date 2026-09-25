@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
       if (session.mode !== "subscription" || !session.subscription) break;
 
       const subscription = await getStripe().subscriptions.retrieve(
-        session.subscription as string
+        session.subscription as string,
+        { expand: ["items.data.price"] }
       );
       const companyId = session.metadata?.company_id;
       await syncSubscriptionFromStripe(admin, subscription, companyId);
@@ -61,7 +62,9 @@ export async function POST(req: NextRequest) {
           ? (invoice.parent.subscription_details?.subscription as string | undefined)
           : undefined;
       if (!subscriptionId) break;
-      const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+      const subscription = await getStripe().subscriptions.retrieve(subscriptionId, {
+        expand: ["items.data.price"],
+      });
       await syncSubscriptionFromStripe(admin, subscription);
       break;
     }
