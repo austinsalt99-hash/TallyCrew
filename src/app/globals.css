@@ -42,3 +42,23 @@ html:has(.site-shell) {
     scroll-behavior: auto;
   }
 }
+
+/* Subtle entrance for the hero wordmark on the marketing home page. */
+@keyframes logo-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.site-shell .animate-logo-in {
+  animation: logo-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-shell .animate-logo-in {
+    animation: none;
+  }
+}

@@ -11,6 +11,35 @@ function getAdminClient() {
   });
 }
 
+// Finds a previous signup under this email that never finished Stripe
+// checkout (company still "pending"), so it can be cleared out and the
+// email freed up for a fresh registration attempt. Returns null — leaving
+// the existing account untouched — for a real, already-active account.
+async function findStalePendingSignup(
+  admin: ReturnType<typeof getAdminClient>,
+  email: string
+): Promise<{ userId: string; companyId: string } | null> {
+  const { data } = await admin.auth.admin.listUsers({ perPage: 10000 });
+  const existing = data?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+  if (!existing) return null;
+
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("company_id")
+    .eq("id", existing.id)
+    .single();
+  if (!profile) return null;
+
+  const { data: company } = await admin
+    .from("companies")
+    .select("id, subscription_status")
+    .eq("id", profile.company_id)
+    .single();
+  if (!company || company.subscription_status !== "pending") return null;
+
+  return { userId: existing.id, companyId: company.id };
+}
+
 export async function POST(req: NextRequest) {
   if (!checkRateLimit(`register-company:${getClientIp(req)}`, 5, 60 * 60 * 1000)) {
     return NextResponse.json({ error: "Too many signup attempts. Please try again later." }, { status: 429 });
@@ -34,7 +63,7 @@ export async function POST(req: NextRequest) {
   const admin = getAdminClient();
 
   // 1. Create the company. New companies start "pending" and are gated out of
-  // /admin until they complete Stripe checkout (see middleware.ts).
+  // /admin until they complete Stripe checkout (see proxy.ts).
   const { data: company, error: companyError } = await admin
     .from("companies")
     .insert({ name: companyName, subscription_status: "pending" })
@@ -46,18 +75,47 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to create company." }, { status: 500 });
   }
 
-  // 2. Create the auth user (skip email confirmation for this internal app)
-  const { data: authData, error: authError } = await admin.auth.admin.createUser({
+  // 2. Create the auth user (skip email confirmation for this internal app).
+  // If the email is already taken by a PREVIOUS signup attempt that never
+  // finished Stripe checkout (subscription_status still "pending" — i.e.
+  // they backed out and are now retrying with the same email), clear out
+  // that stale, never-activated company + login and retry once. A real,
+  // already-paying account with that email is left untouched and returns
+  // the normal "already registered" error.
+  let { data: authData, error: authError } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
     user_metadata: { full_name: fullName },
   });
 
-  if (authError || !authData.user) {
+  const isDuplicateEmail =
+    authError?.code === "email_exists" ||
+    /already.*registered|already.*exists/i.test(authError?.message ?? "");
+
+  if (isDuplicateEmail) {
+    const stale = await findStalePendingSignup(admin, email);
+    if (stale) {
+      await admin.from("companies").delete().eq("id", stale.companyId);
+      await admin.auth.admin.deleteUser(stale.userId); // cascades the old profile row
+
+      ({ data: authData, error: authError } = await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: fullName },
+      }));
+    }
+  }
+
+  if (authError || !authData?.user) {
     await admin.from("companies").delete().eq("id", company.id);
     return NextResponse.json(
-      { error: authError?.message ?? "Failed to create account." },
+      {
+        error: isDuplicateEmail
+          ? "An account with this email already exists. Please log in instead."
+          : authError?.message ?? "Failed to create account.",
+      },
       { status: 400 }
     );
   }

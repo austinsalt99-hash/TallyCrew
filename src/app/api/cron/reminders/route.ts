@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { cleanupStalePendingSignups } from "@/lib/cleanupStalePendingSignups";
 
 const APP_ID = process.env.ONESIGNAL_APP_ID!;
 const REST_KEY = process.env.ONESIGNAL_REST_API_KEY!;
@@ -57,6 +58,16 @@ export async function GET(request: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+
+  // Piggybacked here rather than its own cron entry (Vercel Hobby caps a
+  // project at 2 cron jobs) — see cleanupStalePendingSignups for details.
+  // Isolated in its own try/catch so a failure here never blocks reminders.
+  let pendingSignupsCleaned = 0;
+  try {
+    pendingSignupsCleaned = await cleanupStalePendingSignups(supabase);
+  } catch (err) {
+    console.error("[reminders cron] cleanupStalePendingSignups error:", err);
+  }
 
   const now = new Date();
   // Look 25 hours ahead to catch all timezones regardless of when exactly the cron fires
@@ -135,5 +146,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, scheduled });
+  return NextResponse.json({ ok: true, scheduled, pendingSignupsCleaned });
 }

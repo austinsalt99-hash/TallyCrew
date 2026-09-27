@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { REGISTER_URL, LOGIN_URL } from "../_lib/constants";
@@ -15,11 +15,21 @@ const LINKS = [
 
 export default function SiteNav() {
   const [open, setOpen] = useState(false);
+  // "/" only serves the marketing home page when the Host is exactly
+  // tallycrew.ca — src/proxy.ts rewrites it there, but leaves every other
+  // host (localhost, preview deployments, www.tallycrew.ca) serving the
+  // product at "/" instead, so the logo link needs to know which one it's on.
+  // Default to "/" since that's correct on production (the common case, and
+  // zero-flash there); only override post-mount when it isn't.
+  const [homeHref, setHomeHref] = useState("/");
+  useEffect(() => {
+    if (window.location.hostname !== "tallycrew.ca") setHomeHref("/site");
+  }, []);
 
   return (
     <header className="sticky top-0 z-30 border-b border-hairline bg-paper/85 backdrop-blur">
       <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center" onClick={() => setOpen(false)}>
+        <Link href={homeHref} className="flex items-center" onClick={() => setOpen(false)}>
           <Image
             src="/tally-wordmark-transparent.png"
             alt="TallyCrew"

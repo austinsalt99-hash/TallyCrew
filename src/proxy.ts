@@ -17,12 +17,25 @@ export async function proxy(request: NextRequest) {
     /^\/google[0-9a-f]+\.html$/.test(rawPathname) ||
     /^\/BingSiteAuth\.xml$/.test(rawPathname);
 
-  // Only the bare apex serves the marketing site. www.tallycrew.ca must keep
-  // serving the product — older native app builds (pre app.tallycrew.ca) are
-  // hardcoded to that exact host and would otherwise load the marketing site
-  // instead of the app. app.tallycrew.ca (and everything else, incl. localhost)
-  // keeps serving the product as before.
-  if (isMarketingHost && !isMetadataRoute) {
+  // Only the bare apex serves the marketing site at "/". www.tallycrew.ca must
+  // keep serving the product there — older native app builds (pre
+  // app.tallycrew.ca) are hardcoded to that exact host and would otherwise
+  // load the marketing site instead of the app. app.tallycrew.ca (and
+  // everything else, incl. localhost) keeps serving the product at "/" as
+  // before.
+  //
+  // The marketing site's own sub-pages have no same-named counterpart in the
+  // product, though, so they're safe to rewrite on any host. This is what
+  // lets SiteNav/SiteFooter's relative links (e.g. href="/pricing") work when
+  // the marketing site is reached somewhere other than the bare apex — a
+  // local dev server, a preview deployment — instead of hitting the product's
+  // login-wall and bouncing to /login.
+  const MARKETING_SUBPATHS = ["/pricing", "/features", "/demo", "/help"];
+  const isMarketingSubpath = MARKETING_SUBPATHS.some(
+    (p) => rawPathname === p || rawPathname.startsWith(`${p}/`)
+  );
+
+  if ((isMarketingHost || isMarketingSubpath) && !isMetadataRoute) {
     const url = request.nextUrl.clone();
     const { pathname } = url;
     url.pathname = `/site${pathname === "/" ? "" : pathname}`;

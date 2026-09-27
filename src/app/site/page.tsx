@@ -51,7 +51,7 @@ export default function MarketingHome() {
             width={584}
             height={136}
             priority
-            className="w-[min(400px,74vw)] h-auto"
+            className="w-[min(400px,74vw)] h-auto animate-logo-in"
           />
           <div className="grid justify-items-center gap-3.5">
             <h1 className="font-display font-semibold text-[clamp(1.3rem,2.7vw,2rem)] leading-[1.12] tracking-[-0.02em] text-ink/60 max-w-[24ch] text-balance">
