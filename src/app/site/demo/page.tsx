@@ -17,14 +17,14 @@ export default function DemoPage() {
       </section>
 
       {/* Custom log types — full width, admin + crew side by side */}
-      <section className="w-full py-14 md:py-16">
+      <section id="log-types" className="w-full py-14 md:py-16 scroll-mt-20">
         <div className="max-w-7xl mx-auto px-5">
           <LogTypesSandbox />
         </div>
       </section>
 
       {/* Siri */}
-      <section className="bg-gray-50 border-t border-gray-200 py-14 md:py-16">
+      <section id="siri" className="bg-gray-50 border-t border-gray-200 py-14 md:py-16 scroll-mt-20">
         <div className="max-w-2xl mx-auto px-5">
           <SiriDemo />
         </div>
@@ -38,7 +38,7 @@ export default function DemoPage() {
             <a href={REGISTER_URL} className="bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl px-6 py-3.5 transition-colors">
               Start Free Trial
             </a>
-            <Link href="/features" className="bg-white border border-gray-200 hover:border-gray-300 text-gray-900 font-semibold rounded-xl px-6 py-3.5 transition-colors">
+            <Link href="/#features" className="bg-white border border-gray-200 hover:border-gray-300 text-gray-900 font-semibold rounded-xl px-6 py-3.5 transition-colors">
               See All Features
             </Link>
           </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
 import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
@@ -119,6 +120,7 @@ async function cropImageToBlob(img: HTMLImageElement, px: PixelCrop): Promise<Bl
 }
 
 export default function AdminSettingsPage() {
+  const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
@@ -633,9 +635,10 @@ export default function AdminSettingsPage() {
           <div>
             <p className="text-sm font-semibold text-gray-900 mb-0.5">Add jobs by voice, without opening the app</p>
             <p className="text-xs text-gray-400">
-              Once enabled, say “Hey Siri, add to my TallyCrew calendar…” and describe the job the same
-              way you would with the Voice button on the calendar page. It’s parsed the same way and
-              saved as an unverified draft for you to review in Calendar.
+              Once enabled, say “Hey Siri, add a job to TallyCrew,” then describe the job when Siri
+              asks. (Avoid the word “calendar” — iOS treats that as its own Calendar app request and
+              it never reaches TallyCrew.) It’s parsed the same way as the Voice button on the
+              calendar page and saved as an unverified draft for you to review in Calendar.
             </p>
           </div>
 
@@ -693,6 +696,10 @@ export default function AdminSettingsPage() {
           <NavRow iconBg="#0A1172"
             icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>}
             label="Profile" description="Name, email, role" onClick={() => setActiveSection("profile")} />
+          <div className="mx-4 border-t border-gray-100" />
+          <NavRow iconBg="#16a34a"
+            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>}
+            label="Billing" description="Plan, invoices, payment method" onClick={() => router.push("/admin/billing")} />
           <div className="mx-4 border-t border-gray-100" />
           <NavRow iconBg="#6b7280"
             icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>}

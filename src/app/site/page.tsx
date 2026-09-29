@@ -1,29 +1,20 @@
+import type { ReactNode } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { REGISTER_URL } from "./_lib/constants";
 import StoreButton from "./_components/StoreButton";
 
 const REASONS = [
   {
-    t: "It fits how your trade bills.",
-    b: "Build the job types you actually run. Trucking by the load, machine time by the hour, general labor. Each one carries its own fields and its own rate.",
+    t: "Are your employees tracking details in the notes?",
+    b: "Writing everything into a plain notes box gets messy fast, and details get forgotten. That means time and money quietly slipping through the cracks. TallyCrew's custom log inputs give your crew a quick, consistent way to log the details of their day instead.",
+    href: "/demo#log-types",
+    linkLabel: "See how it works",
   },
   {
-    t: "Your crew will actually log it.",
-    b: "Add a job by voice from the truck, or tap through a form that only asks what that job needs. It keeps working when there is no signal on site.",
+    t: "Still building invoices by hand?",
+    b: "TallyCrew links a rate to every log type up front, so the pricing is already built in. Simply select a job and create the invoice automatically.",
   },
-  {
-    t: "Hours become invoices on their own.",
-    b: "Approved hours turn into client-ready line items. Nobody re-types a paper timesheet into separate software at the end of the month.",
-  },
-];
-
-const FEATURES = [
-  { t: "Voice logging", b: "“Hey Siri, add to my TallyCrew calendar.” Hands-free from the cab." },
-  { t: "Custom job types", b: "Fields and rates for every kind of work your company takes on." },
-  { t: "Shared schedule", b: "Drag jobs onto one calendar the whole crew can see." },
-  { t: "Instant invoicing", b: "Logged hours out, client invoice in. No re-keying numbers." },
-  { t: "Built for crews", b: "Roles, multiple companies, and an admin view that keeps it straight." },
-  { t: "Works offline", b: "Log on site with no bars. It syncs once you are back in range." },
 ];
 
 const btnGhost =
@@ -32,10 +23,77 @@ const btnGhost =
 const h2Class =
   "font-display font-semibold text-[clamp(1.6rem,3.4vw,2.5rem)] leading-[1.1] tracking-[-0.02em] max-w-[20ch]";
 
-const secWrap =
-  "max-w-6xl mx-auto px-5 py-[clamp(4rem,12vh,8rem)] grid grid-cols-1 md:grid-cols-[92px_1fr] gap-4 md:gap-[clamp(1rem,4vw,3.25rem)]";
+// Shared row inside a feature's <figure> — a label/value line, optionally
+// marked as the "current" step with a clay dot (matches the original
+// hand-built voice-logging figure this pattern was lifted from).
+function FigureRow({ label, value, highlight = false }: { label: string; value?: string; highlight?: boolean }) {
+  return (
+    <div
+      className={`relative flex items-center justify-between gap-3 font-label text-[.82rem] py-2.5 ${
+        highlight ? "text-ink pl-4" : "text-ink/55"
+      }`}
+    >
+      {highlight && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-clay rounded-[1px]" />}
+      <span>{label}</span>
+      {value && <span className={highlight ? "" : "text-ink/40"}>{value}</span>}
+    </div>
+  );
+}
 
-const secNum = "font-label font-semibold text-[clamp(1.4rem,2.6vw,1.9rem)] text-clay";
+function Figure({ heading, rows }: { heading: string; rows: { label: string; value?: string; highlight?: boolean }[] }) {
+  return (
+    <figure className="border border-hairline rounded-[3px] bg-paper p-[clamp(1.125rem,3vw,1.625rem)]">
+      <div className="font-display font-medium text-[1.02rem] leading-[1.45] pb-[18px] border-b border-hairline">
+        {heading}
+      </div>
+      <div className="mt-[18px]">
+        {rows.map((row, i) => (
+          <div key={row.label}>
+            <FigureRow {...row} />
+            {i < rows.length - 1 && <div className="h-px bg-hairline" />}
+          </div>
+        ))}
+      </div>
+    </figure>
+  );
+}
+
+// One detailed feature section — moved here from the old standalone
+// /features page (which now just redirects to #features) and restyled to
+// match this page's look instead of that page's gray/blue card style.
+function FeatureDetail({
+  id,
+  eyebrow,
+  title,
+  body,
+  visual,
+  actions,
+  reverse = false,
+  bg = "paper",
+}: {
+  id?: string;
+  eyebrow: string;
+  title: string;
+  body: string;
+  visual: ReactNode;
+  actions?: ReactNode;
+  reverse?: boolean;
+  bg?: "paper" | "sand";
+}) {
+  return (
+    <section id={id} className={`scroll-mt-20 border-t border-hairline ${bg === "sand" ? "bg-sand" : "bg-paper"}`}>
+      <div className="max-w-6xl mx-auto px-5 py-[clamp(4rem,12vh,8rem)] grid grid-cols-1 md:grid-cols-2 gap-[clamp(1.75rem,6vw,4.75rem)] items-center">
+        <div className={reverse ? "md:order-2" : ""}>
+          <p className="font-label text-[.7rem] uppercase tracking-[0.16em] text-ink/55 mb-3.5">{eyebrow}</p>
+          <h2 className={h2Class}>{title}</h2>
+          <p className="mt-4 text-ink/60 max-w-[56ch] text-[1.05rem] leading-relaxed">{body}</p>
+          {actions}
+        </div>
+        <div className={reverse ? "md:order-1" : ""}>{visual}</div>
+      </div>
+    </section>
+  );
+}
 
 export default function MarketingHome() {
   return (
@@ -72,85 +130,151 @@ export default function MarketingHome() {
         </div>
       </section>
 
-      {/* 01 - Why choose TallyCrew */}
+      {/* Why choose TallyCrew — each reason numbered on its own, not the section */}
       <section id="why" className="scroll-mt-20 border-t border-hairline">
-        <div className={secWrap}>
-          <div className={secNum}>01</div>
-          <div>
-            <h2 className={h2Class}>Made for the trades, not the office.</h2>
-            <p className="mt-4 text-ink/60 max-w-[56ch] text-[1.05rem] leading-relaxed">
-              Most time trackers assume a desk and a nine to five. TallyCrew is built around job sites, trucks, and crews that bill by the load.
-            </p>
-            <ul className="mt-10 border-t border-hairline">
-              {REASONS.map((r) => (
-                <li
-                  key={r.t}
-                  className="py-6 border-b border-hairline grid grid-cols-1 sm:grid-cols-[minmax(0,22ch)_1fr] gap-1.5 sm:gap-[clamp(0.75rem,3vw,2.5rem)]"
-                >
-                  <h3 className="font-display font-semibold text-[1.05rem]">{r.t}</h3>
-                  <p className="text-ink/60 text-[.97rem] leading-relaxed">{r.b}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      {/* 02 - Features */}
-      <section id="features" className="scroll-mt-20 border-t border-hairline">
-        <div className={secWrap}>
-          <div className={secNum}>02</div>
-          <div>
-            <h2 className={h2Class}>Everything the day runs on.</h2>
-            <ol className="mt-10 grid grid-cols-1 sm:grid-cols-2 sm:gap-x-[clamp(1.5rem,5vw,4rem)]">
-              {FEATURES.map((f, i) => (
-                <li key={f.t} className="grid grid-cols-[42px_1fr] gap-3.5 py-5 border-b border-hairline">
-                  <span className="font-label text-[.82rem] text-ink/55 pt-0.5">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <div>
-                    <h3 className="font-display font-semibold text-base">{f.t}</h3>
-                    <p className="text-ink/60 text-[.92rem] mt-0.5 leading-relaxed">{f.b}</p>
+        <div className="max-w-6xl mx-auto px-5 py-[clamp(4rem,12vh,8rem)]">
+          <h2 className={h2Class}>Why choose TallyCrew?</h2>
+          <ul className="mt-10 border-t border-hairline">
+            {REASONS.map((r, i) => (
+              <li
+                key={r.t}
+                className="py-8 border-b border-hairline grid grid-cols-1 md:grid-cols-[64px_1fr] gap-3 md:gap-6"
+              >
+                <div className="font-label font-semibold text-[1.3rem] text-clay">
+                  {String(i + 1).padStart(2, "0")}
+                </div>
+                <div>
+                  <h3 className="font-display font-semibold text-[1.15rem]">{r.t}</h3>
+                  <div className="mt-3 bg-clay/[0.07] border border-clay/20 rounded-[3px] p-5 sm:p-6">
+                    <p className="text-ink/80 text-[1rem] leading-relaxed max-w-[60ch]">{r.b}</p>
+                    {r.href && (
+                      <Link
+                        href={r.href}
+                        className="mt-4 inline-flex items-center gap-1 font-display font-semibold text-[.92rem] text-clay hover:text-ink transition-colors"
+                      >
+                        {r.linkLabel} <span aria-hidden>→</span>
+                      </Link>
+                    )}
                   </div>
-                </li>
-              ))}
-            </ol>
-          </div>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
-      {/* 03 - In depth: voice logging */}
-      <section id="depth" className="bg-sand border-y border-hairline">
-        <div className="max-w-6xl mx-auto px-5 py-[clamp(4rem,12vh,8rem)] grid grid-cols-1 md:grid-cols-2 gap-[clamp(1.75rem,6vw,4.75rem)] items-center">
-          <div>
-            <p className="font-label text-[.7rem] uppercase tracking-[0.16em] text-ink/55 mb-3.5">
-              Voice logging
-            </p>
-            <h2 className={h2Class}>Log a job without taking your gloves off.</h2>
-            <p className="mt-4 text-ink/60 max-w-[56ch] text-[1.05rem] leading-relaxed">
-              Say what happened the same way you would tell the foreman. TallyCrew turns it into a draft on the calendar, flagged until an admin signs off. No unlocking a phone, no typing, no job forgotten because nobody wrote it down.
-            </p>
-          </div>
-          <figure className="border border-hairline rounded-[3px] bg-paper p-[clamp(1.125rem,3vw,1.625rem)]">
-            <div className="font-display font-medium text-[1.02rem] leading-[1.45] pb-[18px] border-b border-hairline">
-              &ldquo;Add to my TallyCrew calendar: pour the footings at the Halvorsen lot tomorrow at seven.&rdquo;
-            </div>
-            <div className="mt-[18px]">
-              <div className="font-label text-[.82rem] text-ink/55 py-2.5">Parsed on the phone</div>
-              <div className="h-px bg-hairline" />
-              <div className="font-label text-[.82rem] text-ink/55 py-2.5">Lands as a draft on the calendar</div>
-              <div className="h-px bg-hairline" />
-              <div className="relative font-label text-[.82rem] text-ink py-2.5 pl-4">
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-clay rounded-[1px]" />
-                Admin reviews and approves
-              </div>
-            </div>
-          </figure>
+      {/* Features — moved here from the old standalone /features page */}
+      <section id="features" className="scroll-mt-20 border-t border-hairline">
+        <div className="max-w-6xl mx-auto px-5 pt-14 md:pt-20 pb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
+          <h2 className={h2Class}>Features</h2>
+          <Link href="/demo" className={`${btnGhost} shrink-0`}>
+            Try the live demo
+          </Link>
         </div>
       </section>
+
+      <FeatureDetail
+        eyebrow="Voice input"
+        title="Add jobs to calendar without picking up your phone."
+        body="Say what needs to go on the calendar the same way you'd tell the foreman. TallyCrew turns it into a draft, flagged until an admin signs off. No unlocking your phone, no typing, no job forgotten because nobody wrote it down. It runs on Siri, so it works hands-free right out of the box, no extra app to open."
+        bg="sand"
+        actions={
+          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+            <Link
+              href="/demo#siri"
+              className="inline-flex items-center gap-1 font-display font-semibold text-[.92rem] text-clay hover:text-ink transition-colors"
+            >
+              Try this feature <span aria-hidden>→</span>
+            </Link>
+            <Link
+              href="/help#siri-calendar"
+              className="font-display text-[.85rem] text-ink/45 hover:text-ink/70 underline decoration-ink/20 underline-offset-4 transition-colors"
+            >
+              Having issues with Siri to calendar?
+            </Link>
+          </div>
+        }
+        visual={
+          <Figure
+            heading={'“Add to my TallyCrew calendar: pour the footings at the Halvorsen lot tomorrow at seven.”'}
+            rows={[
+              { label: "Parsed on the phone" },
+              { label: "Lands as a draft on the calendar" },
+              { label: "Admin reviews and approves", highlight: true },
+            ]}
+          />
+        }
+      />
+
+      <FeatureDetail
+        eyebrow="Crew board"
+        title="See everyone's schedule, and move jobs between them in a drag."
+        body="One shared calendar the whole crew can see, plus a crew board with one row per worker. Drag a job out of one row and drop it into another to reassign it in seconds. No phone calls, no guessing who's free."
+        reverse
+        visual={
+          <Figure
+            heading="Tuesday"
+            rows={[
+              { label: "Mike R.", value: "Halvorsen lot" },
+              { label: "Dana K.", value: "Miller Residence", highlight: true },
+              { label: "Josh T.", value: "Open" },
+            ]}
+          />
+        }
+      />
+
+      <FeatureDetail
+        eyebrow="Custom log types"
+        title="Configure fields for exactly how your trade bills."
+        body="Every company's work looks different. Build named log types, Trucking, Machine Operating, General Labor, anything, each with its own fields. Set whether a type is timed per job or per day, and price it per hour or per unit."
+        bg="sand"
+        visual={
+          <Figure
+            heading="Trucking"
+            rows={[
+              { label: "Truck #", value: "Dropdown" },
+              { label: "Load Type", value: "Dropdown" },
+              { label: "Loads Hauled", value: "$12.00 per unit", highlight: true },
+            ]}
+          />
+        }
+      />
+
+      <FeatureDetail
+        eyebrow="Auto invoices"
+        title="Logged hours become an invoice automatically."
+        body="Once hours are approved, generate a client invoice straight from what was actually logged, labor, trucking, equipment, whatever line items apply, instead of re-keying numbers into separate software."
+        reverse
+        visual={
+          <Figure
+            heading="Approved hours → Invoice #1042"
+            rows={[
+              { label: "Labor — 7.5h", value: "$375.00" },
+              { label: "Trucking — 3 loads", value: "$36.00" },
+              { label: "Total", value: "$411.00", highlight: true },
+            ]}
+          />
+        }
+      />
+
+      <FeatureDetail
+        eyebrow="For owners too"
+        title="Bosses can log their own hours right alongside the crew."
+        body="Running the company doesn't lock you out of the timesheet. Admins fill out their own day the same way the crew does, so hours you actually work on the tools still show up in reporting and invoicing instead of going untracked."
+        bg="sand"
+        visual={
+          <Figure
+            heading="Submitted by: You (Admin)"
+            rows={[
+              { label: "General labor", value: "6.0h" },
+              { label: "+ Trucking", value: "2 loads", highlight: true },
+            ]}
+          />
+        }
+      />
 
       {/* Closing CTA */}
-      <section className="bg-navy-600 text-white text-center">
+      <section className="bg-navy-600 text-white text-center border-t border-hairline">
         <div className="max-w-6xl mx-auto px-5 py-[clamp(4rem,12vh,8rem)]">
           <Image
             src="/tally-wordmark-transparent.png"

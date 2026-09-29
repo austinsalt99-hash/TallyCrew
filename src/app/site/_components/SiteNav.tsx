@@ -6,13 +6,6 @@ import Image from "next/image";
 import { REGISTER_URL, LOGIN_URL } from "../_lib/constants";
 import StoreButton from "./StoreButton";
 
-const LINKS = [
-  { href: "/features", label: "Features" },
-  { href: "/pricing", label: "Pricing" },
-  { href: "/demo", label: "Live Demo" },
-  { href: "/help", label: "Help" },
-];
-
 export default function SiteNav() {
   const [open, setOpen] = useState(false);
   // "/" only serves the marketing home page when the Host is exactly
@@ -25,6 +18,16 @@ export default function SiteNav() {
   useEffect(() => {
     if (window.location.hostname !== "tallycrew.ca") setHomeHref("/site");
   }, []);
+
+  // Features now lives on the homepage itself (below "Why choose TallyCrew?")
+  // rather than its own /features page, so this link needs the same
+  // host-aware home path as the logo, not a hardcoded "/#features".
+  const LINKS = [
+    { href: `${homeHref}#features`, label: "Features" },
+    { href: "/pricing", label: "Pricing" },
+    { href: "/demo", label: "Live Demo" },
+    { href: "/help", label: "Help" },
+  ];
 
   return (
     <header className="sticky top-0 z-30 border-b border-hairline bg-paper/85 backdrop-blur">

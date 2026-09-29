@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   description: "Answers to common questions about getting set up, billing, and how TallyCrew works day to day.",
 };
 
-const SECTIONS: { num: string; title: string; faqs: { q: string; a: string }[] }[] = [
+const SECTIONS: { num: string; title: string; faqs: { id?: string; q: string; a: string }[] }[] = [
   {
     num: "01",
     title: "Getting started",
@@ -56,7 +56,12 @@ const SECTIONS: { num: string; title: string; faqs: { q: string; a: string }[] }
       },
       {
         q: "Can I log a job by voice?",
-        a: "Yes — “Hey Siri, add to my TallyCrew calendar…” from the truck. It's parsed the same way as the Voice button on the Calendar page and lands as a draft for an admin to review.",
+        a: "Yes — admins can turn it on once from Settings → Siri Shortcuts in the iOS app (it has to be the app itself, not the browser). After that, say “Hey Siri, add a job to TallyCrew” from the truck, then describe the job when Siri asks. It's parsed the same way as the Voice button on the Calendar page and lands as a draft for an admin to review.",
+      },
+      {
+        id: "siri-calendar",
+        q: "Having issues with Siri and \"add to my calendar\"?",
+        a: "Don't say the word \"calendar\" — iOS reads that as a request for its own built-in Calendar app, so it never reaches TallyCrew. Instead, say “Hey Siri, add a job to TallyCrew,” wait for Siri to ask “What's the job?”, then say the job details. That two-step phrasing is what actually triggers TallyCrew's shortcut.",
       },
     ],
   },
@@ -97,7 +102,7 @@ export default function HelpPage() {
               <h2 className={h2Class}>{section.title}</h2>
               <dl className="mt-8 border-t border-hairline">
                 {section.faqs.map((faq) => (
-                  <div key={faq.q} className="py-6 border-b border-hairline">
+                  <div key={faq.q} id={faq.id} className={`py-6 border-b border-hairline ${faq.id ? "scroll-mt-24" : ""}`}>
                     <dt className="font-display font-semibold text-[1.05rem]">{faq.q}</dt>
                     <dd className="mt-2 text-ink/60 text-[.97rem] leading-relaxed max-w-[64ch]">{faq.a}</dd>
                   </div>

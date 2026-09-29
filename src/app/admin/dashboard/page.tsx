@@ -293,7 +293,7 @@ export default function Dashboard() {
   useEffect(() => {
     fetch("/api/admin/workers", { credentials: "include" })
       .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setWorkers(data.filter((w: Worker) => w.role === "worker")); })
+      .then((data) => { if (Array.isArray(data)) setWorkers(data); })
       .catch(() => {});
   }, []);
 

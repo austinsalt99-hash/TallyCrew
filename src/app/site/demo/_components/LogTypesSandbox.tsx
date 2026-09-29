@@ -322,7 +322,7 @@ export default function LogTypesSandbox() {
                         type="button"
                         onClick={() => removeDraftField(f.id)}
                         aria-label="Remove field"
-                        className="text-gray-300 hover:text-red-500 shrink-0"
+                        className="text-gray-300 hover:text-red-500 shrink-0 p-1.5 -m-1.5"
                       >
                         <svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="11" y2="11" /><line x1="11" y1="1" x2="1" y2="11" /></svg>
                       </button>
@@ -330,42 +330,46 @@ export default function LogTypesSandbox() {
                     {f.fieldType === "dropdown" && (
                       <div className="space-y-1.5 pt-0.5">
                         {f.options.map((opt) => (
-                          <div key={opt.id} className="flex items-center gap-1.5">
-                            <input
-                              type="text"
-                              value={opt.value}
-                              onChange={(e) => updateDraftOption(f.id, opt.id, { value: e.target.value })}
-                              placeholder="Option"
-                              className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-                            />
-                            <select
-                              value={opt.rateType}
-                              onChange={(e) => updateDraftOption(f.id, opt.id, { rateType: e.target.value as RateUnit | "" })}
-                              className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-[11px] bg-white focus:outline-none shrink-0"
-                            >
-                              <option value="">No rate</option>
-                              <option value="per_hour">Per hour</option>
-                              <option value="per_unit">Per unit</option>
-                            </select>
-                            {opt.rateType && (
+                          <div key={opt.id} className="rounded-lg bg-gray-50/80 p-1.5 space-y-1.5">
+                            <div className="flex items-center gap-1.5">
                               <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={opt.rateAmount}
-                                onChange={(e) => updateDraftOption(f.id, opt.id, { rateAmount: e.target.value })}
-                                placeholder="0.00"
-                                className="w-16 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shrink-0"
+                                type="text"
+                                value={opt.value}
+                                onChange={(e) => updateDraftOption(f.id, opt.id, { value: e.target.value })}
+                                placeholder="Option"
+                                className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
                               />
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => removeDraftOption(f.id, opt.id)}
-                              aria-label="Remove option"
-                              className="text-red-400 hover:text-red-600 shrink-0"
-                            >
-                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="11" y2="11" /><line x1="11" y1="1" x2="1" y2="11" /></svg>
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => removeDraftOption(f.id, opt.id)}
+                                aria-label="Remove option"
+                                className="text-red-400 hover:text-red-600 shrink-0 p-1"
+                              >
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="11" y2="11" /><line x1="11" y1="1" x2="1" y2="11" /></svg>
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value={opt.rateType}
+                                onChange={(e) => updateDraftOption(f.id, opt.id, { rateType: e.target.value as RateUnit | "" })}
+                                className="min-w-0 flex-1 border border-gray-200 rounded-lg px-1.5 py-1.5 text-[11px] bg-white focus:outline-none"
+                              >
+                                <option value="">No rate</option>
+                                <option value="per_hour">Per hour</option>
+                                <option value="per_unit">Per unit</option>
+                              </select>
+                              {opt.rateType && (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={opt.rateAmount}
+                                  onChange={(e) => updateDraftOption(f.id, opt.id, { rateAmount: e.target.value })}
+                                  placeholder="0.00"
+                                  className="w-20 shrink-0 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                                />
+                              )}
+                            </div>
                           </div>
                         ))}
                         <div className="flex items-center gap-1.5">
@@ -457,7 +461,7 @@ export default function LogTypesSandbox() {
                     type="button"
                     onClick={() => removeType(t.id)}
                     aria-label={`Delete ${t.name}`}
-                    className="text-gray-300 hover:text-red-500 shrink-0 pl-2"
+                    className="text-gray-300 hover:text-red-500 shrink-0 p-1.5 -m-1.5 ml-0.5"
                   >
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="11" y2="11" /><line x1="11" y1="1" x2="1" y2="11" /></svg>
                   </button>

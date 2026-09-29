@@ -231,24 +231,24 @@ export default function SiriDemo() {
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{error}</p>
           )}
 
-          <div className="flex gap-2 mb-1.5">
+          <div className="flex flex-wrap gap-2 mb-1.5">
             {voiceSupported && (
               <button
                 type="button"
                 onClick={handleVoiceToggle}
                 disabled={parsing}
-                className={`flex-1 font-semibold rounded-xl py-3 text-sm transition-colors disabled:opacity-50 ${
+                className={`flex-1 min-w-[140px] font-semibold rounded-xl py-3 text-sm transition-colors disabled:opacity-50 ${
                   listening ? "bg-red-500 hover:bg-red-600 text-white" : "bg-orange-500 hover:bg-orange-600 text-white"
                 }`}
               >
-                {listening ? "● Listening — tap to stop" : "🎤 Speak it"}
+                {listening ? "⏹ Stop listening" : "🎤 Speak it"}
               </button>
             )}
             <button
               type="button"
               onClick={() => handleParse(siriText)}
               disabled={parsing || listening}
-              className="flex-1 bg-white border border-gray-200 hover:border-gray-300 text-gray-900 font-semibold rounded-xl py-3 text-sm transition-colors disabled:opacity-50"
+              className="flex-1 min-w-[140px] bg-white border border-gray-200 hover:border-gray-300 text-gray-900 font-semibold rounded-xl py-3 text-sm transition-colors disabled:opacity-50"
             >
               {parsing ? "Parsing…" : "Parse typed text"}
             </button>
