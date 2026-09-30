@@ -5,11 +5,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
-import { PLAN_TIERS, isPlanTierKey } from "@/lib/pricingTiers";
+import { PLAN_TIER_ORDER, PLAN_TIERS, isPlanTierKey, type PlanTierKey } from "@/lib/pricingTiers";
 
 interface Props {
-  /** Set for companies already on the new tier system; null for legacy/grandfathered accounts. */
+  /** Set once a company has completed a checkout on the new tier system; null until then. */
   planTier: string | null;
+  subscriptionStatus: string | null;
 }
 
 const FEATURES = [
@@ -21,9 +22,10 @@ const FEATURES = [
   "Push notifications",
 ];
 
-export default function BillingClient({ planTier }: Props) {
+export default function BillingClient({ planTier, subscriptionStatus }: Props) {
   const router = useRouter();
   const [selected, setSelected] = useState<"monthly" | "annual">("annual");
+  const [selectedTier, setSelectedTier] = useState<PlanTierKey>("team");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const isNative = Capacitor.isNativePlatform();
@@ -83,6 +85,12 @@ export default function BillingClient({ planTier }: Props) {
   }
 
   const tier = isPlanTierKey(planTier) ? PLAN_TIERS[planTier] : null;
+  // A brand-new (or abandoned-and-retrying) signup on the new tier system:
+  // never completed a checkout, so plan_tier isn't set yet — but "pending"
+  // means they're definitely not a pre-tier-system legacy account (see
+  // cleanupStalePendingSignups.ts for why "pending" is a reliable, one-way
+  // signal). Show them the real 3 tiers here, not the old flat-rate picker.
+  const isNewSignup = !tier && subscriptionStatus === "pending";
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
@@ -92,10 +100,12 @@ export default function BillingClient({ planTier }: Props) {
             <Image src="/tally-wordmark.png" alt="TallyCrew" width={160} height={44} priority />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">
-            {tier ? "Resume your subscription" : "Start your free trial"}
+            {tier ? "Resume your subscription" : isNewSignup ? "Choose your plan" : "Start your free trial"}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {tier ? "Your subscription lapsed. Resume it to regain access." : "14 days free, then choose a plan. Cancel anytime."}
+            {tier
+              ? "Your subscription lapsed. Resume it to regain access."
+              : "14 days free, then billing starts. Cancel anytime."}
           </p>
         </div>
 
@@ -109,6 +119,41 @@ export default function BillingClient({ planTier }: Props) {
             <p className="text-xs text-gray-500 mt-0.5">
               {tier.workerLimit === 1 ? "You + 1 worker" : `Up to ${tier.workerLimit} workers`}
             </p>
+          </div>
+        ) : isNewSignup ? (
+          <div className="space-y-3 mb-6">
+            {PLAN_TIER_ORDER.map((key) => {
+              const t = PLAN_TIERS[key];
+              const isSelected = selectedTier === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setSelectedTier(key)}
+                  className={`w-full text-left rounded-2xl border-2 p-4 transition-colors ${
+                    isSelected ? "border-blue-600 bg-blue-50" : "border-gray-200 bg-white hover:border-gray-300"
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="font-semibold text-gray-900">{t.name}</span>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {t.workerLimit === 1 ? "You + 1 worker" : `Up to ${t.workerLimit} workers`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <p className="text-lg font-bold text-gray-900">${t.priceMonthly}/mo</p>
+                      <div
+                        className={`mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                          isSelected ? "border-blue-600 bg-blue-600" : "border-gray-300"
+                        }`}
+                      >
+                        {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         ) : (
           <div className="space-y-3 mb-6">
@@ -176,7 +221,11 @@ export default function BillingClient({ planTier }: Props) {
         )}
 
         <button
-          onClick={() => (tier ? startCheckout({ tier: tier.key }) : startCheckout({ plan: selected }))}
+          onClick={() => {
+            if (tier) startCheckout({ tier: tier.key });
+            else if (isNewSignup) startCheckout({ tier: selectedTier });
+            else startCheckout({ plan: selected });
+          }}
           disabled={loading}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl py-3.5 transition-colors disabled:opacity-50 text-base"
         >

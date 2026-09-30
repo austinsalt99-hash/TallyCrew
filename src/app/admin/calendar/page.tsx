@@ -715,7 +715,7 @@ export default function AdminCalendar() {
   }
   rangeRef.current = { fetchFrom, fetchTo };
 
-  const workerNames = workers.filter((w) => w.role === "worker").map((w) => w.full_name);
+  const workerNames = workers.map((w) => w.full_name);
   const isPanelDirty = !!selectedEvent && JSON.stringify(panelForm) !== JSON.stringify(eventToForm(selectedEvent));
   // Add-job form fields stay hidden while picking from the "ongoing job" or
   // "quote" list — only reveal them once something's actually been chosen

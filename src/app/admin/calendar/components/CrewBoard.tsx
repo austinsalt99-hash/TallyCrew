@@ -551,7 +551,9 @@ export default function CrewBoard({ onAddJob, onSelectEvent }: CrewBoardProps) {
     setUndoStack((prev) => [...prev, events].slice(-UNDO_LIMIT));
   }
 
-  const crew = workers.filter((w) => w.role === "worker");
+  // Everyone in the company is assignable — the current admin already gets
+  // their own dedicated "me" row above, so exclude them here to avoid a duplicate.
+  const crew = workers.filter((w) => w.id !== me?.id);
 
   function getEventsForWorkerDay(workerName: string, dateStr: string): JobEvent[] {
     return events.filter((ev) => {

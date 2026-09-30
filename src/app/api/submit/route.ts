@@ -90,9 +90,26 @@ export async function POST(request: Request) {
       );
     }
 
+    // Checked ahead of the upsert purely to label the admin email correctly —
+    // if a submission for this date already exists, this call is actually an
+    // edit (client-side state was just stale about it), not a new day's hours.
+    const { data: existing } = await supabase
+      .from("submissions")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("date", date)
+      .maybeSingle();
+    const isUpdate = !!existing;
+
+    // upsert on (user_id, date) — client-side isEditing/submittedId state is
+    // what normally decides POST vs PUT, but if that state is ever stale
+    // (e.g. a fresh page load losing track of an existing submission), a
+    // plain insert would silently create a duplicate row for the same day.
+    // The unique constraint + upsert makes that impossible at the DB level:
+    // a "new" submission for a date that already has one just updates it.
     const { data: inserted, error: dbError } = await supabase
       .from("submissions")
-      .insert({
+      .upsert({
         company_id: profile.company_id,
         user_id: user.id,
         employee_name: employeeName,
@@ -106,7 +123,7 @@ export async function POST(request: Request) {
         total_billable_hours: totalBillableHours,
         total_non_billable_hours: totalNonBillableHours,
         break_minutes: breakMinutes ?? 0,
-      })
+      }, { onConflict: "user_id,date" })
       .select("id")
       .single();
 
@@ -127,7 +144,7 @@ export async function POST(request: Request) {
         await resend.emails.send({
           from: "TallyCrew Hours <onboarding@resend.dev>",
           to: process.env.RECIPIENT_EMAIL,
-          subject: `Hours submitted: ${employeeName} – ${date}`,
+          subject: `${isUpdate ? "Hours updated" : "Hours submitted"}: ${employeeName} – ${date}`,
           html,
         });
       } catch (emailErr) {

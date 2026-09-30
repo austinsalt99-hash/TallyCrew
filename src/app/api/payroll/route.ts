@@ -81,6 +81,7 @@ export async function GET(req: NextRequest) {
     .from("submissions")
     .select("id, user_id, employee_name, date, billable_entries, non_billable_entries")
     .eq("company_id", profile.company_id)
+    .is("deleted_at", null)
     .gte("date", start)
     .lte("date", end);
 

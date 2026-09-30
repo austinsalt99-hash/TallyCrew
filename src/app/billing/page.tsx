@@ -12,9 +12,14 @@ export default async function BillingPage() {
 
   const { data: company } = await supabase
     .from("companies")
-    .select("plan_tier")
+    .select("plan_tier, subscription_status")
     .eq("id", profile.company_id)
     .single();
 
-  return <BillingClient planTier={company?.plan_tier ?? null} />;
+  return (
+    <BillingClient
+      planTier={company?.plan_tier ?? null}
+      subscriptionStatus={company?.subscription_status ?? null}
+    />
+  );
 }

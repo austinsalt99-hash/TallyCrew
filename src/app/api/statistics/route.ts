@@ -107,6 +107,7 @@ export async function GET(req: NextRequest) {
     .from("submissions")
     .select("user_id, employee_name, date, billable_entries, non_billable_entries")
     .eq("company_id", profile.company_id)
+    .is("deleted_at", null)
     .lte("date", end);
   if (start) query = query.gte("date", start);
   const { data: submissions, error } = await query;

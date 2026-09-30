@@ -190,7 +190,9 @@ CREATE TABLE submissions (
   notes                    TEXT,
   total_billable_hours     DECIMAL,
   total_non_billable_hours DECIMAL,
-  break_minutes            INTEGER     DEFAULT 0
+  break_minutes            INTEGER     DEFAULT 0,
+  deleted_at               TIMESTAMPTZ, -- soft delete: admin "delete" hides it from their own views/totals; the employee's own history ignores this and always shows their full record
+  CONSTRAINT submissions_user_date_unique UNIQUE (user_id, date)
 );
 
 ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;

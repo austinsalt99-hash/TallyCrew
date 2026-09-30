@@ -337,7 +337,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                   </select>
                 ) : field.field_type === "number" ? (
                   <input
-                    type="number" min="0" step="1" placeholder="0"
+                    type="number" min="0" step="0.01" placeholder="0"
                     value={entry.customFields?.[field.field_key] ?? ""}
                     onChange={(e) => updateCustomField(field.field_key, e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
@@ -379,7 +379,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
                   </select>
                 ) : field.field_type === "number" ? (
                   <input
-                    type="number" min="0" step="1" placeholder="0"
+                    type="number" min="0" step="0.01" placeholder="0"
                     value={activeSub.customFields?.[field.field_key] ?? ""}
                     onChange={(e) => updateSubCustomField(activeSub.id, field.field_key, e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"

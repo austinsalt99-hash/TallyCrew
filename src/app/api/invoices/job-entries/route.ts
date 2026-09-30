@@ -134,6 +134,7 @@ export async function GET(req: NextRequest) {
     .from("submissions")
     .select("id, user_id, employee_name, date, billable_entries")
     .eq("company_id", profile.company_id)
+    .is("deleted_at", null)
     .filter("billable_entries", "cs", JSON.stringify([{ linkedEventId: eventId }]));
 
   const { data: rawTypes } = await supabase

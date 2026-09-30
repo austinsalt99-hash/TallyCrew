@@ -224,6 +224,37 @@ export default function Dashboard() {
   const [linkWeekOffset, setLinkWeekOffset] = useState(0);
   const [pendingTimeOff, setPendingTimeOff] = useState<AvailabilityRequest[]>([]);
   const [timeOffActionLoading, setTimeOffActionLoading] = useState<string | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deletedSubmissions, setDeletedSubmissions] = useState<Submission[]>([]);
+  const [loadingDeleted, setLoadingDeleted] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  async function loadDeleted() {
+    setLoadingDeleted(true);
+    try {
+      const res = await fetch("/api/submissions?deleted=1", { credentials: "include" });
+      const data = await res.json();
+      if (Array.isArray(data)) setDeletedSubmissions(data);
+    } finally {
+      setLoadingDeleted(false);
+    }
+  }
+
+  async function handleRestore(id: string) {
+    setRestoringId(id);
+    try {
+      await fetch("/api/submissions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id, restore: true }),
+      });
+      setDeletedSubmissions((prev) => prev.filter((x) => x.id !== id));
+      await loadRange(rangeDays);
+    } finally {
+      setRestoringId(null);
+    }
+  }
 
   async function loadRange(days: number | null) {
     const to = toISODate(new Date());
@@ -231,7 +262,11 @@ export default function Dashboard() {
     const url = from ? `/api/submissions?from=${from}&to=${to}` : `/api/submissions?to=${to}`;
     const res = await fetch(url, { credentials: "include" });
     const data = await res.json();
-    if (Array.isArray(data)) setSubmissions((prev) => mergeSubmissionsForRange(prev, from, to, data));
+    // The API already returns the complete, correctly-sorted set for [from, to] —
+    // this is the authoritative list for the selected range, not a delta to merge
+    // with whatever was previously loaded (merging would let stale entries from a
+    // wider range survive narrowing to a smaller one).
+    if (Array.isArray(data)) setSubmissions(data);
   }
 
   useEffect(() => {
@@ -353,8 +388,51 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Hour Logs</h1>
+      <div className="flex items-center justify-between gap-4 mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Hour Logs</h1>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !showDeleted;
+            setShowDeleted(next);
+            if (next) loadDeleted();
+          }}
+          className="text-sm font-semibold text-navy-600 border border-navy-300 hover:bg-navy-50 rounded-lg px-3 py-2.5 md:py-1.5 transition-colors shrink-0"
+        >
+          {showDeleted ? "← Back to Logs" : "Deleted Logs"}
+        </button>
+      </div>
 
+      {showDeleted ? (
+        <div className="space-y-3">
+          {loadingDeleted ? (
+            <p className="text-gray-400">Loading…</p>
+          ) : deletedSubmissions.length === 0 ? (
+            <p className="text-gray-400">No deleted logs.</p>
+          ) : (
+            deletedSubmissions.map((s) => (
+              <div key={s.id} className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-semibold text-gray-900 truncate">{s.employee_name}</div>
+                  <div className="text-sm text-gray-500 mt-0.5">{formatShortDate(s.date)}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {s.total_billable_hours}h billable
+                    {s.total_non_billable_hours > 0 ? ` · ${s.total_non_billable_hours}h non-bill.` : ""}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleRestore(s.id)}
+                  disabled={restoringId === s.id}
+                  className="shrink-0 text-sm font-semibold text-navy-600 border border-navy-300 hover:bg-navy-50 disabled:opacity-50 rounded-lg px-3 py-1.5 transition-colors"
+                >
+                  {restoringId === s.id ? "Restoring…" : "Restore"}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+      <>
       {pendingTimeOff.length > 0 && (
         <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
           <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
@@ -631,7 +709,7 @@ export default function Dashboard() {
                       <div className="pt-2 border-t border-gray-100">
                         {confirmDelete === s.id ? (
                           <div className="flex items-center gap-3 text-sm">
-                            <span className="text-gray-600">Delete this log? This can&apos;t be undone.</span>
+                            <span className="text-gray-600">Delete this log? You can restore it later from Deleted Logs.</span>
                             <button
                               onClick={async () => {
                                 await fetch("/api/submissions", {
@@ -680,6 +758,8 @@ export default function Dashboard() {
             {loadingMore ? "Loading…" : "Load more"}
           </button>
         </div>
+      )}
+      </>
       )}
 
       {/* Event detail modal */}

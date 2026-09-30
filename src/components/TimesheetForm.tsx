@@ -71,8 +71,8 @@ function calcTotalNonBillable(entries: NonBillableEntryData[]): number {
   ) / 100;
 }
 
-function calcDayTotalHours(dayStartTime: string, dayEndTime: string, breakMinutes: string): number {
-  const raw = timeRangeHours(dayStartTime, dayEndTime) - (parseFloat(breakMinutes) || 0) / 60;
+function calcDayTotalHours(dayStartTime: string, dayEndTime: string): number {
+  const raw = timeRangeHours(dayStartTime, dayEndTime);
   return raw > 0 ? raw : 0;
 }
 
@@ -108,9 +108,6 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   const [clockElapsed, setClockElapsed] = useState("");
   const [clockInTimestamp, setClockInTimestamp] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [breakMinutes, setBreakMinutes] = useState("");
-  const [breakStartTimestamp, setBreakStartTimestamp] = useState<number | null>(null);
-  const [breakElapsed, setBreakElapsed] = useState("");
   const [weekStripOffset, setWeekStripOffset] = useState(0);
   const [weekSummaries, setWeekSummaries] = useState<Record<string, { billable: number; nonBillable: number }>>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,25 +120,9 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   }
 
   function handleClockOut() {
-    if (breakStartTimestamp) {
-      const mins = Math.round((Date.now() - breakStartTimestamp) / 60000);
-      setBreakMinutes((prev) => String((parseFloat(prev) || 0) + mins));
-      setBreakStartTimestamp(null);
-    }
     const now = new Date();
     setDayEndTime(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`);
     setClockInTimestamp(null);
-  }
-
-  function handleBreakStart() {
-    setBreakStartTimestamp(Date.now());
-  }
-
-  function handleBreakEnd() {
-    if (!breakStartTimestamp) return;
-    const mins = Math.round((Date.now() - breakStartTimestamp) / 60000);
-    setBreakMinutes((prev) => String((parseFloat(prev) || 0) + mins));
-    setBreakStartTimestamp(null);
   }
 
   useEffect(() => {
@@ -151,7 +132,16 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
         if (!Array.isArray(data)) return;
         setEntryTypes(data);
         const dayTypes = data.filter((t) => t.time_mode === "day");
-        setDayEntries(dayTypes.map((t) => ({ id: t.id, typeSlug: t.slug, typeName: t.name, customFields: {} })));
+        // This races the mount-time fetch that loads today's already-submitted
+        // log into dayEntries — if that resolves first, blindly overwriting
+        // here would wipe out real saved values back to blank. Keep whatever's
+        // already there per type, only add slots for types with none yet.
+        setDayEntries((prev) => {
+          const existingBySlug = new Map(prev.map((de) => [de.typeSlug, de]));
+          return dayTypes.map(
+            (t) => existingBySlug.get(t.slug) ?? { id: t.id, typeSlug: t.slug, typeName: t.name, customFields: {} }
+          );
+        });
       })
       .catch(() => {});
   }, []);
@@ -193,18 +183,38 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
 
   // Load draft on mount
   useEffect(() => {
+    let draftApplied = false;
     const raw = localStorage.getItem(storageKey(userId, today()));
     if (raw) {
       try {
         const draft = JSON.parse(raw);
         if (draft.date) setDate(draft.date);
-        if (draft.dayStartTime) setDayStartTime(draft.dayStartTime);
-        if (draft.dayEndTime) setDayEndTime(draft.dayEndTime);
-        if (draft.billable?.length) setBillable(draft.billable);
-        if (draft.nonBillable?.length) setNonBillable(draft.nonBillable);
-        if (draft.notes) setNotes(draft.notes);
-        if (draft.breakMinutes) setBreakMinutes(draft.breakMinutes);
+        if (draft.dayStartTime) { setDayStartTime(draft.dayStartTime); draftApplied = true; }
+        if (draft.dayEndTime) { setDayEndTime(draft.dayEndTime); draftApplied = true; }
+        if (draft.billable?.length) { setBillable(draft.billable); draftApplied = true; }
+        if (draft.nonBillable?.length) { setNonBillable(draft.nonBillable); draftApplied = true; }
+        if (draft.notes) { setNotes(draft.notes); draftApplied = true; }
       } catch {}
+    }
+    // No unsaved local draft to protect — check whether today's log was
+    // already submitted (e.g. earlier today, or from another device) so it
+    // shows up immediately instead of looking blank until the week strip is
+    // clicked.
+    if (!draftApplied) {
+      fetch(`/api/submissions/employee?date=${today()}`, { credentials: "include" })
+        .then((r) => r.json())
+        .then((data) => {
+          if (!data || !data.id) return;
+          setDayStartTime(data.day_start_time ?? "");
+          setDayEndTime(data.day_end_time ?? "");
+          if (data.billable_entries?.length) setBillable(data.billable_entries.map((e: BillableEntryData) => ({ ...e, id: e.id ?? uuid() })));
+          if (data.non_billable_entries?.length) setNonBillable(data.non_billable_entries.map((e: NonBillableEntryData) => ({ ...e, id: e.id ?? uuid() })));
+          if (data.daily_entries?.length) setDayEntries(data.daily_entries as DayEntry[]);
+          setNotes(data.notes ?? "");
+          setSubmittedId(data.id);
+          setIsEditing(true);
+        })
+        .catch(() => {});
     }
     setLoaded(true);
   }, [userId]);
@@ -218,7 +228,6 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       billable: BillableEntryData[];
       nonBillable: NonBillableEntryData[];
       notes: string;
-      breakMinutes: string;
     }) => {
       localStorage.setItem(storageKey(userId, today()), JSON.stringify(state));
       setSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
@@ -239,37 +248,24 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     return () => clearInterval(id);
   }, [clockInTimestamp, dayEndTime]);
 
-  // Live break timer
-  useEffect(() => {
-    if (!breakStartTimestamp) { setBreakElapsed(""); return; }
-    const ts = breakStartTimestamp;
-    function tick() {
-      const secs = Math.floor((Date.now() - ts) / 1000);
-      setBreakElapsed(`${Math.floor(secs / 3600)}:${String(Math.floor((secs % 3600) / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`);
-    }
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [breakStartTimestamp]);
-
   // Auto-save with 1s debounce after initial load
   useEffect(() => {
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      saveDraft({ employeeName: userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, breakMinutes });
+      saveDraft({ employeeName: userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes });
     }, 1000);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [loaded, userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, breakMinutes, saveDraft]);
+  }, [loaded, userName, date, dayStartTime, dayEndTime, billable, nonBillable, notes, saveDraft]);
 
   // Editing after a successful submit means the on-screen data no longer
   // matches what was sent — drop the "Submitted" indicator until resubmitted.
   useEffect(() => {
     if (!loaded) return;
     setSubmitState((s) => (s === "success" ? "idle" : s));
-  }, [loaded, dayStartTime, dayEndTime, billable, nonBillable, notes, breakMinutes, dayEntries]);
+  }, [loaded, dayStartTime, dayEndTime, billable, nonBillable, notes, dayEntries]);
 
   // SyncManager flushes queued offline submissions in the background — pick
   // up the result here only if it's for the date currently on screen.
@@ -340,9 +336,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     setBillable([newBillable()]);
     setNonBillable([]);
     setNotes("");
-    setBreakMinutes("");
     setClockInTimestamp(null);
-    setBreakStartTimestamp(null);
     const dayTypes = entryTypes.filter((t) => t.time_mode === "day");
     setDayEntries(dayTypes.map((t) => ({ id: t.id, typeSlug: t.slug, typeName: t.name, customFields: {} })));
   }
@@ -369,7 +363,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     setSubmitState("submitting");
     setErrorMsg("");
     const totalBillableHours = calcTotalBillable(billable);
-    const dayTotalHours = calcDayTotalHours(dayStartTime, dayEndTime, breakMinutes);
+    const dayTotalHours = calcDayTotalHours(dayStartTime, dayEndTime);
     const { generalHours: autoNonBillableHours } = carveOutGeneral(dayTotalHours, [
       totalBillableHours,
       calcTotalNonBillable(nonBillable),
@@ -389,7 +383,6 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       notes,
       totalBillableHours,
       totalNonBillableHours: calcTotalNonBillable(nonBillablePayload),
-      breakMinutes: parseFloat(breakMinutes) || 0,
       ...(isEditing && submittedId ? { id: submittedId } : {}),
     };
     try {
@@ -428,7 +421,6 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
   }
 
   const totalBillable = calcTotalBillable(billable);
-  const dayTotalHours = calcDayTotalHours(dayStartTime, dayEndTime, breakMinutes);
   const todayStr = today();
   const wBaseDate = (() => { const [y, mo, d] = date.split("-").map(Number); return new Date(y, mo - 1, d); })();
   const wMonday = new Date(wBaseDate);
@@ -672,57 +664,6 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
         </div>
       </div>
 
-      {/* Break */}
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Break</p>
-
-        {dayStartTime && !dayEndTime && (
-          !breakStartTimestamp ? (
-            <button
-              type="button"
-              onClick={handleBreakStart}
-              className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xl py-6 rounded-2xl transition-colors flex items-center justify-center gap-3 shadow-sm mb-4"
-            >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="4" width="4" height="16" rx="1.5"/>
-                <rect x="14" y="4" width="4" height="16" rx="1.5"/>
-              </svg>
-              Take Break
-            </button>
-          ) : (
-            <div className="space-y-4 mb-4">
-              <div className="text-center py-1">
-                <p className="text-sm text-gray-400">On break</p>
-                <p className="text-4xl font-bold text-amber-500 tabular-nums mt-2 tracking-tight">{breakElapsed}</p>
-              </div>
-              <button
-                type="button"
-                onClick={handleBreakEnd}
-                className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xl py-6 rounded-2xl transition-colors flex items-center justify-center gap-3 shadow-sm"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21 5 3"/>
-                </svg>
-                End Break
-              </button>
-            </div>
-          )
-        )}
-
-        <div className={dayStartTime && !dayEndTime ? "pt-4 border-t border-gray-100" : ""}>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Total break (minutes)</label>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={breakMinutes}
-            onChange={(e) => setBreakMinutes(e.target.value)}
-            placeholder="0"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-400"
-          />
-        </div>
-      </div>
-
       {/* Billable entries */}
       <section>
         <h2 className="text-base font-semibold text-gray-800 mb-3">Jobs</h2>
@@ -805,7 +746,7 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
                           <input
                             type="number"
                             min="0"
-                            step="1"
+                            step="0.01"
                             placeholder="0"
                             value={dayEntry.customFields[field.field_key] ?? ""}
                             onChange={(e) =>
