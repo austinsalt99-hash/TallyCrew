@@ -30,10 +30,13 @@ export default function BillingClient({ planTier, subscriptionStatus }: Props) {
   const [error, setError] = useState("");
   const isNative = Capacitor.isNativePlatform();
 
-  async function signOut() {
+  // Signs the current (pending/inactive) account out before navigating —
+  // a plain link to /login or /register/join would just bounce a still-logged-in
+  // user straight back here via proxy.ts's redirect-home-if-logged-in rule.
+  async function signOutAndGoTo(path: string) {
     const supabase = createSupabaseBrowser();
     await supabase.auth.signOut();
-    router.push("/login");
+    router.push(path);
     router.refresh();
   }
 
@@ -74,7 +77,7 @@ export default function BillingClient({ planTier, subscriptionStatus }: Props) {
             Your company&apos;s subscription isn&apos;t active right now.
           </p>
           <button
-            onClick={signOut}
+            onClick={() => signOutAndGoTo("/login")}
             className="mt-6 text-sm text-gray-500 underline underline-offset-2"
           >
             Sign out
@@ -250,6 +253,22 @@ export default function BillingClient({ planTier, subscriptionStatus }: Props) {
               </li>
             ))}
           </ul>
+        </div>
+
+        <div className="mt-6 flex items-center justify-center gap-4 text-sm">
+          <button
+            onClick={() => signOutAndGoTo("/login")}
+            className="text-blue-600 hover:underline font-medium"
+          >
+            Log in
+          </button>
+          <span className="text-gray-300">|</span>
+          <button
+            onClick={() => signOutAndGoTo("/register/join")}
+            className="text-blue-600 hover:underline font-medium"
+          >
+            Join your team
+          </button>
         </div>
       </div>
     </div>

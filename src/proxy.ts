@@ -101,8 +101,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Logged-in user hitting login/register → redirect to their home
-  if (user && (pathname === "/login" || pathname === "/register" || pathname === "/register/join")) {
+  // Logged-in user hitting login/register-join → redirect to their home.
+  // "/register" is deliberately excluded: the marketing site's "Start free
+  // trial" button should always land on the create-a-new-company form, even
+  // for someone who happens to already be logged in (e.g. an existing admin
+  // wanting to set up a second company) — signing up there re-authenticates
+  // as the new account, replacing whatever session was active before.
+  if (user && (pathname === "/login" || pathname === "/register/join")) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")

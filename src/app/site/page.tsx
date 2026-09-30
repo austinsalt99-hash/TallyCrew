@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { REGISTER_URL } from "./_lib/constants";
+import { REGISTER_URL, LOGIN_URL } from "./_lib/constants";
 import StoreButton from "./_components/StoreButton";
 
 const REASONS = [
@@ -286,12 +286,18 @@ export default function MarketingHome() {
           <h2 className="font-display font-semibold text-[clamp(1.6rem,3.4vw,2.5rem)] leading-[1.1] tracking-[-0.02em] text-white max-w-[18ch] mx-auto">
             Get your crew off paper this week.
           </h2>
-          <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3.5 w-full max-w-[760px] mx-auto">
+          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 w-full max-w-[900px] mx-auto">
             <a
               href={REGISTER_URL}
               className="inline-flex items-center justify-center font-display font-semibold text-[.95rem] rounded-[3px] border border-paper bg-paper text-navy-600 px-6 py-[15px] transition-colors hover:bg-white active:translate-y-px"
             >
               Start free trial
+            </a>
+            <a
+              href={LOGIN_URL}
+              className="inline-flex items-center justify-center font-display font-semibold text-[.95rem] rounded-[3px] border border-white/55 text-white px-6 py-[15px] transition-colors hover:bg-white/10 active:translate-y-px"
+            >
+              Log in
             </a>
             <StoreButton className="inline-flex items-center justify-center font-display font-semibold text-[.95rem] rounded-[3px] border border-white/55 text-white px-6 py-[15px] transition-colors hover:bg-white/10 active:translate-y-px" />
             <a
