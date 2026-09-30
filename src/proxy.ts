@@ -119,23 +119,57 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Admin routes require admin role + active subscription
-  if (pathname.startsWith("/admin") && user) {
+  // Routes that must work regardless of subscription state. Two groups:
+  // plain public pages (login/register/legal/etc. — same list as isPublic,
+  // minus the blanket "/api/" entry, since that's exactly what needs to
+  // stop being exempt), and the specific API routes that must keep
+  // working even for an inactive company — Stripe checkout/portal are
+  // literally how someone pays, the webhook has its own signature-based
+  // auth and is what marks a subscription active in the first place, cron
+  // has its own bearer-secret auth with no session involved, and
+  // /api/auth + /api/dev run before a normal session exists or are
+  // internal tooling.
+  const isBillingExempt =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/register") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/auth/") ||
+    pathname.startsWith("/privacy") ||
+    pathname.startsWith("/terms") ||
+    pathname.startsWith("/support") ||
+    pathname.startsWith("/site") ||
+    pathname === "/sw.js" ||
+    /^\/swe-worker-[^/]+\.js$/.test(pathname) ||
+    pathname.startsWith("/~offline") ||
+    pathname === "/billing" ||
+    pathname === "/admin/billing" ||
+    pathname.startsWith("/api/stripe/") ||
+    pathname.startsWith("/api/cron/") ||
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/dev/") ||
+    pathname === "/api/admin/login";
+
+  if (user) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role, company_id")
       .eq("id", user.id)
       .single();
 
-    if (profile?.role !== "admin") {
+    // Admin routes require the admin role — workers get bounced home.
+    if (pathname.startsWith("/admin") && profile?.role !== "admin") {
       const url = request.nextUrl.clone();
       url.pathname = "/";
       return NextResponse.redirect(url);
     }
 
-    // Skip subscription check on the billing page itself so locked-out admins can still reach it
-    const isBillingPage = pathname === "/admin/billing";
-    if (!isBillingPage && profile.company_id) {
+    // Subscription gate — applies everywhere (every page and every API
+    // route), not just /admin: a company that never finishes checkout or
+    // has since canceled shouldn't retain working access to submit
+    // timesheets, read the calendar, etc. just because its users still
+    // have a valid login session. API calls get a 402 JSON error; page
+    // navigations get redirected to the billing page.
+    if (!isBillingExempt && profile?.company_id) {
       const { data: company } = await supabase
         .from("companies")
         .select("stripe_customer_id, subscription_status, subscription_period_end")
@@ -152,6 +186,12 @@ export async function proxy(request: NextRequest) {
           company?.subscription_period_end ?? null
         );
         if (!allowed) {
+          if (pathname.startsWith("/api/")) {
+            return NextResponse.json(
+              { error: "This company's subscription is inactive." },
+              { status: 402 }
+            );
+          }
           const url = request.nextUrl.clone();
           url.pathname = "/billing";
           return NextResponse.redirect(url);

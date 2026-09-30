@@ -190,7 +190,12 @@ export default function WorkersPage() {
       {/* Invite codes / seats */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-700">Invite codes</h2>
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700">Invite codes</h2>
+            {workerLimit != null && (
+              <p className="text-xs text-gray-400 mt-0.5">{occupied} of {workerLimit} seats used</p>
+            )}
+          </div>
           <button
             onClick={generateCode}
             disabled={generatingCode || atLimit}

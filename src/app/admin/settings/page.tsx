@@ -124,6 +124,10 @@ export default function AdminSettingsPage() {
   const [activeSection, setActiveSection] = useState<Section | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const [invoiceLogoUrl, setInvoiceLogoUrl] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [logoSaved, setLogoSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [companyTimezone, setCompanyTimezone] = useState("America/Toronto");
   const [tzSaving, setTzSaving] = useState(false);
@@ -183,7 +187,7 @@ export default function AdminSettingsPage() {
       if (!profileData) { setLoading(false); return; }
       setSiriEnabled(!!profileData.siri_token_hash);
       const { data: company } = await supabase
-        .from("companies").select("name, banner_url, timezone, pay_period_type, pay_period_anchor, morning_digest_time").eq("id", profileData.company_id).single();
+        .from("companies").select("name, banner_url, invoice_logo_url, timezone, pay_period_type, pay_period_anchor, morning_digest_time").eq("id", profileData.company_id).single();
       setProfile({
         email: user.email ?? "",
         fullName: profileData.full_name,
@@ -195,6 +199,7 @@ export default function AdminSettingsPage() {
         }),
       });
       setBannerUrl(company?.banner_url ?? null);
+      setInvoiceLogoUrl(company?.invoice_logo_url ?? null);
       setCompanyTimezone(company?.timezone ?? "America/Toronto");
       setPayPeriodType((company?.pay_period_type as PayPeriodType) ?? "biweekly");
       setPayPeriodAnchor(company?.pay_period_anchor ?? "2024-01-01");
@@ -331,6 +336,44 @@ export default function AdminSettingsPage() {
     setCompletedCrop(undefined);
     setUploadError(null);
     setStage("idle");
+  }
+
+  async function handleInvoiceLogoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    setLogoUploading(true);
+    setLogoError(null);
+    setLogoSaved(false);
+    try {
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      const res = await fetch("/api/company/invoice-logo", { method: "POST", credentials: "include", body: fd });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Upload failed");
+      setInvoiceLogoUrl(json.url);
+      setLogoSaved(true);
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
+  async function removeInvoiceLogo() {
+    setLogoUploading(true);
+    setLogoError(null);
+    setLogoSaved(false);
+    try {
+      const res = await fetch("/api/company/invoice-logo", { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Failed to remove logo");
+      setInvoiceLogoUrl(null);
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : "Failed to remove logo");
+    } finally {
+      setLogoUploading(false);
+    }
   }
 
   // ── Section: Profile ──────────────────────────────────────────────────────
@@ -619,6 +662,76 @@ export default function AdminSettingsPage() {
                 </button>
               </div>
             </>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4 mt-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-900 mb-0.5">Invoice Logo</p>
+            <p className="text-xs text-gray-400">Shown at the top of every invoice, in place of your company name.</p>
+          </div>
+
+          <input
+            id="invoice-logo-file-input"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            className="hidden"
+            onChange={handleInvoiceLogoSelect}
+          />
+
+          <label
+            htmlFor="invoice-logo-file-input"
+            className="flex items-center justify-center cursor-pointer rounded-xl overflow-hidden border-2 border-dashed border-gray-300 hover:border-navy-400 hover:bg-navy-50 transition-colors"
+            style={{ minHeight: 140 }}
+          >
+            {invoiceLogoUrl ? (
+              <div className="relative w-full flex items-center justify-center p-4" style={{ minHeight: 140 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={invoiceLogoUrl} alt="Invoice logo" className="max-h-24 max-w-full object-contain" />
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                  <span className="text-white text-sm font-semibold">Click to replace</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-2 py-10">
+                <div className="w-12 h-12 rounded-xl bg-navy-100 flex items-center justify-center">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A1172" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                </div>
+                <p className="text-sm font-semibold text-gray-700">Click to upload a logo</p>
+                <p className="text-xs text-gray-400">PNG, JPG, WebP or SVG</p>
+              </div>
+            )}
+          </label>
+
+          {logoUploading && <p className="text-xs text-gray-400 text-center">Uploading…</p>}
+
+          {invoiceLogoUrl && !logoUploading && (
+            <button
+              type="button"
+              onClick={removeInvoiceLogo}
+              className="w-full text-sm text-red-500 hover:text-red-700 font-medium"
+            >
+              Remove logo
+            </button>
+          )}
+
+          {logoError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+              <p className="text-xs text-red-600 font-medium">{logoError}</p>
+            </div>
+          )}
+
+          {logoSaved && !logoError && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="7.5" cy="7.5" r="6.5" /><polyline points="4.5,7.5 6.5,9.5 10.5,5.5" />
+              </svg>
+              <p className="text-xs text-green-700 font-medium">Logo saved — it&apos;ll appear on new and existing invoices.</p>
+            </div>
           )}
         </div>
       </div>

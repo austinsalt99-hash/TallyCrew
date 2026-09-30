@@ -998,3 +998,124 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_profiles_company_role_removed
   ON profiles (company_id, role, is_removed);
+
+-- -------------------------------------------------------------
+-- 23. RLS FIX: PRICING/RATE COLUMNS WERE READABLE PAST THE APP LAYER
+--     job_events_read and type_worker_rates_read had no role check, so
+--     any company member — not just admins — could bypass the Next.js
+--     API (which does filter these fields for non-admins) and read
+--     quoted_price/po_number/internal_notes, or every coworker's
+--     per-job-type pay rate, straight from Supabase with their own
+--     session + the public anon key. RLS can only filter whole rows,
+--     not individual columns, so job_events' pricing/PO/notes fields
+--     are split into their own admin-only table rather than masked in
+--     place (workers still need row-level read access to job_events
+--     itself, for their schedule). log_entry_type_worker_rates keeps
+--     its columns as-is — its read policy just gets the same role
+--     check its own insert/update/delete policies already had.
+-- -------------------------------------------------------------
+BEGIN;
+
+-- 23a. Move the admin-only fields off job_events so a role check can
+-- gate the whole row.
+CREATE TABLE IF NOT EXISTS job_event_financials (
+  job_event_id   UUID PRIMARY KEY REFERENCES job_events(id) ON DELETE CASCADE,
+  quoted_price   NUMERIC,
+  po_number      TEXT,
+  internal_notes TEXT
+);
+
+INSERT INTO job_event_financials (job_event_id, quoted_price, po_number, internal_notes)
+SELECT id, quoted_price, po_number, internal_notes
+FROM job_events
+WHERE quoted_price IS NOT NULL OR po_number IS NOT NULL OR internal_notes IS NOT NULL
+ON CONFLICT (job_event_id) DO NOTHING;
+
+ALTER TABLE job_events DROP COLUMN IF EXISTS quoted_price;
+ALTER TABLE job_events DROP COLUMN IF EXISTS po_number;
+ALTER TABLE job_events DROP COLUMN IF EXISTS internal_notes;
+
+ALTER TABLE job_event_financials ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY job_event_financials_admin_read ON job_event_financials FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM job_events e
+      WHERE e.id = job_event_financials.job_event_id
+        AND e.company_id = get_my_company_id()
+    ) AND get_my_role() = 'admin'
+  );
+
+CREATE POLICY job_event_financials_admin_insert ON job_event_financials FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM job_events e
+      WHERE e.id = job_event_financials.job_event_id
+        AND e.company_id = get_my_company_id()
+    ) AND get_my_role() = 'admin'
+  );
+
+CREATE POLICY job_event_financials_admin_update ON job_event_financials FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM job_events e
+      WHERE e.id = job_event_financials.job_event_id
+        AND e.company_id = get_my_company_id()
+    ) AND get_my_role() = 'admin'
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM job_events e
+      WHERE e.id = job_event_financials.job_event_id
+        AND e.company_id = get_my_company_id()
+    ) AND get_my_role() = 'admin'
+  );
+
+CREATE POLICY job_event_financials_admin_delete ON job_event_financials FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM job_events e
+      WHERE e.id = job_event_financials.job_event_id
+        AND e.company_id = get_my_company_id()
+    ) AND get_my_role() = 'admin'
+  );
+
+-- 23b. log_entry_type_worker_rates: give the read policy the same role
+-- check its insert/update/delete siblings already had.
+DROP POLICY IF EXISTS type_worker_rates_read ON log_entry_type_worker_rates;
+
+CREATE POLICY type_worker_rates_read ON log_entry_type_worker_rates FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM log_entry_types t
+      WHERE t.id = log_entry_type_worker_rates.type_id
+        AND t.company_id = get_my_company_id()
+    ) AND get_my_role() = 'admin'
+  );
+
+COMMIT;
+
+-- -------------------------------------------------------------
+-- 24. RLS FIX: AVAILABILITY REQUESTS COULD BE SELF-APPROVED
+--     availability_requests_company_update/_delete had no role check,
+--     so despite /api/availability's PATCH (approve/deny) and DELETE
+--     both being admin-gated in the app, any worker could bypass the
+--     app and update/delete any row directly — e.g. self-approve their
+--     own time off, decide a coworker's request, or delete a denied
+--     one. Only the admin calendar UI ever calls PATCH/DELETE on this
+--     route; the worker-facing time-off page only ever POSTs new
+--     requests — so locking these two to admin-only matches how the
+--     app already behaves and breaks nothing.
+-- -------------------------------------------------------------
+BEGIN;
+
+DROP POLICY IF EXISTS availability_requests_company_update ON availability_requests;
+CREATE POLICY availability_requests_admin_update ON availability_requests FOR UPDATE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+DROP POLICY IF EXISTS availability_requests_company_delete ON availability_requests;
+CREATE POLICY availability_requests_admin_delete ON availability_requests FOR DELETE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+COMMIT;

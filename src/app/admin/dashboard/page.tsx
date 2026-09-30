@@ -523,6 +523,7 @@ export default function Dashboard() {
             const prevDate = i > 0 ? filtered[i - 1].date : null;
             const showSeparator = prevDate !== null && prevDate !== s.date;
             const workedHours = calcWorkedHours(s.day_start_time, s.day_end_time);
+            const hasUnlinkedJob = s.billable_entries?.some((e) => getWorkItems(e).length > 0 && !e.linkedEventTitle);
             return (
               <div key={s.id}>
                 {showSeparator && (
@@ -542,6 +543,11 @@ export default function Dashboard() {
                       <div className="text-sm text-gray-500 mt-0.5">{formatShortDate(s.date)}</div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
+                      {hasUnlinkedJob && (
+                        <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                          Unlinked
+                        </span>
+                      )}
                       <div className="text-right text-sm">
                         {workedHours && <div className="text-gray-700 font-semibold">{workedHours} worked</div>}
                         <div className="text-navy-600 font-medium">{s.total_billable_hours}h billable</div>

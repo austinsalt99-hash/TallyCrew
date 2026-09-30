@@ -1403,16 +1403,16 @@ export default function AdminCalendar() {
                   {/* Reserves space for the job-bar overlay so plan pills start below it */}
                   {laneCount > 0 && <div style={{ height: laneCount * BAR_H }} />}
                   {planEvents.slice(0, 2).map((ev) => {
-                    const { color, bg } = getEventStyle(ev.type);
+                    const { color } = getEventStyle(ev.type);
                     return (
                       <div
                         key={ev.id}
                         onClick={(e) => e.stopPropagation()}
                         className="flex items-center gap-0.5 text-[9px] leading-tight px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer"
-                        style={{ backgroundColor: bg, borderLeft: `2px solid ${color}` }}
+                        style={{ backgroundColor: color }}
                         title={ev.title}
                       >
-                        <span className="truncate font-medium" style={{ color }}>{ev.title}</span>
+                        <span className="truncate font-medium text-white">{ev.title}</span>
                       </div>
                     );
                   })}
@@ -1426,19 +1426,17 @@ export default function AdminCalendar() {
           {laneCount > 0 && (
             <div className="absolute pointer-events-none" style={{ top: BAR_TOP, left: 0, right: 0, height: laneCount * BAR_H }}>
               {bars.map(({ ev, lane, startIdx, endIdx, clippedStart, clippedEnd }) => {
-                const { color, bg } = getEventStyle(ev.type);
+                const { color } = getEventStyle(ev.type);
                 return (
                   <div
                     key={ev.id}
-                    className={`absolute pointer-events-auto text-[9px] font-semibold px-1 truncate leading-tight cursor-grab active:cursor-grabbing ${clippedStart ? "" : "rounded-l"} ${clippedEnd ? "" : "rounded-r"}`}
+                    className={`absolute pointer-events-auto text-[9px] font-semibold px-1 truncate leading-tight cursor-grab active:cursor-grabbing text-white ${clippedStart ? "" : "rounded-l"} ${clippedEnd ? "" : "rounded-r"}`}
                     style={{
                       left: `${(startIdx / 7) * 100}%`,
                       width: `${((endIdx - startIdx + 1) / 7) * 100}%`,
                       top: lane * BAR_H,
                       height: BAR_H - 3,
-                      backgroundColor: bg,
-                      borderLeft: clippedStart ? "none" : `2px solid ${color}`,
-                      color,
+                      backgroundColor: color,
                     }}
                     draggable
                     onDragStart={(e) => { e.stopPropagation(); handleWholeDayDragStart(e, ev.id, ev.date); }}
@@ -1511,21 +1509,19 @@ export default function AdminCalendar() {
                   </div>
                   {/* Bars */}
                   {bars.map(({ ev, lane, startIdx, endIdx, clippedStart, clippedEnd }) => {
-                    const { color, bg } = getEventStyle(ev.type);
+                    const { color } = getEventStyle(ev.type);
                     const isJob = ev.source === "job";
                     const n = dates.length;
                     return (
                       <div
                         key={ev.id}
-                        className={`absolute text-[10px] font-semibold px-1.5 py-0.5 truncate leading-tight ${clippedStart ? "" : "rounded-l"} ${clippedEnd ? "" : "rounded-r"} ${isJob ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                        className={`absolute text-[10px] font-semibold px-1.5 py-0.5 truncate leading-tight text-white ${clippedStart ? "" : "rounded-l"} ${clippedEnd ? "" : "rounded-r"} ${isJob ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                         style={{
                           left: `${(startIdx / n) * 100}%`,
                           width: `${((endIdx - startIdx + 1) / n) * 100}%`,
                           top: lane * BAR_H + 2,
                           height: BAR_H - 4,
-                          backgroundColor: bg,
-                          borderLeft: clippedStart ? "none" : `2px solid ${color}`,
-                          color,
+                          backgroundColor: color,
                         }}
                         draggable={isJob}
                         onDragStart={isJob ? (e) => handleWholeDayDragStart(e, ev.id, ev.date) : undefined}
@@ -1592,18 +1588,17 @@ export default function AdminCalendar() {
                     const isSelected = selectedEvent?.id === ev.id;
                     const leftPct = (col / totalCols) * 100;
                     const widthPct = (1 / totalCols) * 100;
-                    const { color, bg } = getEventStyle(ev.type);
+                    const { color } = getEventStyle(ev.type);
                     return (
                       <div
                         key={ev.id}
                         draggable={ev.source === "job"}
-                        className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 transition-all border-l-4 ${ev.source === "job" ? "cursor-grab active:cursor-grabbing" : "cursor-default"} ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-95"}`}
+                        className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 transition-all ${ev.source === "job" ? "cursor-grab active:cursor-grabbing" : "cursor-default"} ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-95"}`}
                         style={{
                           top: top + 2, height,
                           left: `calc(${leftPct}% + 2px)`,
                           width: `calc(${widthPct}% - 4px)`,
-                          backgroundColor: bg,
-                          borderLeftColor: color,
+                          backgroundColor: color,
                         }}
                         onDragStart={ev.source === "job" ? (e) => { e.stopPropagation(); handleDragStart(e, ev); } : undefined}
                         onDragEnd={() => setDragOverKey(null)}
@@ -1616,19 +1611,19 @@ export default function AdminCalendar() {
                         }}
                       >
                         <div className="flex items-center gap-1 mb-0.5">
-                          <EventTypeIcon type={ev.type} color={color} />
-                          <p className="text-xs font-bold leading-tight truncate" style={{ color }}>{ev.title}</p>
+                          <EventTypeIcon type={ev.type} color="#fff" />
+                          <p className="text-xs font-bold leading-tight truncate text-white">{ev.title}</p>
                         </div>
                         {ev.client && height > 38 && (
-                          <p className="text-xs truncate" style={{ color, opacity: 0.7 }}>{ev.client}</p>
+                          <p className="text-xs truncate text-white" style={{ opacity: 0.8 }}>{ev.client}</p>
                         )}
                         {height > 54 && ev.start_time && (
-                          <p className="text-xs" style={{ color, opacity: 0.6 }}>
+                          <p className="text-xs text-white" style={{ opacity: 0.75 }}>
                             {formatTime(ev.start_time)}{ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
                           </p>
                         )}
                         {ev.type === "draft-job" && height > 30 && (
-                          <p className="text-[10px] font-medium mt-0.5" style={{ color, opacity: 0.7 }}>Draft</p>
+                          <p className="text-[10px] font-medium mt-0.5 text-white" style={{ opacity: 0.8 }}>Draft</p>
                         )}
                       </div>
                     );

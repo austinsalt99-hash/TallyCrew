@@ -3,6 +3,10 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
+import type { ColumnDef } from "./invoiceFormat";
+import { DEFAULT_INVOICE_COLUMNS, formatInvoiceCell, formatInvoiceDate, invoiceColHeaderClass } from "./invoiceFormat";
+
+export type { ColumnDef };
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,17 +23,9 @@ interface BreakdownEntry {
   hours: number;
 }
 
-export interface ColumnDef {
-  id: string;
-  label: string;
-  type: "date" | "employee" | "description" | "rate" | "hours" | "amount" | "custom";
-  visible: boolean;
-}
-
 interface LineItemState {
   id: string;
   description: string;
-  notes?: string;
   employee: string;
   date: string;
   hours: number | string;
@@ -90,17 +86,6 @@ interface OngoingJobOption {
   client: string | null;
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const DEFAULT_COLUMNS: ColumnDef[] = [
-  { id: "date",        label: "Date",        type: "date",        visible: true },
-  { id: "employee",    label: "Employee",    type: "employee",    visible: true },
-  { id: "description", label: "Description", type: "description", visible: true },
-  { id: "rate",        label: "Rate",        type: "rate",        visible: true },
-  { id: "hours",       label: "Hours",       type: "hours",       visible: true },
-  { id: "amount",      label: "Amount",      type: "amount",      visible: true },
-];
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function todayStr() {
@@ -116,12 +101,6 @@ function nextInvoiceNumber(existing: string[]): string {
   return `INV-${year}-${String(next).padStart(3, "0")}`;
 }
 
-function formatDate(d: string) {
-  if (!d) return "";
-  const [y, m, day] = d.split("-").map(Number);
-  return new Date(y, m - 1, day).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-}
-
 function formatShortDate(d: string) {
   if (!d) return "";
   const [y, m, day] = d.split("-").map(Number);
@@ -129,7 +108,7 @@ function formatShortDate(d: string) {
 }
 
 function blankItem(): LineItemState {
-  return { id: crypto.randomUUID(), description: "", notes: "", employee: "", date: todayStr(), hours: "", amount: "", customValues: {} };
+  return { id: crypto.randomUUID(), description: "", employee: "", date: todayStr(), hours: "", amount: "", customValues: {} };
 }
 
 // Map each workItem to the line item ID it contributes to, by description (not index).
@@ -219,9 +198,9 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
 // ── Editable cell ─────────────────────────────────────────────────────────────
 
 function EditableCell({
-  value, type = "text", onCommit, onFocus, className = "", placeholder = "—",
+  value, display, type = "text", onCommit, onFocus, className = "", placeholder = "—",
 }: {
-  value: string | number; type?: "text" | "number"; onCommit: (val: string) => void;
+  value: string | number; display?: string; type?: "text" | "number"; onCommit: (val: string) => void;
   onFocus: () => void; className?: string; placeholder?: string;
 }) {
   const [editing, setEditing] = useState(false);
@@ -241,7 +220,7 @@ function EditableCell({
   return (
     <span onClick={() => { setEditing(true); onFocus(); }} title="Click to edit"
       className={`cursor-text rounded px-0.5 hover:bg-navy-50 transition-colors ${className}`}>
-      {String(value) !== "" ? String(value) : <span className="text-gray-300">{placeholder}</span>}
+      {String(value) !== "" ? (display ?? String(value)) : <span className="text-gray-300">{placeholder}</span>}
     </span>
   );
 }
@@ -263,27 +242,17 @@ function InvoicePreview({
 }) {
   const total = lineItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
   const visibleCols = columns.filter((c) => c.visible);
-  const colCount = Math.max(1, visibleCols.length);
-
-  function thClass(col: ColumnDef) {
-    const base = "py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide";
-    if (col.type === "hours" || col.type === "amount") return `${base} text-right pr-${col.type === "hours" ? "3" : "0"} w-${col.type === "hours" ? "14" : "20"}`;
-    if (col.type === "rate") return `${base} text-right pr-3 w-20`;
-    if (col.type === "date") return `${base} text-left pr-3 w-24`;
-    if (col.type === "employee") return `${base} text-left pr-3 w-28`;
-    return `${base} text-left pr-3`;
-  }
+  // Description runs full-width below each row instead of squeezing into its own
+  // narrow column — long text was overflowing the table sideways otherwise.
+  const tableCols = visibleCols.filter((c) => c.type !== "description");
+  const showDescription = visibleCols.some((c) => c.type === "description");
+  const colCount = Math.max(1, tableCols.length);
 
   function renderCell(col: ColumnDef, item: LineItemState) {
     switch (col.type) {
       case "date": return <td key={col.id} className="py-2 pr-3 text-gray-600 text-xs">{item.date || "—"}</td>;
       case "employee": return <td key={col.id} className="py-2 pr-3 text-gray-700 text-xs">{item.employee || "—"}</td>;
-      case "description": return (
-        <td key={col.id} className="py-2 pr-3 text-gray-700">
-          <EditableCell value={item.description} onFocus={() => onActivate(item.id)}
-            onCommit={(v) => onUpdateItem(item.id, "description", v)} placeholder="Description" className="text-sm" />
-        </td>
-      );
+      case "description": return null;
       case "rate": return (
         <td key={col.id} className="py-2 pr-3 text-right text-gray-500">
           <EditableCell value={item.rate ?? ""} onFocus={() => onActivate(item.id)}
@@ -292,14 +261,15 @@ function InvoicePreview({
       );
       case "hours": return (
         <td key={col.id} className="py-2 pr-3 text-right text-gray-500">
-          <EditableCell value={item.hours !== "" && item.hours !== 0 ? item.hours : ""} type="number"
+          <EditableCell value={item.hours !== "" && item.hours !== 0 ? item.hours : ""}
+            display={item.hours !== "" && item.hours !== 0 ? formatInvoiceCell(col, item) : undefined} type="number"
             onFocus={() => onActivate(item.id)} onCommit={(v) => onUpdateItem(item.id, "hours", v)}
             placeholder="0" className="text-sm text-right" />
         </td>
       );
       case "amount": return (
         <td key={col.id} className="py-2 text-right font-medium text-gray-900">
-          <EditableCell value={item.amount} type="number" onFocus={() => onActivate(item.id)}
+          <EditableCell value={item.amount} display={formatInvoiceCell(col, item)} type="number" onFocus={() => onActivate(item.id)}
             onCommit={(v) => onUpdateItem(item.id, "amount", v)} placeholder="0.00" className="text-sm text-right" />
         </td>
       );
@@ -313,7 +283,7 @@ function InvoicePreview({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 min-h-[600px]">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 min-h-[600px] min-w-[640px]">
       <div className="flex justify-between items-start mb-8">
         <div>
           {companyLogoUrl && (
@@ -328,7 +298,7 @@ function InvoicePreview({
           <div className="text-3xl font-bold text-navy-600 mb-1">INVOICE</div>
           <div className="text-sm text-gray-600 space-y-0.5">
             <div><span className="font-medium">Invoice #:</span> {invoiceNumber || "—"}</div>
-            <div><span className="font-medium">Date:</span> {invoiceDate ? formatDate(invoiceDate) : "—"}</div>
+            <div><span className="font-medium">Date:</span> {invoiceDate ? formatInvoiceDate(invoiceDate) : "—"}</div>
           </div>
         </div>
       </div>
@@ -338,7 +308,7 @@ function InvoicePreview({
         <div className="text-lg font-semibold text-gray-900">{clientName || <span className="text-gray-300">Client name</span>}</div>
         {(dateFrom || dateTo) && (
           <div className="text-sm text-gray-500">
-            Work performed: {dateFrom ? formatDate(dateFrom) : "—"} – {dateTo ? formatDate(dateTo) : "—"}
+            Work performed: {dateFrom ? formatInvoiceDate(dateFrom) : "—"} – {dateTo ? formatInvoiceDate(dateTo) : "—"}
           </div>
         )}
       </div>
@@ -346,7 +316,7 @@ function InvoicePreview({
       <table className="w-full text-sm mb-8 border-collapse">
         <thead>
           <tr className="border-b-2 border-gray-200">
-            {visibleCols.map((col) => <th key={col.id} className={thClass(col)}>{col.label}</th>)}
+            {tableCols.map((col) => <th key={col.id} className={invoiceColHeaderClass(col)}>{col.label}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -357,16 +327,18 @@ function InvoicePreview({
             const rowBg = isActive ? "bg-navy-50" : "";
             return (
               <Fragment key={item.id}>
-                <tr className={`transition-colors ${rowBg}`}>
-                  {visibleCols.map((col) => renderCell(col, item))}
+                <tr className={`transition-colors ${rowBg} ${showDescription ? "" : "border-b border-gray-100"}`}>
+                  {tableCols.map((col) => renderCell(col, item))}
                 </tr>
-                <tr className={`border-b border-gray-100 transition-colors ${rowBg}`}>
-                  <td colSpan={colCount} className="pb-2 pr-3 pt-0">
-                    <EditableCell value={item.notes ?? ""} onFocus={() => onActivate(item.id)}
-                      onCommit={(v) => onUpdateItem(item.id, "notes", v)} placeholder="+ Add description"
-                      className="text-xs text-gray-400 italic" />
-                  </td>
-                </tr>
+                {showDescription && (
+                  <tr className={`border-b border-gray-100 transition-colors ${rowBg}`}>
+                    <td colSpan={colCount} className="pb-2 pr-3 pt-0">
+                      <EditableCell value={item.description} onFocus={() => onActivate(item.id)}
+                        onCommit={(v) => onUpdateItem(item.id, "description", v)} placeholder="Description"
+                        className="text-sm text-gray-700" />
+                    </td>
+                  </tr>
+                )}
               </Fragment>
             );
           })}
@@ -637,7 +609,7 @@ export default function InvoiceForm({
   const [linkedJobs, setLinkedJobs]           = useState<LinkedJob[]>([]);
   const [addedSubmissions, setAddedSubmissions] = useState<AddedSubmission[]>([]);
 
-  const [columnConfig, setColumnConfig]       = useState<ColumnDef[]>(DEFAULT_COLUMNS);
+  const [columnConfig, setColumnConfig]       = useState<ColumnDef[]>(DEFAULT_INVOICE_COLUMNS);
   const [addingCol, setAddingCol]             = useState(false);
   const [newColLabel, setNewColLabel]         = useState("");
 
@@ -699,7 +671,6 @@ export default function InvoiceForm({
       const loadedItems = (data.line_items || []).map((item: Record<string, unknown>) => ({
         id: crypto.randomUUID(),
         description: String(item.description || ""),
-        notes: String(item.notes || ""),
         employee: String(item.employee || ""),
         date: String(item.date || todayStr()),
         hours: item.hours ?? "",
@@ -1369,17 +1340,18 @@ export default function InvoiceForm({
           </div>
         </div>
 
-        {/* ── RIGHT: invoice preview (sticky) ──────────────────────────────── */}
-        <div className={`${mobileView === "form" ? "hidden lg:block" : "block"} border-l border-gray-200 bg-gray-50 px-4 py-8`}
-          style={{ position: "sticky", top: 72, alignSelf: "start", maxHeight: "calc(100vh - 72px)", overflowY: "auto" }}>
+        {/* ── RIGHT: invoice preview (sticky on desktop) ──────────────────────────────── */}
+        <div className={`${mobileView === "form" ? "hidden lg:block" : "block"} border-l border-gray-200 bg-gray-50 px-4 py-8 lg:sticky lg:top-[72px] lg:self-start lg:max-h-[calc(100vh-72px)] lg:overflow-y-auto`}>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
             Live Preview
             <span className="normal-case font-normal ml-2 text-gray-300">· click any field to edit</span>
           </p>
-          <InvoicePreview invoiceNumber={invoiceNumber} invoiceDate={invoiceDate} companyName={companyName}
-            companyAddress={companyAddress} companyLogoUrl={companyLogoUrl} clientName={clientName} dateFrom={dateFrom} dateTo={dateTo}
-            notes={notes} lineItems={lineItems} columns={columnConfig} activeItemId={activeItemId}
-            onActivate={setActiveItemId} onUpdateItem={updateItem} onUpdateCustomValue={updateItemCustomValue} />
+          <div className="overflow-x-auto pb-1">
+            <InvoicePreview invoiceNumber={invoiceNumber} invoiceDate={invoiceDate} companyName={companyName}
+              companyAddress={companyAddress} companyLogoUrl={companyLogoUrl} clientName={clientName} dateFrom={dateFrom} dateTo={dateTo}
+              notes={notes} lineItems={lineItems} columns={columnConfig} activeItemId={activeItemId}
+              onActivate={setActiveItemId} onUpdateItem={updateItem} onUpdateCustomValue={updateItemCustomValue} />
+          </div>
         </div>
       </div>
 
@@ -1694,12 +1666,6 @@ export default function InvoiceForm({
                                 onFocus={() => setActiveItemId(item.id)} placeholder="e.g. $35/hr"
                                 className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400" />
                             </div>
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-gray-400">Description (shown under this line item)</label>
-                            <textarea value={item.notes ?? ""} onChange={(e) => updateItem(item.id, "notes", e.target.value)}
-                              onFocus={() => setActiveItemId(item.id)} rows={2}
-                              className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400 resize-none" />
                           </div>
                           {customCols.map((col) => (
                             <div key={col.id}>

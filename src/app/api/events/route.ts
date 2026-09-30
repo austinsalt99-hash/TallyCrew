@@ -23,21 +23,27 @@ const EVENT_FIELDS = [
   "is_verified",
   "ongoing_job_id",
   "status",
-  "quoted_price",
-  "po_number",
-  "internal_notes",
   "equipment_needed",
   "attachments",
 ] as const;
 
-// Admin-only columns — stripped from GET responses for non-admin callers.
-// RLS (job_events_read) grants full-row SELECT to every company member, so
-// this filter is the only thing keeping pricing/internal notes from workers.
-const ADMIN_ONLY_FIELDS = ["quoted_price", "po_number", "internal_notes"] as const;
+// Pricing/PO/notes live in job_event_financials (see supabase-schema.sql
+// section 23) — a separate table with an admin-only RLS policy, since RLS
+// can filter whole rows but not individual columns and workers otherwise
+// need read access to the rest of a job_events row for their schedule.
+const FINANCIAL_FIELDS = ["quoted_price", "po_number", "internal_notes"] as const;
 
 function pickEventFields(body: Record<string, unknown>): Record<string, unknown> {
   const picked: Record<string, unknown> = {};
   for (const field of EVENT_FIELDS) {
+    if (field in body) picked[field] = body[field];
+  }
+  return picked;
+}
+
+function pickFinancialFields(body: Record<string, unknown>): Record<string, unknown> {
+  const picked: Record<string, unknown> = {};
+  for (const field of FINANCIAL_FIELDS) {
     if (field in body) picked[field] = body[field];
   }
   return picked;
@@ -80,15 +86,22 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (profile.role !== "admin") {
-    const stripped = (data ?? []).map((row: Record<string, unknown>) => {
-      const copy = { ...row };
-      for (const field of ADMIN_ONLY_FIELDS) delete copy[field];
-      return copy;
-    });
-    return NextResponse.json(stripped);
-  }
-  return NextResponse.json(data);
+  if (profile.role !== "admin" || !data?.length) return NextResponse.json(data ?? []);
+
+  // Merge in the admin-only financial fields (RLS on job_event_financials
+  // only lets this query return rows at all when the caller is an admin).
+  const { data: financials } = await supabase
+    .from("job_event_financials")
+    .select("job_event_id, quoted_price, po_number, internal_notes")
+    .in("job_event_id", data.map((ev) => ev.id));
+  const finById = new Map((financials ?? []).map((f) => [f.job_event_id, f]));
+  const merged = data.map((ev) => {
+    const fin = finById.get(ev.id);
+    return fin
+      ? { ...ev, quoted_price: fin.quoted_price, po_number: fin.po_number, internal_notes: fin.internal_notes }
+      : ev;
+  });
+  return NextResponse.json(merged);
 }
 
 export async function POST(request: Request) {
@@ -107,6 +120,17 @@ export async function POST(request: Request) {
     .select()
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const financials = pickFinancialFields(body);
+  if (Object.keys(financials).length > 0) {
+    const { data: fin, error: finError } = await supabase
+      .from("job_event_financials")
+      .insert({ job_event_id: data.id, ...financials })
+      .select("quoted_price, po_number, internal_notes")
+      .single();
+    if (finError) return NextResponse.json({ error: finError.message }, { status: 500 });
+    return NextResponse.json({ ...data, ...fin });
+  }
   return NextResponse.json(data);
 }
 
@@ -125,14 +149,39 @@ export async function PUT(request: Request) {
   if ("start_time" in updates) cleanUpdates.start_time = updates.start_time || null;
   if ("end_time" in updates) cleanUpdates.end_time = updates.end_time || null;
   if ("end_date" in updates) cleanUpdates.end_date = updates.end_date || null;
-  const { data, error } = await supabase
-    .from("job_events")
-    .update(cleanUpdates)
-    .eq("id", id)
-    .eq("company_id", profile.company_id)
-    .select()
-    .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  let data: Record<string, unknown> | null;
+  if (Object.keys(cleanUpdates).length > 0) {
+    const { data: updated, error } = await supabase
+      .from("job_events")
+      .update(cleanUpdates)
+      .eq("id", id)
+      .eq("company_id", profile.company_id)
+      .select()
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    data = updated;
+  } else {
+    const { data: existing, error } = await supabase
+      .from("job_events")
+      .select()
+      .eq("id", id)
+      .eq("company_id", profile.company_id)
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    data = existing;
+  }
+
+  const financials = pickFinancialFields(body);
+  if (Object.keys(financials).length > 0) {
+    const { data: fin, error: finError } = await supabase
+      .from("job_event_financials")
+      .upsert({ job_event_id: id, ...financials }, { onConflict: "job_event_id" })
+      .select("quoted_price, po_number, internal_notes")
+      .single();
+    if (finError) return NextResponse.json({ error: finError.message }, { status: 500 });
+    return NextResponse.json({ ...data, ...fin });
+  }
   return NextResponse.json(data);
 }
 

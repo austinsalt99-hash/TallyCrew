@@ -21,7 +21,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 overflow-x-hidden">
+    <div className="min-h-screen bg-gray-100 overflow-clip">
       {!isDashboard && (
         <header className="print:hidden hidden md:flex bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm px-4 py-3 items-center justify-between">
           <Image src="/tally-wordmark.png" alt="TallyCrew" width={160} height={38} />
