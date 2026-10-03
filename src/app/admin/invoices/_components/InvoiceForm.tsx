@@ -1230,7 +1230,7 @@ export default function InvoiceForm({
       <div className="grid lg:grid-cols-[45%_55%]">
 
         {/* ── LEFT: details + columns ──────────────────────────────────────── */}
-        <div className={`${mobileView === "preview" ? "hidden lg:block" : "block"} px-4 pt-8 pb-4 space-y-4 bg-gray-50 lg:bg-transparent`}>
+        <div className={`${mobileView === "preview" ? "hidden lg:block" : "block"} min-w-0 px-4 pt-8 pb-4 space-y-4 bg-gray-50 lg:bg-transparent`}>
           <div className="flex items-center gap-3 mb-6">
             <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-sm">← Back</button>
             <h1 className="text-2xl font-bold text-gray-900">{mode === "new" ? "New Invoice" : "Edit Invoice"}</h1>
@@ -1341,7 +1341,7 @@ export default function InvoiceForm({
         </div>
 
         {/* ── RIGHT: invoice preview (sticky on desktop) ──────────────────────────────── */}
-        <div className={`${mobileView === "form" ? "hidden lg:block" : "block"} border-l border-gray-200 bg-gray-50 px-4 py-8 lg:sticky lg:top-[72px] lg:self-start lg:max-h-[calc(100vh-72px)] lg:overflow-y-auto`}>
+        <div className={`${mobileView === "form" ? "hidden lg:block" : "block"} min-w-0 border-l border-gray-200 bg-gray-50 px-4 py-8 lg:sticky lg:top-[72px] lg:self-start lg:max-h-[calc(100vh-72px)] lg:overflow-y-auto`}>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
             Live Preview
             <span className="normal-case font-normal ml-2 text-gray-300">· click any field to edit</span>

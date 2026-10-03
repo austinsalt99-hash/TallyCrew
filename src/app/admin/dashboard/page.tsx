@@ -202,6 +202,19 @@ function mergeSubmissionsForRange(prev: Submission[], from: string, to: string, 
   return merged;
 }
 
+// A job's linked submissions can be scattered across any date, not a contiguous
+// range, so this merges by id rather than carving out a [from, to] window.
+function mergeSubmissionsById(prev: Submission[], incoming: Submission[]): Submission[] {
+  const byId = new Map(prev.map((s) => [s.id, s]));
+  incoming.forEach((s) => byId.set(s.id, s));
+  const merged = [...byId.values()];
+  merged.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return a.submitted_at < b.submitted_at ? 1 : a.submitted_at > b.submitted_at ? -1 : 0;
+  });
+  return merged;
+}
+
 interface Worker {
   id: string;
   full_name: string;
@@ -216,12 +229,15 @@ export default function Dashboard() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filterDate, setFilterDate] = useState("");
   const [filterName, setFilterName] = useState("");
+  const [filterJobId, setFilterJobId] = useState("");
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [events, setEvents] = useState<DashJobEvent[]>([]);
   const [viewingEvent, setViewingEvent] = useState<DashJobEvent | null>(null);
   const [linkingTarget, setLinkingTarget] = useState<{ submissionId: string; entryIndex: number; date: string } | null>(null);
   const [linkWeekOffset, setLinkWeekOffset] = useState(0);
+  const [showJobFilterPicker, setShowJobFilterPicker] = useState(false);
+  const [jobFilterWeekOffset, setJobFilterWeekOffset] = useState(0);
   const [pendingTimeOff, setPendingTimeOff] = useState<AvailabilityRequest[]>([]);
   const [timeOffActionLoading, setTimeOffActionLoading] = useState<string | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -287,6 +303,18 @@ export default function Dashboard() {
       })
       .catch(() => {});
   }, [filterDate, rangeDays]);
+
+  // "Any log linked to this job" means full history, not just what's loaded
+  // for the current date range — fetch it directly by linked event id.
+  useEffect(() => {
+    if (!filterJobId) return;
+    fetch(`/api/submissions?eventId=${filterJobId}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setSubmissions((prev) => mergeSubmissionsById(prev, data));
+      })
+      .catch(() => {});
+  }, [filterJobId]);
 
   async function handleRangeChange(days: number | null) {
     setRangeDays(days);
@@ -363,9 +391,12 @@ export default function Dashboard() {
     setLinkingTarget(null);
   }
 
+  const filterJobEvent = events.find((e) => e.id === filterJobId);
+
   const filtered = submissions.filter((s) => {
     if (filterDate && s.date !== filterDate) return false;
     if (filterName && s.employee_name !== filterName) return false;
+    if (filterJobId && !s.billable_entries?.some((e) => e.linkedEventId === filterJobId)) return false;
     return true;
   });
 
@@ -471,23 +502,31 @@ export default function Dashboard() {
       )}
 
       <div className="flex flex-col md:flex-row gap-3 mb-6">
-        <label className="relative flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white w-full min-w-0 md:w-44 overflow-hidden cursor-pointer focus-within:ring-2 focus-within:ring-navy-400">
-          <svg className="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="4" width="18" height="18" rx="2" />
-            <line x1="16" y1="2" x2="16" y2="6" />
-            <line x1="8" y1="2" x2="8" y2="6" />
-            <line x1="3" y1="10" x2="21" y2="10" />
-          </svg>
-          <span className={`truncate ${filterDate ? "text-gray-900" : "text-gray-400"}`}>
-            {filterDate ? formatShortDate(filterDate) : "Date"}
-          </span>
-          <input
-            type="date"
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          />
-        </label>
+        <div className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white w-full min-w-0 md:w-44 overflow-hidden focus-within:ring-2 focus-within:ring-navy-400">
+          <label className="relative flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+            <svg className="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            <span className={`truncate ${filterDate ? "text-gray-900" : "text-gray-400"}`}>
+              {filterDate ? formatShortDate(filterDate) : "Date"}
+            </span>
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+          </label>
+          {filterDate && (
+            <button type="button" onClick={() => setFilterDate("")} aria-label="Clear date filter"
+              className="shrink-0 text-gray-400 hover:text-gray-600">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/></svg>
+            </button>
+          )}
+        </div>
         <select
           value={filterName}
           onChange={(e) => setFilterName(e.target.value)}
@@ -498,6 +537,27 @@ export default function Dashboard() {
             <option key={w.id} value={w.full_name}>{w.full_name}</option>
           ))}
         </select>
+        <div className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white w-full min-w-0 md:w-48 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => { setJobFilterWeekOffset(0); setShowJobFilterPicker(true); }}
+            className="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-navy-700 transition-colors"
+          >
+            <svg className="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="7" width="20" height="14" rx="2" />
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+            </svg>
+            <span className={`truncate ${filterJobId ? "text-gray-900" : "text-gray-400"}`}>
+              {filterJobEvent ? (filterJobEvent.client ? `${filterJobEvent.title} – ${filterJobEvent.client}` : filterJobEvent.title) : "By Job"}
+            </span>
+          </button>
+          {filterJobId && (
+            <button type="button" onClick={() => setFilterJobId("")} aria-label="Clear job filter"
+              className="shrink-0 text-gray-400 hover:text-gray-600">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/></svg>
+            </button>
+          )}
+        </div>
         <select
           value={rangeDays === null ? "all" : String(rangeDays)}
           onChange={(e) => handleRangeChange(e.target.value === "all" ? null : Number(e.target.value))}
@@ -508,8 +568,8 @@ export default function Dashboard() {
             <option key={opt.label} value={opt.days === null ? "all" : String(opt.days)}>{opt.label}</option>
           ))}
         </select>
-        {(filterDate || filterName) && (
-          <button onClick={() => { setFilterDate(""); setFilterName(""); }} className="text-sm text-navy-600 underline self-start md:self-center">
+        {(filterDate || filterName || filterJobId) && (
+          <button onClick={() => { setFilterDate(""); setFilterName(""); setFilterJobId(""); }} className="text-sm text-navy-600 underline self-start md:self-center">
             Clear filters
           </button>
         )}
@@ -839,6 +899,20 @@ export default function Dashboard() {
           onNext={() => setLinkWeekOffset((o) => o + 1)}
           onSelect={(ev) => { handleAdminLink(ev); }}
           onClose={() => setLinkingTarget(null)}
+        />
+      )}
+
+      {/* By Job filter picker — same calendar/list view used for linking a job to a log */}
+      {showJobFilterPicker && (
+        <JobEventPicker
+          title="Filter by job"
+          events={events}
+          baseDate={toISODate(new Date())}
+          weekOffset={jobFilterWeekOffset}
+          onPrev={() => setJobFilterWeekOffset((o) => o - 1)}
+          onNext={() => setJobFilterWeekOffset((o) => o + 1)}
+          onSelect={(ev) => { setFilterJobId(ev.id); setShowJobFilterPicker(false); }}
+          onClose={() => setShowJobFilterPicker(false)}
         />
       )}
     </div>

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { SerwistProvider } from "@serwist/next/react";
 import NativeAppInit from "@/components/NativeAppInit";
 import MobileTopBar from "@/components/MobileTopBar";
 import OfflineBanner from "@/components/OfflineBanner";
@@ -24,6 +25,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-gray-100 min-h-screen">
+        {/* @serwist/next's webpack build-time auto-registration (patching the
+            "main-app" entry) silently no-ops under this Next.js version, so
+            /sw.js was shipping but never getting registered. Register it
+            explicitly instead. */}
+        <SerwistProvider swUrl="/sw.js" disable={process.env.NODE_ENV !== "production"} reloadOnOnline={false} />
         <NativeAppInit />
         <MobileTopBar />
         <OfflineBanner />

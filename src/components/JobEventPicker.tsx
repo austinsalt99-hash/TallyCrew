@@ -19,6 +19,7 @@ interface Props {
   onNext: () => void;
   onSelect: (event: JobEvent) => void;
   onClose: () => void;
+  title?: string;
 }
 
 const PICK_START_HOUR = 6;
@@ -70,7 +71,7 @@ function shortHour(h: number): string {
   return h < 12 ? `${h}a` : `${h - 12}p`;
 }
 
-export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, onNext, onSelect, onClose }: Props) {
+export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, onNext, onSelect, onClose, title = "Link to schedule" }: Props) {
   const [view, setView] = useState<"list" | "calendar">("list");
 
   const { from, to } = getWeekBounds(baseDate, weekOffset);
@@ -111,7 +112,7 @@ export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, o
       ">
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 shrink-0">
-          <span className="font-semibold text-gray-900 flex-1 text-sm">Link to schedule</span>
+          <span className="font-semibold text-gray-900 flex-1 text-sm">{title}</span>
 
           {/* Week navigation */}
           <div className="flex items-center gap-1">
