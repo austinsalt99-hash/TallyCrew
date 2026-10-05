@@ -30,6 +30,7 @@ interface Invoice {
   total: number;
   notes?: string;
   status: "draft" | "sent" | "paid";
+  paid_at?: string | null;
 }
 
 const statusBadge: Record<string, string> = {
@@ -60,13 +61,14 @@ export default function InvoiceDetailPage() {
   }, []);
 
   async function setStatus(status: "draft" | "sent" | "paid") {
+    const paid_at = status === "paid" ? new Date().toISOString() : null;
     await fetch(`/api/invoices/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, paid_at }),
     });
-    setInvoice((prev) => prev ? { ...prev, status } : prev);
+    setInvoice((prev) => prev ? { ...prev, status, paid_at } : prev);
   }
 
   async function deleteInvoice() {

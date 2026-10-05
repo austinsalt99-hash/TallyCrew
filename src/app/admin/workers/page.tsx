@@ -9,6 +9,8 @@ interface Profile {
   created_at: string;
   is_removed: boolean;
   removed_at: string | null;
+  pay_rate: number | null;
+  worker_type: "w2" | "1099";
 }
 
 interface InviteCode {
@@ -41,6 +43,11 @@ export default function WorkersPage() {
   const [removeTarget, setRemoveTarget] = useState<Profile | null>(null);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState("");
+  const [payTarget, setPayTarget] = useState<Profile | null>(null);
+  const [payRateInput, setPayRateInput] = useState("");
+  const [workerTypeInput, setWorkerTypeInput] = useState<"w2" | "1099">("w2");
+  const [savingPay, setSavingPay] = useState(false);
+  const [payError, setPayError] = useState("");
 
   useEffect(() => {
     fetch("/api/company", { credentials: "include" })
@@ -55,7 +62,10 @@ export default function WorkersPage() {
     setLoadingWorkers(true);
     fetch("/api/admin/workers", { credentials: "include" })
       .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setWorkers(data); })
+      .then((data) => {
+        if (Array.isArray(data)) setWorkers(data);
+        else setError(data.error ?? "Could not load workers.");
+      })
       .finally(() => setLoadingWorkers(false));
   }
 
@@ -112,6 +122,40 @@ export default function WorkersPage() {
     }
     setRemoving(false);
     setRemoveTarget(null);
+    await loadWorkers();
+  }
+
+  function openPayEditor(w: Profile) {
+    setPayTarget(w);
+    setPayRateInput(w.pay_rate != null ? String(w.pay_rate) : "");
+    setWorkerTypeInput(w.worker_type ?? "w2");
+    setPayError("");
+  }
+
+  async function savePayInfo() {
+    if (!payTarget) return;
+    const trimmed = payRateInput.trim();
+    const parsedRate = trimmed === "" ? null : Number(trimmed);
+    if (parsedRate != null && (!Number.isFinite(parsedRate) || parsedRate < 0)) {
+      setPayError("Enter a valid, non-negative pay rate.");
+      return;
+    }
+    setSavingPay(true);
+    setPayError("");
+    const res = await fetch(`/api/admin/workers/${payTarget.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ pay_rate: parsedRate, worker_type: workerTypeInput }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setPayError(data.error ?? "Could not save.");
+      setSavingPay(false);
+      return;
+    }
+    setSavingPay(false);
+    setPayTarget(null);
     await loadWorkers();
   }
 
@@ -172,14 +216,28 @@ export default function WorkersPage() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-400">Joined {formatDate(w.created_at)}</p>
+                  {w.role === "worker" && (
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {w.worker_type === "1099" ? "Contractor" : "Employee"}
+                      {w.pay_rate != null ? ` · $${Number(w.pay_rate).toFixed(2)}/hr` : " · no pay rate set"}
+                    </p>
+                  )}
                 </div>
                 {w.role === "worker" && (
-                  <button
-                    onClick={() => setRemoveTarget(w)}
-                    className="shrink-0 text-xs font-semibold text-red-500 hover:underline"
-                  >
-                    Remove
-                  </button>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      onClick={() => openPayEditor(w)}
+                      className="text-xs font-semibold text-navy-600 hover:underline"
+                    >
+                      Edit pay
+                    </button>
+                    <button
+                      onClick={() => setRemoveTarget(w)}
+                      className="text-xs font-semibold text-red-500 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -347,6 +405,80 @@ export default function WorkersPage() {
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl py-2.5 transition-colors disabled:opacity-50"
               >
                 {removing ? "Removing…" : "Remove worker"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pay info modal */}
+      {payTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md p-6 space-y-4">
+            <h2 className="text-lg font-bold text-gray-900">{payTarget.full_name}&apos;s pay info</h2>
+            <p className="text-sm text-gray-600">
+              Used to calculate gross pay on the Payroll and Financials pages. Not shown to the worker.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                Pay rate ($/hr)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={payRateInput}
+                onChange={(e) => setPayRateInput(e.target.value)}
+                placeholder="e.g. 22.50"
+                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                Classification
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWorkerTypeInput("w2")}
+                  className={`flex-1 text-sm font-semibold rounded-xl py-2.5 border transition-colors ${
+                    workerTypeInput === "w2" ? "bg-navy-600 text-white border-navy-600" : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  Employee
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWorkerTypeInput("1099")}
+                  className={`flex-1 text-sm font-semibold rounded-xl py-2.5 border transition-colors ${
+                    workerTypeInput === "1099" ? "bg-navy-600 text-white border-navy-600" : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  Contractor
+                </button>
+              </div>
+            </div>
+
+            {payError && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3">{payError}</p>}
+
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setPayTarget(null)}
+                disabled={savingPay}
+                className="flex-1 border border-gray-300 text-gray-700 font-semibold rounded-xl py-2.5 hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={savePayInfo}
+                disabled={savingPay}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl py-2.5 transition-colors disabled:opacity-50"
+              >
+                {savingPay ? "Saving…" : "Save"}
               </button>
             </div>
           </div>

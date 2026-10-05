@@ -1119,3 +1119,61 @@ CREATE POLICY availability_requests_admin_delete ON availability_requests FOR DE
   USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
 
 COMMIT;
+
+
+-- -------------------------------------------------------------
+-- 25. WORKER PAY RATE & TAX CLASSIFICATION
+--     pay_rate: hourly wage the COMPANY PAYS the worker — distinct
+--     from log_entry_type_worker_rates, which is what the company
+--     BILLS THE CLIENT for that worker's time on a job type. One is
+--     cost, the other is revenue; conflating them would make the
+--     new Tax Info / Payroll $ totals wrong.
+--     worker_type: 'w2' or '1099', shown on the admin Tax Info page
+--     so the boss knows who needs a 1099-NEC at year end. No SSN/EIN
+--     is collected here — that stays with the accountant/payroll
+--     provider who already has it via a W-9, keeping TallyCrew out
+--     of custody of that PII.
+--     The trigger blocks non-admins from editing these two columns
+--     on their own profile — profiles_update's WITH CHECK only pins
+--     role/company_id, so without this a worker could PATCH their
+--     own pay_rate directly via the Supabase client, bypassing the
+--     admin-only /api/admin/workers/[id] route.
+-- -------------------------------------------------------------
+BEGIN;
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS pay_rate NUMERIC;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS worker_type TEXT NOT NULL DEFAULT 'w2'
+  CHECK (worker_type IN ('w2', '1099'));
+
+CREATE OR REPLACE FUNCTION prevent_self_pay_edit()
+  RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF get_my_role() != 'admin' THEN
+    NEW.pay_rate := OLD.pay_rate;
+    NEW.worker_type := OLD.worker_type;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS profiles_protect_pay_fields ON profiles;
+CREATE TRIGGER profiles_protect_pay_fields
+  BEFORE UPDATE ON profiles
+  FOR EACH ROW EXECUTE FUNCTION prevent_self_pay_edit();
+
+COMMIT;
+
+
+-- -------------------------------------------------------------
+-- 26. INVOICE PAID DATE
+--     Revenue for the Tax Info page is counted on a cash basis —
+--     when an invoice was actually marked paid, not its invoice_date
+--     or job date_from/date_to — since that's how most small
+--     businesses report income. paid_at is set/cleared by the admin
+--     invoice page whenever status is toggled to/from "paid".
+-- -------------------------------------------------------------
+BEGIN;
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+
+COMMIT;

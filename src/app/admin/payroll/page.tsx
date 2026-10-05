@@ -29,6 +29,8 @@ interface EmployeeRow {
   totalHours: number;
   byType: TypeBucket[];
   byJob: JobBucket[];
+  payRate: number | null;
+  grossPay: number | null;
 }
 
 interface PayrollResponse {
@@ -43,16 +45,22 @@ function fmtHours(h: number): string {
   return `${h % 1 === 0 ? h : h.toFixed(2)}h`;
 }
 
+function fmtMoney(n: number): string {
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function csvField(v: string): string {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
 function downloadCsv(data: PayrollResponse) {
-  const header = ["Employee", "Total Hours", "Non-Billable Hours", "Breakdown"];
+  const header = ["Employee", "Total Hours", "Non-Billable Hours", "Pay Rate", "Gross Pay", "Breakdown"];
   const rows = data.employees.map((e) => [
     e.employeeName,
     e.totalHours.toString(),
     e.nonBillableHours.toString(),
+    e.payRate != null ? e.payRate.toFixed(2) : "",
+    e.grossPay != null ? e.grossPay.toFixed(2) : "",
     e.byType.map((t) => `${t.typeName}: ${t.hours}h`).join("; "),
   ]);
   const csv = [header, ...rows].map((row) => row.map(csvField).join(",")).join("\n");
@@ -129,6 +137,8 @@ export default function PayrollPage() {
   }
 
   const totalPeriodHours = data ? Math.round(data.employees.reduce((s, e) => s + e.totalHours, 0) * 100) / 100 : 0;
+  const totalPeriodPay = data ? Math.round(data.employees.reduce((s, e) => s + (e.grossPay ?? 0), 0) * 100) / 100 : 0;
+  const hasAnyPay = data ? data.employees.some((e) => e.grossPay != null) : false;
 
   return (
     <div className="space-y-5">
@@ -177,7 +187,9 @@ export default function PayrollPage() {
         <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center justify-between">
           <div>
             <p className="text-xs text-gray-400">Period total</p>
-            <p className="text-sm font-semibold text-gray-900">{fmtHours(totalPeriodHours)}</p>
+            <p className="text-sm font-semibold text-gray-900">
+              {fmtHours(totalPeriodHours)}{hasAnyPay ? ` · ${fmtMoney(totalPeriodPay)}` : ""}
+            </p>
           </div>
           <button
             type="button"
@@ -217,9 +229,17 @@ export default function PayrollPage() {
                   >
                     <div className="min-w-0">
                       <p className="font-semibold text-gray-900 text-sm truncate">{e.employeeName}</p>
+                      {e.grossPay == null && (
+                        <p className="text-[11px] text-amber-600">No pay rate set</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <p className="text-sm font-semibold text-gray-900">{fmtHours(e.totalHours)}</p>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-gray-900">{fmtHours(e.totalHours)}</p>
+                        {e.grossPay != null && (
+                          <p className="text-xs text-gray-500">{fmtMoney(e.grossPay)}</p>
+                        )}
+                      </div>
                       <span className="text-gray-400 text-[10px]">{isOpen ? "▲" : "▼"}</span>
                     </div>
                   </button>
