@@ -1,6 +1,7 @@
 import type { BillableEntryData } from "@/components/BillableEntry";
 import type { NonBillableEntryData } from "@/components/NonBillableEntry";
 import type { LogEntryType } from "@/types/logConfig";
+import { TYPE_UNITS_KEY, unitsKey } from "@/lib/unitQty";
 
 function formatTime(t: string): string {
   if (!t) return "—";
@@ -48,11 +49,20 @@ export function buildEmailHtml(params: {
               .sort((a, b) => a.sort_order - b.sort_order)
               .map((f) => {
                 const val = e.customFields?.[f.field_key];
-                return val ? `${f.label}: ${val}` : null;
+                if (!val) return null;
+                const units = e.customFields?.[unitsKey(f.field_key)];
+                const unitsSuffix = units !== undefined ? ` × ${units}` : "";
+                return `${f.label}: ${val}${unitsSuffix}`;
               })
+              .concat(
+                typeConfig.rate_type === "per_unit" && e.customFields?.[TYPE_UNITS_KEY] !== undefined
+                  ? [`Units: ${e.customFields[TYPE_UNITS_KEY]}`]
+                  : []
+              )
               .filter(Boolean)
               .join("<br>")
           : Object.entries(e.customFields)
+              .filter(([k]) => !k.endsWith("__units"))
               .map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`)
               .join("<br>");
 

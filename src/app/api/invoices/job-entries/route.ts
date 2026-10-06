@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 import { collectEntryHours } from "@/lib/billableHours";
+import { TYPE_UNITS_KEY, parseUnits, unitsKey } from "@/lib/unitQty";
 
 function calcHours(start?: string, end?: string, manual?: number | null): number {
   if (manual != null) return manual;
@@ -41,6 +42,7 @@ function calcAmountDetailed(
   hours: number,
   dropdownFields: Record<string, string>,
   numberFieldTotals: Record<string, number>,
+  unitTotals: Record<string, number>,
   optionRates: OptionRateMap,
 ): CalcResult {
   if (!type) return { amount: "", priceBasis: [], rate: "" };
@@ -60,9 +62,11 @@ function calcAmountDetailed(
           priceBasis.push(`${selectedLabel} @ $${opt.rate_amount}/hr × ${hours}h = $${contrib.toFixed(2)}`);
           if (!rate) rate = `$${opt.rate_amount.toFixed(2)}/hr`;
         } else if (opt.rate_type === "per_unit") {
-          total += opt.rate_amount;
-          priceBasis.push(`${selectedLabel} (flat rate) = $${opt.rate_amount.toFixed(2)}`);
-          if (!rate) rate = `$${opt.rate_amount.toFixed(2)} flat`;
+          const units = unitTotals[fieldKey] ?? 0;
+          const contrib = units * opt.rate_amount;
+          total += contrib;
+          priceBasis.push(`${selectedLabel}: ${units} unit${units !== 1 ? "s" : ""} × $${opt.rate_amount.toFixed(2)}/unit = $${contrib.toFixed(2)}`);
+          if (!rate) rate = `$${opt.rate_amount.toFixed(2)}/unit`;
         }
       }
     }
@@ -86,9 +90,11 @@ function calcAmountDetailed(
       priceBasis.push(`${type.name} @ $${type.typeRateAmount}/hr × ${hours}h = $${contrib.toFixed(2)}`);
       rate = `$${type.typeRateAmount.toFixed(2)}/hr`;
     } else if (type.typeRateType === "per_unit") {
-      total += type.typeRateAmount;
-      priceBasis.push(`${type.name} (flat rate) = $${type.typeRateAmount.toFixed(2)}`);
-      rate = `$${type.typeRateAmount.toFixed(2)} flat`;
+      const units = unitTotals[TYPE_UNITS_KEY] ?? 0;
+      const contrib = units * type.typeRateAmount;
+      total += contrib;
+      priceBasis.push(`${type.name}: ${units} unit${units !== 1 ? "s" : ""} × $${type.typeRateAmount.toFixed(2)}/unit = $${contrib.toFixed(2)}`);
+      rate = `$${type.typeRateAmount.toFixed(2)}/unit`;
     }
   }
 
@@ -177,7 +183,9 @@ export async function GET(req: NextRequest) {
       .from("log_entry_field_options")
       .select("field_id, label, rate_type, rate_amount")
       .in("field_id", dropdownFieldIds);
-    optionRows = (opts ?? []).filter((o) => o.rate_amount != null);
+    // Keep per-unit options even without a price yet: their units still need to be
+    // carried onto the line so the admin can price them in the editor.
+    optionRows = (opts ?? []).filter((o) => o.rate_amount != null || o.rate_type === "per_unit");
   }
 
   const optionRates: OptionRateMap = {};
@@ -231,7 +239,7 @@ export async function GET(req: NextRequest) {
     slug: string;
     typeInfo: TypeInfo | undefined;
     dropdownFields: Record<string, string>;
-    entries: { employee: string; workerId: string; date: string; hours: number; numberFields: Record<string, number> }[];
+    entries: { employee: string; workerId: string; date: string; hours: number; numberFields: Record<string, number>; units: Record<string, number> }[];
   }
 
   interface LineItemResponse {
@@ -246,6 +254,8 @@ export async function GET(req: NextRequest) {
     sourceJobTitle: string;
     priceBasis?: string[];
     breakdown?: { employee: string; date: string; hours: number }[];
+    rateBasis: "hour" | "unit";
+    units?: number;
   }
 
   interface WorkItemDisplay {
@@ -334,12 +344,29 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      // Units logged against a per-unit priced option (keyed by field) or the type itself
+      const units: Record<string, number> = {};
+      for (const k of ddKeys) {
+        const label = re.customFields[k];
+        if (label && typeInfo && optionRates[typeInfo.id]?.[k]?.[label]?.rate_type === "per_unit") {
+          units[k] = parseUnits(re.customFields[unitsKey(k)]);
+        }
+      }
+      if (typeInfo?.typeRateType === "per_unit") {
+        units[TYPE_UNITS_KEY] = parseUnits(re.customFields[TYPE_UNITS_KEY]);
+      }
+      if (typeInfo?.fieldRates) {
+        for (const [fk, fr] of Object.entries(typeInfo.fieldRates)) {
+          if (fr.rate_type === "per_unit") units[fk] = numberFields[fk] ?? 0;
+        }
+      }
+
       if (!groups.has(gk)) {
         const ddFields: Record<string, string> = {};
         for (const k of ddKeys) { if (re.customFields[k]) ddFields[k] = re.customFields[k]; }
         groups.set(gk, { slug: re.slug, typeInfo, dropdownFields: ddFields, entries: [] });
       }
-      groups.get(gk)!.entries.push({ employee: re.employee, workerId: re.workerId, date: re.date, hours: re.hours, numberFields });
+      groups.get(gk)!.entries.push({ employee: re.employee, workerId: re.workerId, date: re.date, hours: re.hours, numberFields, units });
     }
 
     const lineItems: LineItemResponse[] = [];
@@ -356,13 +383,17 @@ export async function GET(req: NextRequest) {
       const totalHours = Math.round(entries.reduce((s, e) => s + e.hours, 0) * 100) / 100;
 
       const numberFieldTotals: Record<string, number> = {};
+      const unitTotals: Record<string, number> = {};
       for (const e of entries) {
         for (const [k, v] of Object.entries(e.numberFields)) {
           numberFieldTotals[k] = (numberFieldTotals[k] ?? 0) + v;
         }
+        for (const [k, v] of Object.entries(e.units)) {
+          unitTotals[k] = (unitTotals[k] ?? 0) + v;
+        }
       }
 
-      const { amount: fieldAmount, priceBasis: fieldPriceBasis, rate: fieldRate } = calcAmountDetailed(typeInfo, totalHours, dropdownFields, numberFieldTotals, optionRates);
+      const { amount: fieldAmount, priceBasis: fieldPriceBasis, rate: fieldRate } = calcAmountDetailed(typeInfo, totalHours, dropdownFields, numberFieldTotals, unitTotals, optionRates);
       let amount = fieldAmount;
       let priceBasis = fieldPriceBasis;
       let rate = fieldRate;
@@ -390,6 +421,11 @@ export async function GET(req: NextRequest) {
 
       const sortedEntries = [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.employee.localeCompare(b.employee));
 
+      // A line is per-unit if any of its entries logged units. Its quantity is then
+      // units, not hours, so editing the rate in the invoice recalculates from units.
+      const hasUnits = entries.some((e) => Object.keys(e.units).length > 0);
+      const unitsTotal = entries.reduce((s, e) => s + Object.values(e.units).reduce((a, b) => a + b, 0), 0);
+
       lineItems.push({
         id: crypto.randomUUID(),
         description,
@@ -402,6 +438,8 @@ export async function GET(req: NextRequest) {
         sourceJobTitle: jobTitle,
         priceBasis: priceBasis.length > 0 ? priceBasis : undefined,
         breakdown: sortedEntries.length > 1 ? sortedEntries : undefined,
+        rateBasis: hasUnits ? "unit" : "hour",
+        units: hasUnits ? Math.round(unitsTotal * 100) / 100 : undefined,
       });
     }
 

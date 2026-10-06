@@ -18,6 +18,8 @@ export const DEFAULT_INVOICE_COLUMNS: ColumnDef[] = [
   { id: "amount",      label: "Amount",      type: "amount",      visible: true },
 ];
 
+export type RateBasis = "hour" | "unit";
+
 export interface InvoiceLineItemLike {
   description: string;
   employee: string;
@@ -25,7 +27,27 @@ export interface InvoiceLineItemLike {
   hours: number | string;
   amount: number | string;
   rate?: string;
+  // What the rate multiplies: hours worked, or units used (per-unit materials etc.)
+  rateBasis?: RateBasis;
+  units?: number;
   customValues?: Record<string, string>;
+}
+
+// Pulls the number out of a typed rate ("$35/hr", "35", "1,200") so the amount
+// can be recalculated. Text with no number ("per job") returns null and the
+// amount is left as the admin typed it.
+export function parseRateNumber(rate: string | undefined): number | null {
+  if (!rate) return null;
+  const match = rate.replace(/,/g, "").match(/\d+(\.\d+)?/);
+  return match ? parseFloat(match[0]) : null;
+}
+
+// "unit" if the rate text says so, "hour" if it says hr/hour, otherwise keep the current basis.
+export function basisFromRateText(rate: string, fallback: RateBasis): RateBasis {
+  const t = rate.toLowerCase();
+  if (/unit|flat|each/.test(t)) return "unit";
+  if (/hr|hour/.test(t)) return "hour";
+  return fallback;
 }
 
 export function formatInvoiceDate(d: string): string {
@@ -52,7 +74,11 @@ export function formatInvoiceCell(col: ColumnDef, item: InvoiceLineItemLike): st
     case "employee": return item.employee || "—";
     case "description": return item.description || "—";
     case "rate": return item.rate || "—";
-    case "hours": return item.hours !== "" && item.hours !== 0 ? `${item.hours}h` : "—";
+    case "hours":
+      if (item.rateBasis === "unit") {
+        return item.units != null ? `${item.units} unit${item.units === 1 ? "" : "s"}` : "—";
+      }
+      return item.hours !== "" && item.hours !== 0 ? `${item.hours}h` : "—";
     case "amount": return `$${(parseFloat(String(item.amount)) || 0).toFixed(2)}`;
     case "custom": return item.customValues?.[col.id] || "—";
   }

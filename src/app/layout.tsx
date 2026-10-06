@@ -4,6 +4,8 @@ import { SerwistProvider } from "@serwist/next/react";
 import NativeAppInit from "@/components/NativeAppInit";
 import MobileTopBar from "@/components/MobileTopBar";
 import OfflineBanner from "@/components/OfflineBanner";
+import OfflineNavigation from "@/components/OfflineNavigation";
+import OfflinePreload from "@/components/OfflinePreload";
 import SyncManager from "@/components/SyncManager";
 
 export const metadata: Metadata = {
@@ -24,6 +26,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        {/* Tag the installed app before first paint, so the web top bar never flashes in it. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()){document.documentElement.classList.add("native-app")}}catch(e){}`,
+          }}
+        />
+      </head>
       <body className="bg-gray-100 min-h-screen">
         {/* @serwist/next's webpack build-time auto-registration (patching the
             "main-app" entry) silently no-ops under this Next.js version, so
@@ -33,6 +43,8 @@ export default function RootLayout({
         <NativeAppInit />
         <MobileTopBar />
         <OfflineBanner />
+        <OfflineNavigation />
+        <OfflinePreload />
         <SyncManager />
         {children}
       </body>

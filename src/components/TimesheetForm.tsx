@@ -5,6 +5,7 @@ import BillableEntry, { BillableEntryData } from "./BillableEntry";
 import type { NonBillableEntryData } from "./NonBillableEntry";
 import JobEventPicker, { JobEvent } from "./JobEventPicker";
 import LogHistoryPanel from "./LogHistoryPanel";
+import LogFieldInputs from "./LogFieldInputs";
 import { SkeletonJobCard } from "./Skeleton";
 import type { LogEntryType } from "@/types/logConfig";
 import { findBillableOverflow, timeRangeHours, carveOutGeneral } from "@/lib/billableHours";
@@ -714,70 +715,15 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
               return (
                 <div key={dayEntry.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
                   <span className="text-xs font-semibold text-navy-600 uppercase tracking-wide">{dayEntry.typeName}</span>
-                  {type.fields
-                    .slice()
-                    .sort((a, b) => a.sort_order - b.sort_order)
-                    .map((field) => (
-                      <div key={field.id}>
-                        <label className="block text-xs text-gray-500 mb-1">{field.label}</label>
-                        {field.field_type === "dropdown" ? (
-                          <select
-                            value={dayEntry.customFields[field.field_key] ?? ""}
-                            onChange={(e) =>
-                              setDayEntries((prev) =>
-                                prev.map((de) =>
-                                  de.id === dayEntry.id
-                                    ? { ...de, customFields: { ...de.customFields, [field.field_key]: e.target.value } }
-                                    : de
-                                )
-                              )
-                            }
-                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
-                          >
-                            <option value="">Select {field.label.toLowerCase()}…</option>
-                            {field.options
-                              .slice()
-                              .sort((a, b) => a.sort_order - b.sort_order)
-                              .map((opt) => (
-                                <option key={opt.id} value={opt.label}>{opt.label}</option>
-                              ))}
-                          </select>
-                        ) : field.field_type === "number" ? (
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="0"
-                            value={dayEntry.customFields[field.field_key] ?? ""}
-                            onChange={(e) =>
-                              setDayEntries((prev) =>
-                                prev.map((de) =>
-                                  de.id === dayEntry.id
-                                    ? { ...de, customFields: { ...de.customFields, [field.field_key]: e.target.value } }
-                                    : de
-                                )
-                              )
-                            }
-                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
-                          />
-                        ) : (
-                          <input
-                            type="text"
-                            value={dayEntry.customFields[field.field_key] ?? ""}
-                            onChange={(e) =>
-                              setDayEntries((prev) =>
-                                prev.map((de) =>
-                                  de.id === dayEntry.id
-                                    ? { ...de, customFields: { ...de.customFields, [field.field_key]: e.target.value } }
-                                    : de
-                                )
-                              )
-                            }
-                            className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
-                          />
-                        )}
-                      </div>
-                    ))}
+                  <LogFieldInputs
+                    type={type}
+                    values={dayEntry.customFields}
+                    onChange={(next) =>
+                      setDayEntries((prev) =>
+                        prev.map((de) => (de.id === dayEntry.id ? { ...de, customFields: next } : de))
+                      )
+                    }
+                  />
                 </div>
               );
             })}

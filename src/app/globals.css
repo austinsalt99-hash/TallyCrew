@@ -25,6 +25,22 @@
   }
 }
 
+/* Installed app (tagged by the inline script in layout.tsx): no top bar, so content
+   starts right under the status bar. Sticky headers that pin to top-0 must clear the
+   status bar too. */
+.native-app .mobile-top-bar {
+  display: none;
+}
+.native-app body {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.native-app .offline-banner {
+  top: env(safe-area-inset-top, 0px);
+}
+.native-app .sticky.top-0 {
+  top: env(safe-area-inset-top, 0px);
+}
+
 /* Marketing site body typeface (scoped; the app keeps the Tailwind default stack). */
 .site-shell {
   font-family: var(--font-sans-site), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;

@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import type { ColumnDef } from "../_components/invoiceFormat";
 import { DEFAULT_INVOICE_COLUMNS, formatInvoiceCell, formatInvoiceDate, invoiceColHeaderClass } from "../_components/invoiceFormat";
+import { buildInvoicePdf } from "@/lib/invoicePdf";
+import { sharePdf } from "@/lib/sharePdf";
 
 interface LineItem {
   description: string;
@@ -13,6 +15,8 @@ interface LineItem {
   hours: number | string;
   amount: number | string;
   rate?: string;
+  rateBasis?: "hour" | "unit";
+  units?: number;
   customValues?: Record<string, string>;
 }
 
@@ -46,6 +50,8 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState("");
 
   useEffect(() => {
     fetch(`/api/invoices/${id}`)
@@ -91,6 +97,26 @@ export default function InvoiceDetailPage() {
   const showDescription = visibleCols.some((c) => c.type === "description");
   const colCount = Math.max(1, tableCols.length);
 
+  // window.print() does nothing inside the iOS app or Safari, so build the PDF and hand it to the share sheet.
+  async function savePdf() {
+    if (!invoice) return;
+    setPdfBusy(true);
+    setPdfError("");
+    try {
+      const bytes = await buildInvoicePdf(invoice, columns, logoUrl);
+      const safeNumber = (invoice.invoice_number || "invoice").replace(/[^A-Za-z0-9_-]+/g, "-");
+      await sharePdf(bytes, `Invoice-${safeNumber}.pdf`);
+    } catch (err) {
+      // Closing the share sheet rejects with an abort/cancel error. That isn't a failure.
+      const message = err instanceof Error ? `${err.name} ${err.message}` : "";
+      if (/abort|cancel/i.test(message)) return;
+      console.error("Save PDF failed:", err);
+      setPdfError("Couldn't create the PDF. If this keeps happening, update the TallyCrew app and try again.");
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   return (
     <div className="max-w-4xl">
       {/* Admin controls — hidden when printing */}
@@ -131,10 +157,11 @@ export default function InvoiceDetailPage() {
           </button>
         )}
         <button
-          onClick={() => window.print()}
-          className="bg-navy-600 hover:bg-navy-700 text-white font-semibold rounded-xl px-4 py-2 text-sm"
+          onClick={savePdf}
+          disabled={pdfBusy}
+          className="bg-navy-600 hover:bg-navy-700 disabled:opacity-60 text-white font-semibold rounded-xl px-4 py-2 text-sm"
         >
-          Print / Save PDF
+          {pdfBusy ? "Preparing PDF…" : "Save PDF"}
         </button>
         {confirmDelete ? (
           <div className="flex items-center gap-2 text-sm">
@@ -148,11 +175,12 @@ export default function InvoiceDetailPage() {
           </button>
         )}
       </div>
+      {pdfError && <p className="print:hidden -mt-3 mb-6 text-sm text-red-600">{pdfError}</p>}
 
       {/* Printable invoice */}
-      <div className="bg-white rounded-xl border border-gray-200 p-8 print:border-0 print:rounded-none print:shadow-none">
+      <div className="bg-white rounded-xl border border-gray-200 p-5 sm:p-8 print:border-0 print:rounded-none print:shadow-none">
         {/* Header */}
-        <div className="flex justify-between items-start mb-8">
+        <div className="flex justify-between items-start gap-4 mb-6 sm:mb-8">
           <div>
             {logoUrl && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -183,8 +211,42 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
 
-        {/* Line items */}
-        <table className="w-full text-sm mb-8 border-collapse">
+        {/* Phone: each line as a stacked card so nothing needs sideways scrolling */}
+        <div className="sm:hidden print:hidden mb-8">
+          {invoice.line_items.map((item, i) => {
+            const colOf = (type: string) => tableCols.find((c) => c.type === type);
+            const dateCol = colOf("date");
+            const employeeCol = colOf("employee");
+            const amountCol = colOf("amount");
+            const detailCols = tableCols.filter((c) => !["date", "employee", "amount", "description"].includes(c.type));
+            return (
+              <div key={i} className="py-3 space-y-1 border-b border-gray-100">
+                <div className="flex justify-between items-start gap-3">
+                  <div className="min-w-0 text-xs text-gray-600">
+                    {dateCol && <div>{formatInvoiceCell(dateCol, item)}</div>}
+                    {employeeCol && <div className="text-sm text-gray-700">{formatInvoiceCell(employeeCol, item)}</div>}
+                  </div>
+                  {amountCol && <div className="shrink-0 text-sm font-semibold text-gray-900">{formatInvoiceCell(amountCol, item)}</div>}
+                </div>
+                {showDescription && <div className="text-sm text-gray-700">{item.description || "—"}</div>}
+                {detailCols.map((col) => (
+                  <div key={col.id} className="flex justify-between items-baseline gap-3 text-xs text-gray-500">
+                    <span>{col.label}</span>
+                    <span className="text-right text-sm text-gray-700">{formatInvoiceCell(col, item)}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          <div className="flex justify-between pt-3 font-bold">
+            <span className="text-base text-gray-700">Total</span>
+            <span className="text-base text-navy-600">${total.toFixed(2)}</span>
+          </div>
+        </div>
+
+        {/* Line items — table from 640px up, and always when printing */}
+        <div className="hidden sm:block print:block overflow-x-auto mb-8">
+        <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b-2 border-gray-200">
               {tableCols.map((col) => <th key={col.id} className={invoiceColHeaderClass(col)}>{col.label}</th>)}
@@ -220,6 +282,7 @@ export default function InvoiceDetailPage() {
             </tr>
           </tfoot>
         </table>
+        </div>
 
         {/* Notes */}
         {invoice.notes && (

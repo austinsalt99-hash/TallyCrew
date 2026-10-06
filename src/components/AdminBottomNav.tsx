@@ -133,6 +133,8 @@ export default function AdminBottomNav() {
     const supabase = createSupabaseBrowser();
     const { clearUser } = await import("@/lib/notifications");
     await clearUser().catch(console.error);
+    const { clearOfflineCache } = await import("@/lib/offlinePreload");
+    await clearOfflineCache().catch(console.error);
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();

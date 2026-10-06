@@ -12,7 +12,7 @@ declare const self: ServiceWorkerGlobalScope;
 // Employee-facing routes we make available offline (last-known page shell +
 // data). Everything else — admin, auth, marketing — is intentionally left to
 // the browser's normal network handling.
-const NAV_PATHS = new Set(["/", "/schedule", "/profile", "/settings"]);
+const NAV_PATHS = new Set(["/", "/dashboard", "/schedule", "/profile", "/settings"]);
 const API_PATHS = new Set(["/api/me", "/api/events", "/api/log-config", "/api/submissions/employee"]);
 
 const runtimeCaching: RuntimeCaching[] = [
@@ -34,7 +34,9 @@ const runtimeCaching: RuntimeCaching[] = [
       networkTimeoutSeconds: 4,
       plugins: [
         new CacheableResponsePlugin({ statuses: [200] }),
-        new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 7 }),
+        // Sized for the offline preload: about a month of weeks and month views,
+        // each stored once per URL. Entries expire after 35 days unless refreshed.
+        new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 35 }),
       ],
     }),
   },

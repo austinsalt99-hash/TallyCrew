@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import type { LogEntryType } from "@/types/logConfig";
+import LogFieldInputs from "@/components/LogFieldInputs";
 
 function uuid(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -128,20 +129,11 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
   const update = (field: keyof BillableEntryData, value: string) =>
     onChange({ ...entry, [field]: value });
 
-  const updateCustomField = (key: string, value: string) =>
-    onChange({ ...entry, customFields: { ...(entry.customFields ?? {}), [key]: value } });
-
   const updateSubEntry = (id: string, patch: Partial<SubEntry>) =>
     onChange({
       ...entry,
       subEntries: subEntries.map((s) => (s.id === id ? { ...s, ...patch } : s)),
     });
-
-  const updateSubCustomField = (id: string, key: string, value: string) => {
-    const sub = subEntries.find((s) => s.id === id);
-    if (!sub) return;
-    updateSubEntry(id, { customFields: { ...(sub.customFields ?? {}), [key]: value } });
-  };
 
   const addSubEntry = (slug: string) => {
     const id = uuid();
@@ -315,84 +307,24 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
             onChange={(e) => update("description", e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
           />
-          {standardType?.fields
-            .slice()
-            .sort((a, b) => a.sort_order - b.sort_order)
-            .map((field) => (
-              <div key={field.id}>
-                <label className="block text-xs text-gray-500 mb-1">{field.label}</label>
-                {field.field_type === "dropdown" ? (
-                  <select
-                    value={entry.customFields?.[field.field_key] ?? ""}
-                    onChange={(e) => updateCustomField(field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
-                  >
-                    <option value="">Select {field.label.toLowerCase()}…</option>
-                    {field.options
-                      .slice()
-                      .sort((a, b) => a.sort_order - b.sort_order)
-                      .map((opt) => (
-                        <option key={opt.id} value={opt.label}>{opt.label}</option>
-                      ))}
-                  </select>
-                ) : field.field_type === "number" ? (
-                  <input
-                    type="number" min="0" step="0.01" placeholder="0"
-                    value={entry.customFields?.[field.field_key] ?? ""}
-                    onChange={(e) => updateCustomField(field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
-                  />
-                ) : (
-                  <input type="text"
-                    value={entry.customFields?.[field.field_key] ?? ""}
-                    onChange={(e) => updateCustomField(field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
-                  />
-                )}
-              </div>
-            ))}
+          {standardType && (
+            <LogFieldInputs
+              type={standardType}
+              values={entry.customFields ?? {}}
+              onChange={(next) => onChange({ ...entry, customFields: next })}
+            />
+          )}
         </>
       )}
 
       {/* Form fields — Sub-entry tab */}
       {activeSub && activeCustomType && (
         <div className="space-y-3">
-          {activeCustomType.fields
-            .slice()
-            .sort((a, b) => a.sort_order - b.sort_order)
-            .map((field) => (
-              <div key={field.id}>
-                <label className="block text-xs text-gray-500 mb-1">{field.label}</label>
-                {field.field_type === "dropdown" ? (
-                  <select
-                    value={activeSub.customFields?.[field.field_key] ?? ""}
-                    onChange={(e) => updateSubCustomField(activeSub.id, field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white"
-                  >
-                    <option value="">Select {field.label.toLowerCase()}…</option>
-                    {field.options
-                      .slice()
-                      .sort((a, b) => a.sort_order - b.sort_order)
-                      .map((opt) => (
-                        <option key={opt.id} value={opt.label}>{opt.label}</option>
-                      ))}
-                  </select>
-                ) : field.field_type === "number" ? (
-                  <input
-                    type="number" min="0" step="0.01" placeholder="0"
-                    value={activeSub.customFields?.[field.field_key] ?? ""}
-                    onChange={(e) => updateSubCustomField(activeSub.id, field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
-                  />
-                ) : (
-                  <input type="text"
-                    value={activeSub.customFields?.[field.field_key] ?? ""}
-                    onChange={(e) => updateSubCustomField(activeSub.id, field.field_key, e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-navy-400"
-                  />
-                )}
-              </div>
-            ))}
+          <LogFieldInputs
+            type={activeCustomType}
+            values={activeSub.customFields ?? {}}
+            onChange={(next) => updateSubEntry(activeSub.id, { customFields: next })}
+          />
         </div>
       )}
 

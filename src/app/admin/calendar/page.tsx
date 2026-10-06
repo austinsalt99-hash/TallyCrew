@@ -1282,7 +1282,9 @@ export default function AdminCalendar() {
     const recognition = new SpeechRecognitionClass();
     recognition.lang = "en-US";
     recognition.interimResults = true;
-    recognition.continuous = false;
+    // Keep listening through pauses, so a long note isn't cut off at the first one.
+    // The mic button stops it.
+    recognition.continuous = true;
     recognitionRef.current = recognition;
 
     let finalTranscript = "";
@@ -1319,6 +1321,9 @@ export default function AdminCalendar() {
           start_time: parsed.start_time ?? "",
           end_time: parsed.end_time ?? "",
           assigned_to: parsed.assigned_to ?? "",
+          equipment_needed: parsed.equipment_needed ?? "",
+          internal_notes: parsed.internal_notes ?? "",
+          quoted_price: parsed.quoted_price != null ? String(parsed.quoted_price) : "",
           is_verified: false,
         });
         setEditId(null);

@@ -5,6 +5,7 @@ import BottomNav from "@/components/BottomNav";
 import DesktopHeader from "@/components/DesktopHeader";
 import JobChecklist from "@/components/JobChecklist";
 import JobAttachments, { JobAttachment } from "@/components/JobAttachments";
+import { fmt, getMonthDays } from "@/lib/calendarRanges";
 
 type JobStatus = "scheduled" | "in_progress" | "completed" | "invoiced" | "cancelled";
 
@@ -53,12 +54,6 @@ const HOUR_LABELS = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => {
   return h < 12 ? `${h} AM` : `${h - 12} PM`;
 });
 
-function fmt(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 function getWeekDates(offset = 0): Date[] {
   const now = new Date();
@@ -78,26 +73,6 @@ function getDayDate(offset: number): Date {
   return d;
 }
 
-function getMonthDays(offset: number): Date[] {
-  const now = new Date();
-  const target = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-  const year = target.getFullYear();
-  const month = target.getMonth();
-  const firstOfMonth = new Date(year, month, 1);
-  const lastOfMonth = new Date(year, month + 1, 0);
-  const startPad = (firstOfMonth.getDay() + 6) % 7;
-  const endPad = (7 - lastOfMonth.getDay()) % 7;
-  const start = new Date(firstOfMonth);
-  start.setDate(start.getDate() - startPad);
-  const totalDays = startPad + lastOfMonth.getDate() + endPad;
-  const days: Date[] = [];
-  for (let i = 0; i < totalDays; i++) {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    days.push(d);
-  }
-  return days;
-}
 
 function dayDiff(a: Date, b: Date): number {
   const da = new Date(a.getFullYear(), a.getMonth(), a.getDate());

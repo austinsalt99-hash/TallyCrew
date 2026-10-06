@@ -64,11 +64,25 @@ export async function POST(request: Request) {
       start_time: parsed.start_time || null,
       end_time: parsed.end_time || null,
       assigned_to: parsed.assigned_to || null,
+      equipment_needed: parsed.equipment_needed || null,
       is_verified: false,
     })
     .select()
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Price and admin-only notes live in job_event_financials (admin-only RLS), not job_events.
+  if (parsed.quoted_price != null || parsed.internal_notes) {
+    const { error: finError } = await supabase
+      .from("job_event_financials")
+      .insert({
+        job_event_id: data.id,
+        quoted_price: parsed.quoted_price,
+        internal_notes: parsed.internal_notes || null,
+      });
+    if (finError) return NextResponse.json({ error: finError.message }, { status: 500 });
+  }
+
   return NextResponse.json({ ok: true, event: data });
 }

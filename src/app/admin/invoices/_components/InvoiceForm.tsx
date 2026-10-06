@@ -1,10 +1,10 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
-import type { ColumnDef } from "./invoiceFormat";
-import { DEFAULT_INVOICE_COLUMNS, formatInvoiceCell, formatInvoiceDate, invoiceColHeaderClass } from "./invoiceFormat";
+import type { ColumnDef, RateBasis } from "./invoiceFormat";
+import { DEFAULT_INVOICE_COLUMNS, basisFromRateText, formatInvoiceCell, formatInvoiceDate, invoiceColHeaderClass, parseRateNumber } from "./invoiceFormat";
 
 export type { ColumnDef };
 
@@ -31,6 +31,8 @@ interface LineItemState {
   hours: number | string;
   amount: string;
   rate?: string;
+  rateBasis?: RateBasis;
+  units?: number;
   sourceJobId?: string;
   sourceJobTitle?: string;
   breakdown?: BreakdownEntry[];
@@ -111,6 +113,23 @@ function blankItem(): LineItemState {
   return { id: crypto.randomUUID(), description: "", employee: "", date: todayStr(), hours: "", amount: "", customValues: {} };
 }
 
+// Amount = rate × quantity, where quantity is units on per-unit lines and hours otherwise.
+// A rate with no number in it ("per job") leaves the amount as typed.
+function recalcAmount(item: LineItemState): LineItemState {
+  const rateNum = parseRateNumber(item.rate);
+  if (rateNum === null) return item;
+  const basis = item.rateBasis ?? "hour";
+  const qty = basis === "unit" ? (item.units ?? 0) : (parseFloat(String(item.hours)) || 0);
+  const amount = (Math.round(qty * rateNum * 100) / 100).toFixed(2);
+  const unit = basis === "unit" ? "unit" : "hr";
+  const qtyText = basis === "unit" ? `${qty} unit${qty === 1 ? "" : "s"}` : `${qty}h`;
+  return { ...item, amount, priceBasis: [`${qtyText} × $${rateNum.toFixed(2)}/${unit} = $${amount}`] };
+}
+
+function applyRate(item: LineItemState, rate: string): LineItemState {
+  return recalcAmount({ ...item, rate, rateBasis: basisFromRateText(rate, item.rateBasis ?? "hour") });
+}
+
 // Map each workItem to the line item ID it contributes to, by description (not index).
 // lineItems from the API are alphabetically sorted while workItems follow raw entry order,
 // so index-based mapping is unreliable — description matching is the correct approach.
@@ -162,10 +181,13 @@ function mergeIntoExisting(
         : employees.length === 1 ? employees[0]
         : employees.length === 2 ? employees.join(" & ")
         : `${employees.length} employees`;
+      const perUnit = cur.rateBasis === "unit" || newItem.rateBasis === "unit";
       next[idx] = {
         ...cur,
         employee: employeeLabel,
         hours: totalHours,
+        rateBasis: perUnit ? "unit" : cur.rateBasis,
+        units: perUnit ? (cur.units ?? 0) + (newItem.units ?? 0) : cur.units,
         amount: totalAmount > 0 ? totalAmount.toFixed(2) : cur.amount,
         date: allBreakdowns[0]?.date ?? cur.date,
         breakdown: allBreakdowns.length > 1 ? allBreakdowns : undefined,
@@ -227,6 +249,20 @@ function EditableCell({
 
 // ── Invoice preview ───────────────────────────────────────────────────────────
 
+// True when the element is narrower than minWidth. Measures the element itself rather
+// than the viewport, since the preview sits in a phone tab and in a half-width desktop panel.
+function useCompactLayout(ref: RefObject<HTMLElement | null>, minWidth: number): boolean {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setCompact(entry.contentRect.width < minWidth));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, minWidth]);
+  return compact;
+}
+
 function InvoicePreview({
   invoiceNumber, invoiceDate, companyName, companyAddress, companyLogoUrl, clientName,
   dateFrom, dateTo, notes, lineItems, columns, activeItemId, onActivate,
@@ -247,45 +283,88 @@ function InvoicePreview({
   const tableCols = visibleCols.filter((c) => c.type !== "description");
   const showDescription = visibleCols.some((c) => c.type === "description");
   const colCount = Math.max(1, tableCols.length);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const compact = useCompactLayout(cardRef, 440);
 
-  function renderCell(col: ColumnDef, item: LineItemState) {
+  // The editable contents of one column for one line. The table and the phone cards both use it.
+  function cellContent(col: ColumnDef, item: LineItemState) {
     switch (col.type) {
-      case "date": return <td key={col.id} className="py-2 pr-3 text-gray-600 text-xs">{item.date || "—"}</td>;
-      case "employee": return <td key={col.id} className="py-2 pr-3 text-gray-700 text-xs">{item.employee || "—"}</td>;
+      case "date": return item.date || "—";
+      case "employee": return item.employee || "—";
       case "description": return null;
       case "rate": return (
-        <td key={col.id} className="py-2 pr-3 text-right text-gray-500">
-          <EditableCell value={item.rate ?? ""} onFocus={() => onActivate(item.id)}
-            onCommit={(v) => onUpdateItem(item.id, "rate", v)} placeholder="—" className="text-sm text-right" />
-        </td>
+        <EditableCell value={item.rate ?? ""} onFocus={() => onActivate(item.id)}
+          onCommit={(v) => onUpdateItem(item.id, "rate", v)} placeholder="—" className="text-sm text-right" />
       );
-      case "hours": return (
-        <td key={col.id} className="py-2 pr-3 text-right text-gray-500">
-          <EditableCell value={item.hours !== "" && item.hours !== 0 ? item.hours : ""}
-            display={item.hours !== "" && item.hours !== 0 ? formatInvoiceCell(col, item) : undefined} type="number"
-            onFocus={() => onActivate(item.id)} onCommit={(v) => onUpdateItem(item.id, "hours", v)}
-            placeholder="0" className="text-sm text-right" />
-        </td>
+      case "hours": return item.rateBasis === "unit" ? (
+        <EditableCell value={item.units ?? ""} display={formatInvoiceCell(col, item)} type="number"
+          onFocus={() => onActivate(item.id)} onCommit={(v) => onUpdateItem(item.id, "units", v)}
+          placeholder="0" className="text-sm text-right" />
+      ) : (
+        <EditableCell value={item.hours !== "" && item.hours !== 0 ? item.hours : ""}
+          display={item.hours !== "" && item.hours !== 0 ? formatInvoiceCell(col, item) : undefined} type="number"
+          onFocus={() => onActivate(item.id)} onCommit={(v) => onUpdateItem(item.id, "hours", v)}
+          placeholder="0" className="text-sm text-right" />
       );
       case "amount": return (
-        <td key={col.id} className="py-2 text-right font-medium text-gray-900">
-          <EditableCell value={item.amount} display={formatInvoiceCell(col, item)} type="number" onFocus={() => onActivate(item.id)}
-            onCommit={(v) => onUpdateItem(item.id, "amount", v)} placeholder="0.00" className="text-sm text-right" />
-        </td>
+        <EditableCell value={item.amount} display={formatInvoiceCell(col, item)} type="number" onFocus={() => onActivate(item.id)}
+          onCommit={(v) => onUpdateItem(item.id, "amount", v)} placeholder="0.00" className="text-sm text-right" />
       );
       case "custom": return (
-        <td key={col.id} className="py-2 pr-3 text-gray-700">
-          <EditableCell value={item.customValues?.[col.id] ?? ""} onFocus={() => onActivate(item.id)}
-            onCommit={(v) => onUpdateCustomValue(item.id, col.id, v)} placeholder="—" className="text-sm" />
-        </td>
+        <EditableCell value={item.customValues?.[col.id] ?? ""} onFocus={() => onActivate(item.id)}
+          onCommit={(v) => onUpdateCustomValue(item.id, col.id, v)} placeholder="—" className="text-sm" />
       );
     }
   }
 
+  function renderCell(col: ColumnDef, item: LineItemState) {
+    switch (col.type) {
+      case "description": return null;
+      case "date": return <td key={col.id} className="py-2 pr-3 text-gray-600 text-xs">{cellContent(col, item)}</td>;
+      case "employee": return <td key={col.id} className="py-2 pr-3 text-gray-700 text-xs">{cellContent(col, item)}</td>;
+      case "rate": return <td key={col.id} className="py-2 pr-3 text-right text-gray-500">{cellContent(col, item)}</td>;
+      case "hours": return <td key={col.id} className="py-2 pr-3 text-right text-gray-500">{cellContent(col, item)}</td>;
+      case "amount": return <td key={col.id} className="py-2 text-right font-medium text-gray-900">{cellContent(col, item)}</td>;
+      case "custom": return <td key={col.id} className="py-2 pr-3 text-gray-700">{cellContent(col, item)}</td>;
+    }
+  }
+
+  // Phone-width: each line becomes a stacked card so nothing needs sideways scrolling.
+  function renderCard(item: LineItemState) {
+    const isActive = activeItemId === item.id;
+    const colOf = (type: ColumnDef["type"]) => visibleCols.find((c) => c.type === type);
+    const dateCol = colOf("date");
+    const employeeCol = colOf("employee");
+    const amountCol = colOf("amount");
+    const detailCols = visibleCols.filter((c) => !["date", "employee", "amount", "description"].includes(c.type));
+    return (
+      <div key={item.id} className={`py-3 space-y-1 border-b border-gray-100 transition-colors ${isActive ? "bg-navy-50" : ""}`}>
+        <div className="flex justify-between items-start gap-3">
+          <div className="min-w-0 text-xs text-gray-600">
+            {dateCol && <div>{cellContent(dateCol, item)}</div>}
+            {employeeCol && <div className="text-sm text-gray-700">{cellContent(employeeCol, item)}</div>}
+          </div>
+          {amountCol && <div className="shrink-0 text-sm font-semibold text-gray-900">{cellContent(amountCol, item)}</div>}
+        </div>
+        {showDescription && (
+          <EditableCell value={item.description} onFocus={() => onActivate(item.id)}
+            onCommit={(v) => onUpdateItem(item.id, "description", v)} placeholder="Description"
+            className="text-sm text-gray-700" />
+        )}
+        {detailCols.map((col) => (
+          <div key={col.id} className="flex justify-between items-baseline gap-3 text-xs text-gray-500">
+            <span>{col.label}</span>
+            <span className="text-right text-sm text-gray-700">{cellContent(col, item)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 min-h-[600px] min-w-[640px]">
-      <div className="flex justify-between items-start mb-8">
-        <div>
+    <div ref={cardRef} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 sm:p-8 min-h-[600px]">
+      <div className="flex justify-between items-start gap-4 mb-6 sm:mb-8">
+        <div className="min-w-0">
           {companyLogoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={companyLogoUrl} alt="" className="max-h-14 max-w-[220px] object-contain mb-2" />
@@ -295,7 +374,7 @@ function InvoicePreview({
           {!companyLogoUrl && !companyName && !companyAddress && <div className="text-sm text-gray-300 italic">Your company name &amp; address</div>}
         </div>
         <div className="text-right">
-          <div className="text-3xl font-bold text-navy-600 mb-1">INVOICE</div>
+          <div className="text-2xl sm:text-3xl font-bold text-navy-600 mb-1">INVOICE</div>
           <div className="text-sm text-gray-600 space-y-0.5">
             <div><span className="font-medium">Invoice #:</span> {invoiceNumber || "—"}</div>
             <div><span className="font-medium">Date:</span> {invoiceDate ? formatInvoiceDate(invoiceDate) : "—"}</div>
@@ -313,7 +392,9 @@ function InvoicePreview({
         )}
       </div>
 
-      <table className="w-full text-sm mb-8 border-collapse">
+      {!compact && (
+      <div className="overflow-x-auto mb-8">
+      <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="border-b-2 border-gray-200">
             {tableCols.map((col) => <th key={col.id} className={invoiceColHeaderClass(col)}>{col.label}</th>)}
@@ -350,6 +431,20 @@ function InvoicePreview({
           </tr>
         </tfoot>
       </table>
+      </div>
+      )}
+
+      {compact && (
+        <div className="mb-8">
+          {lineItems.length === 0 ? (
+            <p className="py-6 text-center text-gray-300 text-sm italic">Line items will appear here</p>
+          ) : lineItems.map((item) => renderCard(item))}
+          <div className="flex justify-between pt-3 border-t-2 border-gray-200 font-bold">
+            <span className="text-base text-gray-700">Total</span>
+            <span className="text-base text-navy-600">${total.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
 
       {notes && (
         <div className="border-t border-gray-100 pt-4">
@@ -668,18 +763,24 @@ export default function InvoiceForm({
       if (Array.isArray(data.column_config) && data.column_config.length > 0) {
         setColumnConfig(data.column_config as ColumnDef[]);
       }
-      const loadedItems = (data.line_items || []).map((item: Record<string, unknown>) => ({
-        id: crypto.randomUUID(),
-        description: String(item.description || ""),
-        employee: String(item.employee || ""),
-        date: String(item.date || todayStr()),
-        hours: item.hours ?? "",
-        amount: String(item.amount ?? ""),
-        rate: item.rate ? String(item.rate) : undefined,
-        sourceJobId: item.sourceJobId ? String(item.sourceJobId) : undefined,
-        sourceJobTitle: item.sourceJobTitle ? String(item.sourceJobTitle) : undefined,
-        customValues: (item.customValues as Record<string, string>) ?? {},
-      }));
+      const loadedItems = (data.line_items || []).map((item: Record<string, unknown>) => {
+        const rateBasis = (item.rateBasis as RateBasis | undefined) ?? basisFromRateText(String(item.rate ?? ""), "hour");
+        return {
+          id: crypto.randomUUID(),
+          description: String(item.description || ""),
+          employee: String(item.employee || ""),
+          date: String(item.date || todayStr()),
+          hours: item.hours ?? "",
+          amount: String(item.amount ?? ""),
+          rate: item.rate ? String(item.rate) : undefined,
+          rateBasis,
+          // Per-unit lines saved before units were tracked billed one unit
+          units: item.units != null ? Number(item.units) : rateBasis === "unit" ? 1 : undefined,
+          sourceJobId: item.sourceJobId ? String(item.sourceJobId) : undefined,
+          sourceJobTitle: item.sourceJobTitle ? String(item.sourceJobTitle) : undefined,
+          customValues: (item.customValues as Record<string, string>) ?? {},
+        };
+      });
       setLineItems(loadedItems);
 
       // Restore linked jobs and re-match submissions to the already-loaded line items
@@ -1146,8 +1247,15 @@ export default function InvoiceForm({
   }
 
   // ── Line item CRUD ────────────────────────────────────────────────────────
+  // Editing the rate, hours or units recalculates the amount; editing the amount directly keeps it as typed.
   function updateItem(id: string, field: keyof LineItemState, value: string) {
-    setLineItems((prev) => prev.map((item) => item.id === id ? { ...item, [field]: value } : item));
+    setLineItems((prev) => prev.map((item) => {
+      if (item.id !== id) return item;
+      if (field === "rate") return applyRate(item, value);
+      if (field === "hours") return recalcAmount({ ...item, hours: value });
+      if (field === "units") return recalcAmount({ ...item, units: value === "" ? undefined : parseFloat(value) || 0 });
+      return { ...item, [field]: value };
+    }));
   }
   function updateItemCustomValue(id: string, colId: string, value: string) {
     setLineItems((prev) => prev.map((item) =>
@@ -1250,7 +1358,7 @@ export default function InvoiceForm({
           {/* Invoice Details */}
           <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
             <h2 className="text-xs font-semibold text-navy-600 uppercase tracking-wide">Invoice Details</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 [&>*]:min-w-0">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Invoice #</label>
                 <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)}
@@ -1259,7 +1367,7 @@ export default function InvoiceForm({
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Invoice Date</label>
                 <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
+                  className="block w-full min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Your Company Name</label>
@@ -1276,16 +1384,16 @@ export default function InvoiceForm({
                 <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Auto-fills from linked job"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
               </div>
-              <div className="grid grid-cols-2 gap-2 col-span-1">
+              <div className="grid grid-cols-2 gap-2 sm:col-span-2 [&>*]:min-w-0">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Work From</label>
                   <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
+                    className="block w-full min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Work To</label>
                   <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
+                    className="block w-full min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
                 </div>
               </div>
             </div>
@@ -1625,7 +1733,7 @@ export default function InvoiceForm({
                           {item.sourceJobTitle && (
                             <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{item.sourceJobTitle}</span>
                           )}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 [&>*]:min-w-0">
                             <div>
                               <label className="text-[10px] text-gray-400">Employee</label>
                               <input value={item.employee} onChange={(e) => updateItem(item.id, "employee", e.target.value)}
@@ -1639,9 +1747,10 @@ export default function InvoiceForm({
                                 className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400" />
                             </div>
                             <div>
-                              <label className="text-[10px] text-gray-400">Hours</label>
-                              <input type="number" min="0" step="0.25" value={item.hours}
-                                onChange={(e) => updateItem(item.id, "hours", e.target.value)}
+                              <label className="text-[10px] text-gray-400">{item.rateBasis === "unit" ? "Units" : "Hours"}</label>
+                              <input type="number" min="0" step={item.rateBasis === "unit" ? "any" : "0.25"}
+                                value={item.rateBasis === "unit" ? (item.units ?? "") : item.hours}
+                                onChange={(e) => updateItem(item.id, item.rateBasis === "unit" ? "units" : "hours", e.target.value)}
                                 onFocus={() => setActiveItemId(item.id)}
                                 className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400" />
                             </div>
@@ -1653,7 +1762,7 @@ export default function InvoiceForm({
                                 className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-navy-400" />
                             </div>
                           </div>
-                          <div className="grid grid-cols-[1fr_auto] gap-2">
+                          <div className="grid grid-cols-[1fr_auto] gap-2 [&>*]:min-w-0">
                             <div>
                               <label className="text-[10px] text-gray-400">Description</label>
                               <input value={item.description} onChange={(e) => updateItem(item.id, "description", e.target.value)}

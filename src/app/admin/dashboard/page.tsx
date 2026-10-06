@@ -703,11 +703,20 @@ export default function Dashboard() {
                                               {item.description && <span>{item.description}</span>}
                                             </>
                                           )}
-                                          {Object.entries(item.customFields ?? {}).filter(([, v]) => v).map(([k, v]) => (
-                                            <div key={k} className="text-xs text-gray-600">
-                                              <span className="text-gray-400">{k.replace(/_/g, " ")}: </span>{v}
+                                          {Object.entries(item.customFields ?? {}).filter(([k, v]) => v && !k.endsWith("__units")).map(([k, v]) => {
+                                            const units = item.customFields?.[`${k}__units`];
+                                            return (
+                                              <div key={k} className="text-xs text-gray-600">
+                                                <span className="text-gray-400">{k.replace(/_/g, " ")}: </span>{v}
+                                                {units !== undefined && <span className="text-gray-400"> × {units} units</span>}
+                                              </div>
+                                            );
+                                          })}
+                                          {item.customFields?.["__units"] && (
+                                            <div className="text-xs text-gray-600">
+                                              <span className="text-gray-400">units: </span>{item.customFields["__units"]}
                                             </div>
-                                          ))}
+                                          )}
                                         </div>
                                       </div>
                                     ))}
