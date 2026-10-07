@@ -26,14 +26,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head>
-        {/* Tag the installed app before first paint, so the web top bar never flashes in it. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `try{if(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()){document.documentElement.classList.add("native-app")}}catch(e){}`,
-          }}
-        />
-      </head>
       <body className="bg-gray-100 min-h-screen">
         {/* @serwist/next's webpack build-time auto-registration (patching the
             "main-app" entry) silently no-ops under this Next.js version, so

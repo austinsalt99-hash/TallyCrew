@@ -8,7 +8,7 @@ export default function OfflineBanner() {
 
   return (
     <div
-      className="offline-banner print:hidden fixed left-0 right-0 z-30 bg-amber-500 text-white text-xs font-semibold text-center py-1 top-[calc(env(safe-area-inset-top)+2.75rem)] md:top-0"
+      className="print:hidden fixed left-0 right-0 z-30 bg-amber-500 text-white text-xs font-semibold text-center py-1 top-[calc(env(safe-area-inset-top)+2.75rem)] md:top-0"
     >
       You&rsquo;re offline — showing saved data
     </div>

@@ -3,6 +3,17 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isSubscriptionActive } from "@/lib/subscription";
 
 export async function proxy(request: NextRequest) {
+  // Carries the resolved session + profile to the route handler via getSessionUser()
+  // (src/lib/supabase-server.ts), so it doesn't have to re-validate the session and
+  // re-fetch the profile that this function already looked up — see the "x-tc-session"
+  // header set near the end of this function for the other half of this. Declared
+  // before any branching, and the delete happens before anything else touches it:
+  // without that, a client could set this header itself and have getSessionUser()
+  // trust it as an arbitrary signed-in user — a full auth bypass. It's only ever set
+  // back below, by this function, from a session it just validated itself.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete("x-tc-session");
+
   const hostname = request.headers.get("host") ?? "";
   const isMarketingHost = hostname === "tallycrew.ca";
   const { pathname: rawPathname } = request.nextUrl;
@@ -39,14 +50,14 @@ export async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone();
     const { pathname } = url;
     url.pathname = `/site${pathname === "/" ? "" : pathname}`;
-    return NextResponse.rewrite(url);
+    return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
   }
 
   if (isMetadataRoute) {
-    return NextResponse.next({ request });
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
-  let supabaseResponse = NextResponse.next({ request });
+  let supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -60,7 +71,7 @@ export async function proxy(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );
@@ -149,12 +160,17 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/dev/") ||
     pathname === "/api/admin/login";
 
+  // Selected once here and forwarded via the "x-tc-session" header below, instead of
+  // every API route re-fetching the same row through getSessionUser().
+  let sessionProfile: { id: string; company_id: string; full_name: string | null; role: string; is_dev: boolean } | null = null;
+
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role, company_id")
+      .select("id, company_id, full_name, role, is_dev")
       .eq("id", user.id)
       .single();
+    sessionProfile = profile;
 
     // Admin routes require the admin role — workers get bounced home.
     if (pathname.startsWith("/admin") && profile?.role !== "admin") {
@@ -200,7 +216,22 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  return supabaseResponse;
+  if (user) {
+    requestHeaders.set(
+      "x-tc-session",
+      JSON.stringify({
+        user: { id: user.id, email: user.email ?? null },
+        profile: sessionProfile,
+      })
+    );
+  }
+
+  // Rebuilt fresh here (rather than reusing supabaseResponse directly) so the header
+  // above is present regardless of whether the Supabase client's setAll ran during
+  // this request — its cookies (if any were refreshed) are copied across below.
+  const finalResponse = NextResponse.next({ request: { headers: requestHeaders } });
+  supabaseResponse.cookies.getAll().forEach((cookie) => finalResponse.cookies.set(cookie));
+  return finalResponse;
 }
 
 export const config = {

@@ -88,7 +88,13 @@ export async function parseVoiceEventText(text: string, crewNames: string[] = []
     throw new Error("Unexpected response from AI");
   }
 
-  return normalize(toolUse.input as Record<string, unknown>);
+  const parsed = normalize(toolUse.input as Record<string, unknown>);
+  // Speech capture (Siri's dictation, the browser's mic) can cut off mid-sentence before
+  // the AI ever sees the rest, which looks like the AI dropping details it never got. The
+  // original words are always kept here so nothing said is permanently lost, even then.
+  const transcriptNote = `Original dictation: "${text.trim()}"`;
+  parsed.internal_notes = parsed.internal_notes ? `${parsed.internal_notes}\n\n${transcriptNote}` : transcriptNote;
+  return parsed;
 }
 
 // The model is asked for these types, but normalize anyway so the form never gets undefined or NaN.
