@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import SiteNav from "./_components/SiteNav";
 import SiteFooter from "./_components/SiteFooter";
+import AnnouncementBanner from "./_components/AnnouncementBanner";
 
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -30,6 +31,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
     <div
       className={`site-shell ${display.variable} ${sans.variable} ${mono.variable} bg-paper text-ink antialiased`}
     >
+      <AnnouncementBanner />
       <SiteNav />
       {children}
       <SiteFooter />

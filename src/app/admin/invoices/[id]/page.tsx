@@ -1,12 +1,12 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useState, useSyncExternalStore } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import type { ColumnDef } from "../_components/invoiceFormat";
 import { DEFAULT_INVOICE_COLUMNS, formatInvoiceCell, formatInvoiceDate, invoiceColHeaderClass } from "../_components/invoiceFormat";
 import { buildInvoicePdf } from "@/lib/invoicePdf";
-import { sharePdf } from "@/lib/sharePdf";
+import { canShareWeb, savePdf, sharePdfWeb } from "@/lib/sharePdf";
 
 interface LineItem {
   description: string;
@@ -37,6 +37,13 @@ interface Invoice {
   paid_at?: string | null;
 }
 
+// Device file-share support never changes mid-session, so a no-op subscribe is fine —
+// this only exists to read it without a server/client hydration mismatch (the server
+// always reports false, since it has no navigator).
+function subscribeNever() {
+  return () => {};
+}
+
 const statusBadge: Record<string, string> = {
   draft: "bg-gray-100 text-gray-600",
   sent: "bg-navy-100 text-navy-700",
@@ -52,6 +59,7 @@ export default function InvoiceDetailPage() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState("");
+  const canShare = useSyncExternalStore(subscribeNever, canShareWeb, () => false);
 
   useEffect(() => {
     fetch(`/api/invoices/${id}`)
@@ -97,15 +105,15 @@ export default function InvoiceDetailPage() {
   const showDescription = visibleCols.some((c) => c.type === "description");
   const colCount = Math.max(1, tableCols.length);
 
-  // window.print() does nothing inside the iOS app or Safari, so build the PDF and hand it to the share sheet.
-  async function savePdf() {
+  // window.print() does nothing inside the iOS app or Safari, so build the PDF ourselves.
+  async function withPdf(action: (bytes: Uint8Array, filename: string) => Promise<void>) {
     if (!invoice) return;
     setPdfBusy(true);
     setPdfError("");
     try {
       const bytes = await buildInvoicePdf(invoice, columns, logoUrl);
       const safeNumber = (invoice.invoice_number || "invoice").replace(/[^A-Za-z0-9_-]+/g, "-");
-      await sharePdf(bytes, `Invoice-${safeNumber}.pdf`);
+      await action(bytes, `Invoice-${safeNumber}.pdf`);
     } catch (err) {
       // Closing the share sheet rejects with an abort/cancel error. That isn't a failure.
       const message = err instanceof Error ? `${err.name} ${err.message}` : "";
@@ -116,6 +124,9 @@ export default function InvoiceDetailPage() {
       setPdfBusy(false);
     }
   }
+
+  const handleSavePdf = () => withPdf(savePdf);
+  const handleSharePdf = () => withPdf(sharePdfWeb);
 
   return (
     <div className="max-w-4xl">
@@ -157,12 +168,22 @@ export default function InvoiceDetailPage() {
           </button>
         )}
         <button
-          onClick={savePdf}
+          onClick={handleSavePdf}
           disabled={pdfBusy}
           className="bg-navy-600 hover:bg-navy-700 disabled:opacity-60 text-white font-semibold rounded-xl px-4 py-2 text-sm"
         >
           {pdfBusy ? "Preparing PDF…" : "Save PDF"}
         </button>
+        {canShare && (
+          <button
+            onClick={handleSharePdf}
+            disabled={pdfBusy}
+            title="Share without saving — AirDrop, Mail, Messages, etc."
+            className="border border-navy-300 text-navy-600 hover:bg-navy-50 disabled:opacity-60 font-semibold rounded-xl px-4 py-2 text-sm"
+          >
+            Share
+          </button>
+        )}
         {confirmDelete ? (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-gray-600">Delete this invoice?</span>
