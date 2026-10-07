@@ -62,13 +62,64 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
   return lines;
 }
 
+function isPngBytes(bytes: Uint8Array): boolean {
+  return bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+}
+
+function isJpegBytes(bytes: Uint8Array): boolean {
+  return bytes[0] === 0xff && bytes[1] === 0xd8;
+}
+
+function isWebpBytes(bytes: Uint8Array): boolean {
+  return (
+    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && // "RIFF"
+    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50 // "WEBP"
+  );
+}
+
+// pdf-lib can only embed PNG and JPEG directly, but the logo upload page accepts
+// WEBP and SVG too (src/app/admin/invoices/settings/page.tsx). Either of those
+// loaded fine in the <img> preview there but silently failed to embed here — this
+// re-rasterizes anything that isn't already PNG/JPEG to PNG first, by drawing it
+// through a canvas, which the browser can do for any format it can natively
+// decode.
+async function rasterizeToPng(bytes: Uint8Array, contentType: string): Promise<Uint8Array | null> {
+  const blobUrl = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: contentType }));
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Image failed to decode"));
+      el.src = blobUrl;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || 170;
+    canvas.height = img.naturalHeight || 44;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    return pngBlob ? new Uint8Array(await pngBlob.arrayBuffer()) : null;
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+}
+
 async function loadLogo(doc: PDFDocument, url: string): Promise<PDFImage | null> {
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
-    const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
-    return isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+
+    if (isPngBytes(bytes)) return await doc.embedPng(bytes);
+    if (isJpegBytes(bytes)) return await doc.embedJpg(bytes);
+
+    // Not already PNG/JPEG — figure out what it is (trust the server's
+    // content-type first, fall back to sniffing) so the browser knows how to
+    // decode it, then rasterize and embed that instead.
+    const contentType = res.headers.get("content-type") || (isWebpBytes(bytes) ? "image/webp" : "image/svg+xml");
+    const pngBytes = await rasterizeToPng(bytes, contentType);
+    return pngBytes ? await doc.embedPng(pngBytes) : null;
   } catch {
     // A logo that won't load shouldn't stop the invoice from saving.
     return null;
