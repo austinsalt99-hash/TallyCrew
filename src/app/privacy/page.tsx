@@ -50,7 +50,7 @@ export default function PrivacyPolicyPage() {
             <p>We don&apos;t sell your information. We share data only with the service providers that help us run the app:</p>
             <ul className="list-disc pl-5 space-y-1.5 mt-2">
               <li>Supabase — hosts our database and handles account authentication.</li>
-              <li>Resend — sends transactional emails (e.g. timesheet submission notifications).</li>
+              <li>Resend — sends transactional emails (e.g. announcements to your team).</li>
               <li>Anthropic — processes voice input when you use the Voice/Siri feature to create a job.</li>
               <li>OneSignal — delivers push notifications.</li>
               <li>Stripe — processes subscription payments for Company admins; handles and stores payment card details on our behalf.</li>

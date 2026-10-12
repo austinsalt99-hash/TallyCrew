@@ -83,7 +83,7 @@ Materials, equipment, subcontractors, etc. (as distinct from labor/`profiles.pay
 `src/components/ExpensesCard.tsx` and `src/lib/expenseSummary.ts` combine both sources everywhere expenses are shown or totalled (Financials, a job's calendar panel, an invoice's rollup of its linked jobs).
 
 ### Data flow on submission
-Employee submits → `POST /api/submit` → inserts into `submissions` → fetches log type config to resolve field labels → sends HTML email via Resend.
+Employee submits → `POST /api/submit` → upserts into `submissions` (keyed on `user_id` + `date`). No admin-facing email on submission — that notification system was removed; `RESEND_API_KEY`/`MAILER_FROM_EMAIL` are still used for other outbound email (e.g. admin broadcasts to the team, see `/api/internal/broadcast`).
 
 Admin can link an employee's billable entry to a calendar job via `PATCH /api/submissions` (scoped by `company_id`, not `user_id`).
 
@@ -102,7 +102,6 @@ Tailwind CSS only, no component library.
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 RESEND_API_KEY
-RECIPIENT_EMAIL
 MAILER_FROM_EMAIL
 ANTHROPIC_API_KEY
 ADMIN_PASSWORD

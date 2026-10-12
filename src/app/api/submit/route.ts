@@ -1,49 +1,8 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
-import { buildEmailHtml } from "@/lib/emailTemplate";
 import { findBillableOverflow } from "@/lib/billableHours";
 import type { BillableEntryData } from "@/components/BillableEntry";
 import type { NonBillableEntryData } from "@/components/NonBillableEntry";
-import type { LogEntryType, LogEntryField, LogEntryFieldOption } from "@/types/logConfig";
-
-async function fetchEntryTypesForCompany(
-  supabase: Awaited<ReturnType<typeof createSupabaseServer>>,
-  companyId: string
-): Promise<LogEntryType[]> {
-  const { data: types } = await supabase
-    .from("log_entry_types")
-    .select("*")
-    .eq("company_id", companyId)
-    .eq("is_active", true)
-    .order("sort_order");
-  if (!types?.length) return [];
-
-  const typeIds = types.map((t) => t.id);
-  const { data: fields } = await supabase
-    .from("log_entry_fields")
-    .select("*")
-    .in("type_id", typeIds)
-    .order("sort_order");
-
-  const fieldIds = (fields ?? []).map((f) => f.id);
-  let options: LogEntryFieldOption[] = [];
-  if (fieldIds.length) {
-    const { data } = await supabase
-      .from("log_entry_field_options")
-      .select("*")
-      .in("field_id", fieldIds)
-      .order("sort_order");
-    options = data ?? [];
-  }
-
-  return types.map((t) => ({
-    ...t,
-    fields: (fields ?? [])
-      .filter((f) => f.type_id === t.id)
-      .map((f): LogEntryField => ({ ...f, options: options.filter((o) => o.field_id === f.id) })),
-  }));
-}
 
 export async function POST(request: Request) {
   try {
@@ -90,17 +49,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Checked ahead of the upsert purely to label the admin email correctly —
-    // if a submission for this date already exists, this call is actually an
-    // edit (client-side state was just stale about it), not a new day's hours.
-    const { data: existing } = await supabase
-      .from("submissions")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("date", date)
-      .maybeSingle();
-    const isUpdate = !!existing;
-
     // upsert on (user_id, date) — client-side isEditing/submittedId state is
     // what normally decides POST vs PUT, but if that state is ever stale
     // (e.g. a fresh page load losing track of an existing submission), a
@@ -132,25 +80,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to save record" }, { status: 500 });
     }
     const submissionId = inserted?.id as string;
-
-    if (process.env.RESEND_API_KEY && process.env.RECIPIENT_EMAIL) {
-      try {
-        const resend = new Resend(process.env.RESEND_API_KEY);
-        const entryTypes = await fetchEntryTypesForCompany(supabase, profile.company_id);
-        const html = buildEmailHtml({
-          employeeName, date, dayStartTime, dayEndTime,
-          billable, nonBillable, notes, totalBillableHours, totalNonBillableHours, entryTypes,
-        });
-        await resend.emails.send({
-          from: "TallyCrew Hours <onboarding@resend.dev>",
-          to: process.env.RECIPIENT_EMAIL,
-          subject: `${isUpdate ? "Hours updated" : "Hours submitted"}: ${employeeName} – ${date}`,
-          html,
-        });
-      } catch (emailErr) {
-        console.error("Email send failed (submission still saved):", emailErr);
-      }
-    }
 
     return NextResponse.json({ ok: true, id: submissionId });
   } catch (err) {
@@ -192,8 +121,6 @@ export async function PUT(request: Request) {
       breakMinutes?: number;
     };
 
-    const employeeName = profile.full_name;
-
     if (!id || !date) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
@@ -225,25 +152,6 @@ export async function PUT(request: Request) {
     if (dbError) {
       console.error("Supabase update error:", dbError);
       return NextResponse.json({ error: "Failed to update record" }, { status: 500 });
-    }
-
-    if (process.env.RESEND_API_KEY && process.env.RECIPIENT_EMAIL) {
-      try {
-        const resend = new Resend(process.env.RESEND_API_KEY);
-        const entryTypes = await fetchEntryTypesForCompany(supabase, profile.company_id);
-        const html = buildEmailHtml({
-          employeeName, date, dayStartTime, dayEndTime,
-          billable, nonBillable, notes, totalBillableHours, totalNonBillableHours, entryTypes,
-        });
-        await resend.emails.send({
-          from: "TallyCrew Hours <onboarding@resend.dev>",
-          to: process.env.RECIPIENT_EMAIL,
-          subject: `Hours updated: ${employeeName} – ${date}`,
-          html,
-        });
-      } catch (emailErr) {
-        console.error("Email send failed (submission still saved):", emailErr);
-      }
     }
 
     return NextResponse.json({ ok: true, id });
