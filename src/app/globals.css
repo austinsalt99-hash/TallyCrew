@@ -6,6 +6,19 @@
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
+/* For a sticky element that needs to sit just below whichever fixed/sticky
+   header is actually on screen: the fixed MobileTopBar below 767px (same
+   height as the `body` padding-top below), or the admin layout's own
+   72px-tall header at 768px and up (MobileTopBar is hidden there instead). */
+.sticky-below-topbar {
+  top: calc(env(safe-area-inset-top) + 44px);
+}
+@media (min-width: 768px) {
+  .sticky-below-topbar {
+    top: 72px;
+  }
+}
+
 /* Push all content below the fixed mobile top bar */
 @media (max-width: 767px) {
   body {
