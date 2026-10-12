@@ -65,9 +65,9 @@ function isWebpBytes(bytes: Uint8Array): boolean {
   );
 }
 
-// pdf-lib can only embed PNG and JPEG directly, but the logo upload page accepts
-// WEBP and SVG too (src/app/admin/invoices/settings/page.tsx). Either of those
-// loaded fine in the <img> preview there but silently failed to embed here — this
+// pdf-lib can only embed PNG and JPEG directly, but the logo upload (Settings →
+// Appearance, src/app/admin/settings/page.tsx) accepts WEBP and SVG too. Either
+// of those loaded fine in the <img> preview there but silently failed to embed here — this
 // re-rasterizes anything that isn't already PNG/JPEG to PNG first, by drawing it
 // through a canvas, which the browser can do for any format it can natively
 // decode.

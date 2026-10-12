@@ -820,7 +820,7 @@ export default function AdminSettingsPage() {
           <div className="mx-4 border-t border-gray-100" />
           <NavRow iconBg="#F4A823"
             icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>}
-            label="Appearance" description="Dashboard banner, branding" onClick={() => setActiveSection("appearance")} />
+            label="Appearance" description="Dashboard banner, invoice logo" onClick={() => setActiveSection("appearance")} />
           <div className="mx-4 border-t border-gray-100" />
           <NavRow iconBg="#dc2626"
             icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>}

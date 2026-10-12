@@ -1706,8 +1706,11 @@ export default function InvoiceForm({
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="-mx-4 -mt-8">
-      {/* Mobile toggle */}
-      <div className="lg:hidden flex border-b border-gray-200 bg-white sticky top-0 z-20">
+      {/* Mobile toggle — sticks right below the admin header (which only shows at
+          md+ and is 72px tall, same offset the preview pane uses below) rather
+          than at the very top, so it doesn't fight the header for the same spot
+          while scrolling. Below md there's no header, so it sticks to the top instead. */}
+      <div className="lg:hidden flex border-b border-gray-200 bg-white sticky top-0 md:top-[72px] z-20">
         {(["form", "preview"] as const).map((v) => (
           <button key={v} onClick={() => setMobileView(v)}
             className={`flex-1 py-3 text-sm font-semibold capitalize transition-colors ${mobileView === v ? "text-navy-600 border-b-2 border-navy-600" : "text-gray-400"}`}>
