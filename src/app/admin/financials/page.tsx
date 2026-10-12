@@ -15,19 +15,28 @@ interface WorkerTaxRow {
   grossPay: number | null;
 }
 
-interface PaidInvoiceRow {
+interface PaymentRow {
   id: string;
-  invoiceNumber: string;
+  reference: string;
   clientName: string;
-  paidAt: string;
-  total: number;
+  paidOn: string;
+  amount: number;
+}
+
+interface ExpenseRow {
+  id: string;
+  reference: string;
+  label: string;
+  date: string;
+  amount: number;
 }
 
 interface FinancialsResponse {
   start: string;
   end: string;
   workers: WorkerTaxRow[];
-  revenue: { total: number; invoices: PaidInvoiceRow[] };
+  revenue: { total: number; payments: PaymentRow[] };
+  expenses: { total: number; items: ExpenseRow[] };
 }
 
 type Mode = "year" | "range";
@@ -42,10 +51,6 @@ function fmtMoney(n: number): string {
 
 function fmtDateLabel(dateStr: string): string {
   return parseDateStr(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-function fmtTimestampLabel(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function csvField(v: string): string {
@@ -86,6 +91,7 @@ export default function FinancialsPage() {
   const [data, setData] = useState<FinancialsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [showInvoices, setShowInvoices] = useState(false);
+  const [showExpenses, setShowExpenses] = useState(false);
 
   useEffect(() => {
     const params = mode === "year" ? `year=${year}` : `start=${rangeStart}&end=${rangeEnd}`;
@@ -120,7 +126,7 @@ export default function FinancialsPage() {
   const missingRate = displayedWorkers.filter((w) => w.payRate == null);
   const totalGrossPay = Math.round(displayedWorkers.reduce((s, w) => s + (w.grossPay ?? 0), 0) * 100) / 100;
   const allWorkersGrossPay = Math.round(allWorkers.reduce((s, w) => s + (w.grossPay ?? 0), 0) * 100) / 100;
-  const netAmount = data ? Math.round((data.revenue.total - allWorkersGrossPay) * 100) / 100 : 0;
+  const netAmount = data ? Math.round((data.revenue.total - allWorkersGrossPay - data.expenses.total) * 100) / 100 : 0;
 
   const periodLabel = data ? `${fmtDateLabel(data.start)} – ${fmtDateLabel(data.end)}` : "";
 
@@ -226,22 +232,58 @@ export default function FinancialsPage() {
               <p className="text-xs text-gray-400">Revenue collected, {periodLabel}</p>
               <p className="text-lg font-bold text-gray-900">{fmtMoney(data.revenue.total)}</p>
             </div>
-            {data.revenue.invoices.length > 0 && (
+            {data.revenue.payments.length > 0 && (
               <span className="text-gray-400 text-[10px] shrink-0">{showInvoices ? "▲" : "▼"}</span>
             )}
           </button>
           {showInvoices && (
             <div className="border-t border-gray-100 divide-y divide-gray-100">
-              {data.revenue.invoices.length === 0 ? (
-                <p className="px-4 py-3 text-sm text-gray-400">No invoices marked paid in this range.</p>
+              {data.revenue.payments.length === 0 ? (
+                <p className="px-4 py-3 text-sm text-gray-400">No payments recorded in this range.</p>
               ) : (
-                data.revenue.invoices.map((inv) => (
-                  <div key={inv.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
+                data.revenue.payments.map((p) => (
+                  <div key={p.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm text-gray-800 truncate">{inv.clientName}</p>
-                      <p className="text-xs text-gray-400">#{inv.invoiceNumber} · Paid {fmtTimestampLabel(inv.paidAt)}</p>
+                      <p className="text-sm text-gray-800 truncate">{p.clientName || "—"}</p>
+                      <p className="text-xs text-gray-400">{p.reference ? `${p.reference} · ` : ""}Paid {fmtDateLabel(p.paidOn)}</p>
                     </div>
-                    <p className="text-sm font-semibold text-gray-900 shrink-0">{fmtMoney(inv.total)}</p>
+                    <p className="text-sm font-semibold text-gray-900 shrink-0">{fmtMoney(p.amount)}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Expenses */}
+      {data && (
+        <div className="bg-white rounded-xl border border-gray-200">
+          <button
+            type="button"
+            onClick={() => setShowExpenses((o) => !o)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left"
+          >
+            <div>
+              <p className="text-xs text-gray-400">Expenses, {periodLabel}</p>
+              <p className="text-lg font-bold text-red-600">{data.expenses.total > 0 ? `-${fmtMoney(data.expenses.total)}` : fmtMoney(0)}</p>
+            </div>
+            {data.expenses.items.length > 0 && (
+              <span className="text-gray-400 text-[10px] shrink-0">{showExpenses ? "▲" : "▼"}</span>
+            )}
+          </button>
+          {showExpenses && (
+            <div className="border-t border-gray-100 divide-y divide-gray-100">
+              {data.expenses.items.length === 0 ? (
+                <p className="px-4 py-3 text-sm text-gray-400">No expenses recorded in this range.</p>
+              ) : (
+                data.expenses.items.map((e) => (
+                  <div key={e.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm text-gray-800 truncate">{e.label}</p>
+                      <p className="text-xs text-gray-400">{e.reference ? `${e.reference} · ` : ""}{fmtDateLabel(e.date)}</p>
+                    </div>
+                    <p className="text-sm font-semibold text-red-600 shrink-0">-{fmtMoney(e.amount)}</p>
                   </div>
                 ))
               )}
@@ -252,7 +294,7 @@ export default function FinancialsPage() {
 
       {data && workerFilter === "all" && (
         <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
-          <p className="text-xs text-gray-400">Net (revenue − gross pay), {periodLabel}</p>
+          <p className="text-xs text-gray-400">Net (revenue − gross pay − expenses), {periodLabel}</p>
           <p className={`text-lg font-bold ${netAmount < 0 ? "text-red-600" : "text-gray-900"}`}>{fmtMoney(netAmount)}</p>
         </div>
       )}

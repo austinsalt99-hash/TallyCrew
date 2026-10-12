@@ -2,7 +2,7 @@
 
 import { ALL_TYPE_CONFIGS } from "../constants/eventTypes";
 
-const TYPE_ORDER = ["job", "draft-job", "meeting", "site-visit", "task", "reminder", "note"] as const;
+const TYPE_ORDER = ["job", "draft-job", "quote", "meeting", "site-visit", "task", "reminder", "note"] as const;
 
 // Small inline SVG icons keyed by type
 function TypeIcon({ type, color }: { type: string; color: string }) {

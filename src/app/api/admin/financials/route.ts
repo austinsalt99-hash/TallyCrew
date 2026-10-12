@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
 import { aggregateEmployeeHours } from "@/lib/payrollSummary";
-import { addDaysToDateStr } from "@/lib/dateMath";
+import { aggregateTimesheetExpenses } from "@/lib/expenseSummary";
+import { categoryLabel } from "@/types/expense";
 
 // Annual, per-worker hours + gross pay + W-2/1099 classification — the
 // record a boss hands to an accountant or payroll provider at tax time.
@@ -57,35 +58,89 @@ export async function GET(req: NextRequest) {
     })
     .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
 
-  // Revenue is counted on a cash basis — invoices actually marked paid within
-  // the range, by paid_at, not by invoice_date or job dates. The end bound is
-  // exclusive (< the day after `end`) so the whole end day counts regardless
-  // of what time paid_at was stamped.
-  const endExclusive = addDaysToDateStr(end, 1);
-  const { data: paidInvoiceRows } = await supabase
-    .from("invoices")
-    .select("id, invoice_number, client_name, paid_at, total")
+  // Revenue is counted on a cash basis — each payment on the day it was
+  // received, not by invoice_date or job dates. A deposit taken in March on a
+  // job paid off in May counts half in each month.
+  const { data: paymentRows } = await supabase
+    .from("payments")
+    .select("id, amount, paid_on, method, invoice_id, quote_id")
     .eq("company_id", profile.company_id)
-    .eq("status", "paid")
-    .gte("paid_at", start)
-    .lt("paid_at", endExclusive);
+    .gte("paid_on", start)
+    .lte("paid_on", end);
 
-  const paidInvoices = (paidInvoiceRows ?? [])
-    .map((inv) => ({
-      id: inv.id as string,
-      invoiceNumber: inv.invoice_number as string,
-      clientName: inv.client_name as string,
-      paidAt: inv.paid_at as string,
-      total: Number(inv.total),
-    }))
-    .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+  const invoiceIds = [...new Set((paymentRows ?? []).map((p) => p.invoice_id).filter(Boolean))] as string[];
+  const quoteIds = [...new Set((paymentRows ?? []).map((p) => p.quote_id).filter(Boolean))] as string[];
+  const [{ data: invoiceRows }, { data: quoteRows }] = await Promise.all([
+    invoiceIds.length
+      ? supabase.from("invoices").select("id, invoice_number, client_name").eq("company_id", profile.company_id).in("id", invoiceIds)
+      : Promise.resolve({ data: [] as { id: string; invoice_number: string; client_name: string }[] }),
+    quoteIds.length
+      ? supabase.from("quotes").select("id, quote_number, client").eq("company_id", profile.company_id).in("id", quoteIds)
+      : Promise.resolve({ data: [] as { id: string; quote_number: string | null; client: string | null }[] }),
+  ]);
+  const invoiceById = new Map((invoiceRows ?? []).map((i) => [i.id, i]));
+  const quoteById = new Map((quoteRows ?? []).map((q) => [q.id, q]));
 
-  const totalRevenue = Math.round(paidInvoices.reduce((s, inv) => s + inv.total, 0) * 100) / 100;
+  const payments = (paymentRows ?? [])
+    .map((p) => {
+      const inv = p.invoice_id ? invoiceById.get(p.invoice_id) : undefined;
+      const quote = p.quote_id ? quoteById.get(p.quote_id) : undefined;
+      return {
+        id: p.id as string,
+        // Shown as "#INV-2026-004" or "Quote #Q-2026-002 deposit"
+        reference: inv ? `#${inv.invoice_number}` : quote ? `Quote #${quote.quote_number ?? ""} deposit` : "",
+        clientName: inv?.client_name ?? quote?.client ?? "",
+        paidOn: p.paid_on as string,
+        amount: Number(p.amount),
+      };
+    })
+    .sort((a, b) => b.paidOn.localeCompare(a.paidOn));
+
+  const totalRevenue = Math.round(payments.reduce((s, p) => s + p.amount, 0) * 100) / 100;
+
+  // Expenses — materials, equipment, subcontractors, etc. Two sources (see
+  // supabase-schema.sql section 28): admin-entered rows in `expenses`
+  // (counted by incurred_on), and employee-logged ones embedded on
+  // timesheets (counted by submission date). Both make "Net" below
+  // revenue minus payroll minus actual costs, not just revenue minus payroll.
+  const { data: expenseRows } = await supabase
+    .from("expenses")
+    .select("id, job_id, amount, category, note, incurred_on")
+    .eq("company_id", profile.company_id)
+    .gte("incurred_on", start)
+    .lte("incurred_on", end);
+
+  const expenseJobIds = [...new Set((expenseRows ?? []).map((e) => e.job_id).filter(Boolean))] as string[];
+  const { data: expenseJobRows } = expenseJobIds.length
+    ? await supabase.from("job_events").select("id, title").eq("company_id", profile.company_id).in("id", expenseJobIds)
+    : { data: [] as { id: string; title: string }[] };
+  const jobTitleById = new Map((expenseJobRows ?? []).map((j) => [j.id, j.title]));
+
+  const manualExpenses = (expenseRows ?? []).map((e) => ({
+    id: e.id as string,
+    reference: e.job_id ? jobTitleById.get(e.job_id) ?? "" : "",
+    label: categoryLabel(e.category as string) + (e.note ? ` · ${e.note}` : ""),
+    date: e.incurred_on as string,
+    amount: Number(e.amount),
+  }));
+
+  const timesheetExpenses = await aggregateTimesheetExpenses(supabase, profile.company_id, start, end);
+  const timesheetExpenseRows = timesheetExpenses.map((e) => ({
+    id: e.id,
+    reference: e.jobTitle ?? "",
+    label: `${categoryLabel(e.category)} · ${e.employeeName}${e.note ? ` — ${e.note}` : ""}`,
+    date: e.date,
+    amount: e.amount,
+  }));
+
+  const expenses = [...manualExpenses, ...timesheetExpenseRows].sort((a, b) => b.date.localeCompare(a.date));
+  const totalExpenses = Math.round(expenses.reduce((s, e) => s + e.amount, 0) * 100) / 100;
 
   return NextResponse.json({
     start,
     end,
     workers,
-    revenue: { total: totalRevenue, invoices: paidInvoices },
+    revenue: { total: totalRevenue, payments },
+    expenses: { total: totalExpenses, items: expenses },
   });
 }

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import BillingTabs from "./_components/BillingTabs";
+import PaidProgress from "@/components/PaidProgress";
 
 interface Invoice {
   id: string;
@@ -10,22 +12,27 @@ interface Invoice {
   date_from: string;
   date_to: string;
   total: number;
-  status: "draft" | "sent" | "paid";
+  status: "draft" | "sent" | "partial" | "paid";
+  amount_paid: number;
   created_at: string;
 }
 
 const statusBadge: Record<string, string> = {
   draft: "bg-gray-100 text-gray-600",
   sent: "bg-navy-100 text-navy-700",
+  partial: "bg-amber-100 text-amber-700",
   paid: "bg-green-100 text-green-700",
 };
 
-type Filter = "all" | "draft" | "sent" | "paid";
+const statusLabel: Record<string, string> = { draft: "Draft", sent: "Sent", partial: "Partly paid", paid: "Paid" };
+
+type Filter = "all" | "draft" | "sent" | "partial" | "paid";
 
 const TABS: { label: string; value: Filter }[] = [
   { label: "All", value: "all" },
   { label: "Draft", value: "draft" },
   { label: "Sent", value: "sent" },
+  { label: "Partly paid", value: "partial" },
   { label: "Paid", value: "paid" },
 ];
 
@@ -46,6 +53,7 @@ export default function InvoicesPage() {
 
   return (
     <div>
+      <BillingTabs active="invoices" />
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
         <div className="flex items-center gap-2">
@@ -76,7 +84,7 @@ export default function InvoicesPage() {
               key={tab.value}
               onClick={() => setFilter(tab.value)}
               style={filter === tab.value ? { backgroundColor: "#0A1172" } : undefined}
-              className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap ${
                 filter === tab.value ? "text-white" : "text-gray-500 hover:text-gray-900"
               }`}
             >
@@ -116,8 +124,8 @@ export default function InvoicesPage() {
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-semibold text-gray-900 text-sm">{inv.client_name}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${statusBadge[inv.status] ?? statusBadge.draft}`}>
-                    {inv.status}
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusBadge[inv.status] ?? statusBadge.draft}`}>
+                    {statusLabel[inv.status] ?? inv.status}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -128,6 +136,9 @@ export default function InvoicesPage() {
                     ${Number(inv.total).toFixed(2)}
                   </span>
                 </div>
+                {inv.status !== "draft" && Number(inv.total) > 0 && (
+                  <div className="mt-2"><PaidProgress paid={Number(inv.amount_paid) || 0} total={Number(inv.total)} compact /></div>
+                )}
               </div>
             ))}
           </div>
@@ -140,6 +151,7 @@ export default function InvoicesPage() {
                 <th className="px-5 py-3 text-left">Client</th>
                 <th className="px-5 py-3 text-left">Date Range</th>
                 <th className="px-5 py-3 text-right">Total</th>
+                <th className="px-5 py-3 text-left w-48">Paid</th>
                 <th className="px-5 py-3 text-left">Status</th>
               </tr>
             </thead>
@@ -157,8 +169,11 @@ export default function InvoicesPage() {
                     ${Number(inv.total).toFixed(2)}
                   </td>
                   <td className="px-5 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${statusBadge[inv.status] ?? statusBadge.draft}`}>
-                      {inv.status}
+                    {Number(inv.total) > 0 && <PaidProgress paid={Number(inv.amount_paid) || 0} total={Number(inv.total)} compact />}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${statusBadge[inv.status] ?? statusBadge.draft}`}>
+                      {statusLabel[inv.status] ?? inv.status}
                     </span>
                   </td>
                 </tr>

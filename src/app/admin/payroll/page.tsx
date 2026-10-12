@@ -207,7 +207,9 @@ export default function PayrollPage() {
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-700">Employee hours</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Tap an employee to see where their hours came from.</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Paid time is clock in to clock out, or the job time on days they didn&apos;t clock in. Tap an employee to see where their hours came from.
+          </p>
         </div>
 
         {loading ? (

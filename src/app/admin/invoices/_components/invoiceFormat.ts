@@ -21,6 +21,8 @@ export const DEFAULT_INVOICE_COLUMNS: ColumnDef[] = [
 export type RateBasis = "hour" | "unit";
 
 export interface InvoiceLineItemLike {
+  // Bold heading for the line, e.g. "Machine Operating – 135"
+  title?: string;
   description: string;
   employee: string;
   date: string;
@@ -31,6 +33,13 @@ export interface InvoiceLineItemLike {
   rateBasis?: RateBasis;
   units?: number;
   customValues?: Record<string, string>;
+}
+
+// The description to print under a line's title — blank when it would just
+// repeat the title (hour-log lines often have no detail beyond it).
+export function lineDescription(item: { title?: string; description: string }): string {
+  const d = (item.description ?? "").trim();
+  return d && d.toLowerCase() !== (item.title ?? "").trim().toLowerCase() ? d : "";
 }
 
 // Pulls the number out of a typed rate ("$35/hr", "35", "1,200") so the amount
@@ -83,3 +92,53 @@ export function formatInvoiceCell(col: ColumnDef, item: InvoiceLineItemLike): st
     case "custom": return item.customValues?.[col.id] || "—";
   }
 }
+
+// Quotes are written before any work happens, so the date and employee
+// columns start hidden. Admins can still switch them on.
+export const DEFAULT_QUOTE_COLUMNS: ColumnDef[] = DEFAULT_INVOICE_COLUMNS.map((c) =>
+  c.type === "date" || c.type === "employee" ? { ...c, visible: false } : c,
+);
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+export interface DocumentTotals {
+  subtotal: number;
+  taxRate: number;   // percent; 0 when no tax was entered
+  taxAmount: number;
+  total: number;
+}
+
+// Tax is whatever rate the admin typed in — TallyCrew never decides it.
+export function computeTotals(
+  items: { amount: number | string }[],
+  taxRate: number | string | null | undefined,
+): DocumentTotals {
+  const subtotal = round2(items.reduce((s, it) => s + (parseFloat(String(it.amount)) || 0), 0));
+  const rate = Math.max(0, parseFloat(String(taxRate ?? "")) || 0);
+  const taxAmount = rate > 0 ? round2((subtotal * rate) / 100) : 0;
+  return { subtotal, taxRate: rate, taxAmount, total: round2(subtotal + taxAmount) };
+}
+
+export type DepositType = "amount" | "percent";
+
+export function depositAmount(total: number, type: DepositType | null | undefined, value: number | string | null | undefined): number {
+  const v = parseFloat(String(value ?? "")) || 0;
+  if (!type || v <= 0) return 0;
+  return round2(type === "percent" ? (total * v) / 100 : v);
+}
+
+export function formatMoney(n: number): string {
+  return `$${n.toFixed(2)}`;
+}
+
+export const PAYMENT_METHODS = [
+  { value: "etransfer", label: "E-transfer" },
+  { value: "cash", label: "Cash" },
+  { value: "cheque", label: "Cheque" },
+  { value: "card", label: "Card" },
+  { value: "other", label: "Other" },
+] as const;
+
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number]["value"];

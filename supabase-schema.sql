@@ -23,6 +23,7 @@
 --  17.  quotes                (references companies, job_events)
 --  18.  availability_requests (references companies, profiles)
 --  19.  consent_log           (references auth.users)
+--  27.  clients, payments     (references companies, quotes, invoices)
 -- =============================================================
 
 
@@ -1177,3 +1178,247 @@ BEGIN;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
 
 COMMIT;
+
+
+-- -------------------------------------------------------------
+-- 27. CLIENT CONTACTS, QUOTE DOCUMENTS, TAX & PAYMENTS
+--     clients: a company's contact list. client_id on jobs,
+--       ongoing jobs, quotes and invoices links them to a contact;
+--       the old free-text client / client_name columns stay so
+--       older rows still display. Existing client names are
+--       imported once below, merged case-insensitively.
+--     quotes: now built like invoices (line items, columns, tax,
+--       PDF). Status is draft / sent / approved / declined —
+--       "expired" is worked out from valid_until, and "scheduled" /
+--       "invoiced" from converted_job_id / converted_invoice_id.
+--     tax: optional, typed in by the admin (label + rate). TallyCrew
+--       never decides what tax applies.
+--     payments: money recorded by hand against a quote (deposit)
+--       and/or invoice. When a quote becomes an invoice its payments
+--       get that invoice_id too. Revenue on the Financials page is
+--       counted per payment, on the day it was received.
+-- -------------------------------------------------------------
+BEGIN;
+
+-- 27a. Clients
+CREATE TABLE IF NOT EXISTS clients (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id  UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name        TEXT        NOT NULL,
+  email       TEXT,
+  phone       TEXT,
+  address     TEXT,
+  notes       TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS clients_admin_read ON clients;
+CREATE POLICY clients_admin_read ON clients FOR SELECT
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+DROP POLICY IF EXISTS clients_admin_insert ON clients;
+CREATE POLICY clients_admin_insert ON clients FOR INSERT
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+DROP POLICY IF EXISTS clients_admin_update ON clients;
+CREATE POLICY clients_admin_update ON clients FOR UPDATE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+DROP POLICY IF EXISTS clients_admin_delete ON clients;
+CREATE POLICY clients_admin_delete ON clients FOR DELETE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+-- One contact per name per company (case-insensitive)
+CREATE UNIQUE INDEX IF NOT EXISTS clients_company_name_key ON clients (company_id, lower(name));
+
+ALTER TABLE job_events   ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id) ON DELETE SET NULL;
+ALTER TABLE ongoing_jobs ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id) ON DELETE SET NULL;
+ALTER TABLE quotes       ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id) ON DELETE SET NULL;
+ALTER TABLE invoices     ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id) ON DELETE SET NULL;
+
+-- Import every client name already typed on jobs, ongoing jobs, quotes and invoices
+INSERT INTO clients (company_id, name)
+SELECT company_id, MIN(btrim(name))
+FROM (
+  SELECT company_id, client      AS name FROM job_events
+  UNION ALL SELECT company_id, client      FROM ongoing_jobs
+  UNION ALL SELECT company_id, client      FROM quotes
+  UNION ALL SELECT company_id, client_name FROM invoices
+) s
+WHERE company_id IS NOT NULL AND name IS NOT NULL AND btrim(name) <> ''
+GROUP BY company_id, lower(btrim(name))
+ON CONFLICT (company_id, lower(name)) DO NOTHING;
+
+UPDATE job_events t SET client_id = c.id FROM clients c
+  WHERE t.client_id IS NULL AND c.company_id = t.company_id AND lower(c.name) = lower(btrim(t.client));
+UPDATE ongoing_jobs t SET client_id = c.id FROM clients c
+  WHERE t.client_id IS NULL AND c.company_id = t.company_id AND lower(c.name) = lower(btrim(t.client));
+UPDATE quotes t SET client_id = c.id FROM clients c
+  WHERE t.client_id IS NULL AND c.company_id = t.company_id AND lower(c.name) = lower(btrim(t.client));
+UPDATE invoices t SET client_id = c.id FROM clients c
+  WHERE t.client_id IS NULL AND c.company_id = t.company_id AND lower(c.name) = lower(btrim(t.client_name));
+
+-- 27b. Invoice numbers were unique across ALL companies, so two companies
+-- couldn't both have INV-2026-001. Make them unique per company instead.
+ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key;
+CREATE UNIQUE INDEX IF NOT EXISTS invoices_company_number_key ON invoices (company_id, invoice_number);
+
+-- 27c. Quotes become full documents
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS quote_number     TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS quote_date       DATE NOT NULL DEFAULT CURRENT_DATE;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS client_email     TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS client_phone     TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS company_name     TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS company_address  TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS line_items       JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS column_config    JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS subtotal         NUMERIC;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_label        TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_rate         NUMERIC;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_amount       NUMERIC;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS total            NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS terms            TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS deposit_type     TEXT CHECK (deposit_type IN ('amount', 'percent'));
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS deposit_value    NUMERIC;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS sent_at          TIMESTAMPTZ;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS responded_at     TIMESTAMPTZ;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS converted_invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL;
+
+-- New status set. Old "pending" quotes had been given to the client, so
+-- they're "sent"; "accepted" and "converted" both mean the client said yes.
+ALTER TABLE quotes DROP CONSTRAINT IF EXISTS quotes_status_check;
+UPDATE quotes SET status = CASE status
+  WHEN 'pending'   THEN 'sent'
+  WHEN 'accepted'  THEN 'approved'
+  WHEN 'converted' THEN 'approved'
+  ELSE status END;
+ALTER TABLE quotes ALTER COLUMN status SET DEFAULT 'draft';
+ALTER TABLE quotes ADD CONSTRAINT quotes_status_check
+  CHECK (status IN ('draft', 'sent', 'approved', 'declined'));
+
+-- Number existing quotes Q-YYYY-001, Q-YYYY-002, … per company and year
+WITH numbered AS (
+  SELECT id, 'Q-' || to_char(created_at, 'YYYY') || '-' ||
+    lpad(row_number() OVER (PARTITION BY company_id, to_char(created_at, 'YYYY') ORDER BY created_at)::text, 3, '0') AS num
+  FROM quotes WHERE quote_number IS NULL
+)
+UPDATE quotes q SET quote_number = n.num FROM numbered n WHERE q.id = n.id;
+
+CREATE UNIQUE INDEX IF NOT EXISTS quotes_company_number_key ON quotes (company_id, quote_number);
+
+-- quote_date was just added with today's date — older quotes get the day they were made
+UPDATE quotes SET quote_date = created_at::date WHERE created_at::date < quote_date;
+
+-- Old quotes only had a single estimated price — turn it into one line item
+UPDATE quotes SET
+  line_items = jsonb_build_array(jsonb_build_object(
+    'description', title, 'employee', '', 'date', COALESCE(target_date, created_at::date)::text,
+    'hours', '', 'amount', estimated_price::text)),
+  subtotal = estimated_price,
+  total = estimated_price
+WHERE line_items = '[]'::jsonb AND estimated_price IS NOT NULL;
+
+-- 27d. Optional tax on invoices, plus the quote an invoice was made from
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_email    TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal        NUMERIC;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_label       TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_rate        NUMERIC;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_amount      NUMERIC;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS source_quote_id UUID REFERENCES quotes(id) ON DELETE SET NULL;
+-- invoices.status is now draft / sent / partial / paid; "partial" and
+-- "paid" are set automatically from recorded payments.
+
+-- 27e. Payments
+CREATE TABLE IF NOT EXISTS payments (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id  UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  quote_id    UUID        REFERENCES quotes(id) ON DELETE SET NULL,
+  invoice_id  UUID        REFERENCES invoices(id) ON DELETE SET NULL,
+  amount      NUMERIC     NOT NULL CHECK (amount > 0),
+  paid_on     DATE        NOT NULL DEFAULT CURRENT_DATE,
+  method      TEXT        NOT NULL DEFAULT 'other'
+                CHECK (method IN ('cash', 'cheque', 'etransfer', 'card', 'other')),
+  note        TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS payments_admin_read ON payments;
+CREATE POLICY payments_admin_read ON payments FOR SELECT
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+DROP POLICY IF EXISTS payments_admin_insert ON payments;
+CREATE POLICY payments_admin_insert ON payments FOR INSERT
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+DROP POLICY IF EXISTS payments_admin_update ON payments;
+CREATE POLICY payments_admin_update ON payments FOR UPDATE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+DROP POLICY IF EXISTS payments_admin_delete ON payments;
+CREATE POLICY payments_admin_delete ON payments FOR DELETE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE INDEX IF NOT EXISTS idx_payments_company_paid_on ON payments (company_id, paid_on);
+CREATE INDEX IF NOT EXISTS idx_payments_invoice_id ON payments (invoice_id);
+CREATE INDEX IF NOT EXISTS idx_payments_quote_id ON payments (quote_id);
+
+-- Invoices already marked paid get one payment for their full total, on the
+-- day they were marked paid, so past Financials numbers don't change.
+INSERT INTO payments (company_id, invoice_id, amount, paid_on, method, note)
+SELECT company_id, id, total, COALESCE(paid_at::date, invoice_date), 'other', 'Recorded when the invoice was marked paid'
+FROM invoices i
+WHERE status = 'paid' AND total > 0 AND company_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id = i.id);
+
+COMMIT;
+
+-- 28. Expenses — materials, equipment, subcontractors and other job costs,
+--     kept separate from labor (profiles.pay_rate) so Financials' "Net"
+--     reflects real profit, not just revenue minus payroll. Admin-entered
+--     from three spots: the private notes section at the bottom of a quote,
+--     a job's panel on the admin calendar, and the bottom of an invoice —
+--     all three just write a row here, optionally tagged to the job/quote/
+--     invoice they belong to. Unlinked rows are general overhead.
+--
+--     An employee logging an expense on their own timesheet is a different
+--     path: it's stored on the billable_entries JSONB entry itself (see
+--     BillableEntry's `expenses` array), the same way hours are, not as a
+--     row here — so soft-deleting/restoring/re-linking a submission (see
+--     submissions.deleted_at) carries its expenses along automatically.
+--     Everywhere expenses are totalled (Financials, a job's panel, an
+--     invoice) sums both sources together.
+CREATE TABLE IF NOT EXISTS expenses (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id  UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  job_id      UUID        REFERENCES job_events(id) ON DELETE SET NULL,
+  quote_id    UUID        REFERENCES quotes(id) ON DELETE SET NULL,
+  invoice_id  UUID        REFERENCES invoices(id) ON DELETE SET NULL,
+  amount      NUMERIC     NOT NULL CHECK (amount > 0),
+  category    TEXT        NOT NULL DEFAULT 'other'
+                CHECK (category IN ('materials', 'equipment', 'subcontractor', 'other')),
+  note        TEXT,
+  incurred_on DATE        NOT NULL DEFAULT CURRENT_DATE,
+  created_by  UUID        REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS expenses_admin_read ON expenses;
+CREATE POLICY expenses_admin_read ON expenses FOR SELECT
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+DROP POLICY IF EXISTS expenses_admin_insert ON expenses;
+CREATE POLICY expenses_admin_insert ON expenses FOR INSERT
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+DROP POLICY IF EXISTS expenses_admin_update ON expenses;
+CREATE POLICY expenses_admin_update ON expenses FOR UPDATE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin')
+  WITH CHECK (company_id = get_my_company_id() AND get_my_role() = 'admin');
+DROP POLICY IF EXISTS expenses_admin_delete ON expenses;
+CREATE POLICY expenses_admin_delete ON expenses FOR DELETE
+  USING (company_id = get_my_company_id() AND get_my_role() = 'admin');
+
+CREATE INDEX IF NOT EXISTS idx_expenses_company_incurred_on ON expenses (company_id, incurred_on);
+CREATE INDEX IF NOT EXISTS idx_expenses_job_id ON expenses (job_id);
+CREATE INDEX IF NOT EXISTS idx_expenses_quote_id ON expenses (quote_id);
+CREATE INDEX IF NOT EXISTS idx_expenses_invoice_id ON expenses (invoice_id);

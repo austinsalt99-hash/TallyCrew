@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
+import { ownsRow } from "@/lib/billing";
 
 export async function GET(request: Request) {
   const supabase = await createSupabaseServer();
@@ -61,6 +62,10 @@ export async function PATCH(request: Request) {
 
   const { id, entryIndex, linkedEventId, linkedEventTitle } = body;
   if (!id || entryIndex == null) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+  // Linking (or re-linking) must point at one of this company's jobs; null unlinks
+  if (linkedEventId != null && !(await ownsRow(supabase, "job_events", linkedEventId, profile.company_id))) {
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
 
   const { data: sub, error: fetchErr } = await supabase
     .from("submissions")
@@ -75,7 +80,9 @@ export async function PATCH(request: Request) {
   if (entryIndex >= entries.length) return NextResponse.json({ error: "Invalid entry index" }, { status: 400 });
 
   const updated = entries.map((e, i) =>
-    i === entryIndex ? { ...(e as object), linkedEventId, linkedEventTitle } : e
+    i === entryIndex
+      ? { ...(e as object), linkedEventId: linkedEventId ?? undefined, linkedEventTitle: linkedEventId ? linkedEventTitle : undefined }
+      : e
   );
 
   const { error } = await supabase

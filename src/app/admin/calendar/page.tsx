@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { use, useEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import CrewBoard from "./components/CrewBoard";
@@ -10,10 +11,15 @@ import MyPlanView from "./components/MyPlanView";
 import { ALL_TYPE_CONFIGS, PlanEvent, UnifiedEventType } from "./constants/eventTypes";
 import ScheduleSidebar from "./components/ScheduleSidebar";
 import PlanEventModal from "./components/PlanEventModal";
-import QuotesView, { Quote } from "./components/QuotesView";
+import type { Quote } from "@/types/quote";
+import { isQuoteExpired } from "@/types/quote";
+import { TYPE_UNITS_KEY, unitsKey } from "@/lib/unitQty";
+import ClientPicker from "@/components/ClientPicker";
 import { carveOutGeneral } from "@/lib/billableHours";
 import JobChecklist from "@/components/JobChecklist";
 import JobAttachments, { JobAttachment } from "@/components/JobAttachments";
+import ExpensesCard from "@/components/ExpensesCard";
+import { categoryLabel, EXPENSE_CATEGORIES, type ExpenseCategory, type ExpenseLine } from "@/types/expense";
 
 type JobStatus = "scheduled" | "in_progress" | "completed" | "invoiced" | "cancelled";
 
@@ -39,6 +45,7 @@ interface JobEvent {
   end_date?: string;
   title: string;
   client: string;
+  client_id?: string | null;
   location: string;
   description: string;
   start_time: string;
@@ -58,13 +65,14 @@ interface OngoingJob {
   id: string;
   title: string;
   client: string | null;
+  client_id: string | null;
   location: string | null;
   description: string | null;
 }
 
 interface UnifiedEvent {
   id: string;
-  source: "job" | "plan";
+  source: "job" | "plan" | "quote";
   type: UnifiedEventType;
   date: string;
   end_date?: string;
@@ -78,6 +86,9 @@ interface UnifiedEvent {
   is_verified?: boolean;
   // plan-only
   description?: string;
+  isDone?: boolean;
+  // quote-only: deposit recorded so far
+  paid?: number;
 }
 
 interface Worker {
@@ -112,6 +123,7 @@ interface LinkedBillableEntry {
   customFields?: Record<string, string>;
   linkedEventId?: string;
   subEntries?: BillableSubEntry[];
+  expenses?: ExpenseLine[];
   entryType?: string;
   _typeData?: Record<string, OldTypeSnapshot>;
 }
@@ -122,6 +134,9 @@ interface DisplayItem {
   client?: string;
   description?: string;
   fields?: [string, string][];
+  isExpense?: boolean;
+  amount?: number;
+  category?: string;
 }
 
 interface LinkedSubmission {
@@ -131,8 +146,37 @@ interface LinkedSubmission {
   billable_entries: LinkedBillableEntry[];
 }
 
-type CalTab = "schedule" | "crew" | "availability" | "workload" | "plan" | "quotes";
+// A new job's expected costs, jotted down while filling out the "New Job"
+// form — same idea as a quote's private expenses (InvoiceForm.tsx): the job
+// has no id yet to attach `expenses` rows to, so these stay local state
+// until save, when they're written in against the job that was just
+// created. Once the job exists, its real Expenses card (in the panel) takes over.
+interface PlannedJobExpense {
+  id: string;
+  amount: string;
+  category: ExpenseCategory;
+  note: string;
+}
+
+type CalTab = "schedule" | "crew" | "availability" | "workload" | "plan";
 type CalView = "month" | "week" | "day" | "list";
+
+// Units for a per-unit priced dropdown value (or a per-unit priced type as a
+// whole) are stored alongside the other custom fields under a "__units"-suffixed
+// key (see src/lib/unitQty.ts) — raw, that key would render as its own ugly,
+// meaningless row ("material  units: 5"), so it's merged into the field it
+// belongs to instead, matching how the admin Dashboard displays the same data.
+function buildFieldsDisplay(customFields?: Record<string, string>): [string, string][] {
+  const cf = customFields ?? {};
+  const entries: [string, string][] = [];
+  for (const [k, v] of Object.entries(cf)) {
+    if (!v || k === TYPE_UNITS_KEY || k.endsWith("__units")) continue;
+    const units = cf[unitsKey(k)];
+    entries.push([k, units ? `${v} (${units} unit${units === "1" ? "" : "s"})` : v]);
+  }
+  if (cf[TYPE_UNITS_KEY]) entries.push(["units", cf[TYPE_UNITS_KEY]]);
+  return entries;
+}
 
 function getDisplayItems(entry: LinkedBillableEntry, generalHrs: string): DisplayItem[] {
   const items: DisplayItem[] = [];
@@ -146,8 +190,7 @@ function getDisplayItems(entry: LinkedBillableEntry, generalHrs: string): Displa
       items.push({ slug: "standard", hrs: fmtDecimalHrs(generalHours), client: entry.client, description: entry.description });
     }
     entry.subEntries.forEach((sub, i) => {
-      const fields = Object.entries(sub.customFields ?? {}).filter(([, v]) => v) as [string, string][];
-      items.push({ slug: sub.slug, hrs: fmtDecimalHrs(subHoursList[i]), fields });
+      items.push({ slug: sub.slug, hrs: fmtDecimalHrs(subHoursList[i]), fields: buildFieldsDisplay(sub.customFields) });
     });
   } else {
     const activeSlug = entry.entryType ?? "standard";
@@ -156,8 +199,7 @@ function getDisplayItems(entry: LinkedBillableEntry, generalHrs: string): Displa
         items.push({ slug: "standard", hrs: generalHrs, client: entry.client, description: entry.description });
       }
     } else {
-      const fields = Object.entries(entry.customFields ?? {}).filter(([, v]) => v) as [string, string][];
-      items.push({ slug: activeSlug, hrs: generalHrs, fields });
+      items.push({ slug: activeSlug, hrs: generalHrs, fields: buildFieldsDisplay(entry.customFields) });
     }
     for (const [slug, data] of Object.entries(entry._typeData ?? {})) {
       const dataHrs = calcHrs(data.startTime, data.endTime, data.manualHours);
@@ -166,10 +208,14 @@ function getDisplayItems(entry: LinkedBillableEntry, generalHrs: string): Displa
           items.push({ slug: "standard", hrs: dataHrs, client: data.client, description: data.description });
         }
       } else {
-        const fields = Object.entries(data.customFields ?? {}).filter(([, v]) => v) as [string, string][];
+        const fields = buildFieldsDisplay(data.customFields);
         if (fields.length > 0) items.push({ slug, hrs: dataHrs, fields });
       }
     }
+  }
+  for (const exp of entry.expenses ?? []) {
+    if (exp.amount == null || exp.amount <= 0) continue;
+    items.push({ slug: "expense", hrs: "", isExpense: true, amount: exp.amount, category: categoryLabel(exp.category), description: exp.note });
   }
   return items;
 }
@@ -268,6 +314,7 @@ const EMPTY_FORM = {
   end_date: "",
   title: "",
   client: "",
+  client_id: "",
   location: "",
   description: "",
   start_time: "",
@@ -314,6 +361,7 @@ function OngoingJobPicker({
             ongoing_job_id: val,
             title: form.title || picked?.title || "",
             client: form.client || picked?.client || "",
+            client_id: form.client ? form.client_id : picked?.client_id ?? "",
             location: form.location || picked?.location || "",
             description: form.description || picked?.description || "",
           });
@@ -372,6 +420,7 @@ function OngoingJobList({
                 ongoing_job_id: j.id,
                 title: j.title,
                 client: j.client ?? "",
+                client_id: j.client_id ?? "",
                 location: j.location ?? "",
                 description: j.description ?? "",
               })}
@@ -430,7 +479,8 @@ function QuoteList({
   sourceQuoteId: string;
   setSourceQuoteId: (id: string) => void;
 }) {
-  const available = quotes.filter((q) => q.status !== "converted");
+  // Not on the calendar as a job yet, and still in play
+  const available = quotes.filter((q) => !q.converted_job_id && q.status !== "declined");
   return (
     <div className="mt-3">
       <label className="block text-xs text-gray-500 mb-1">
@@ -452,9 +502,11 @@ function QuoteList({
                   ...form,
                   title: q.title,
                   client: q.client ?? "",
+                  client_id: q.client_id ?? "",
                   location: q.location ?? "",
                   description: q.description ?? "",
                   date: form.date || q.target_date || "",
+                  quoted_price: q.total ? String(q.total) : "",
                 });
               }}
               className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-2 transition-colors ${
@@ -634,15 +686,26 @@ const CAL_TAB_LABELS: Record<CalTab, string> = {
   availability: "Availability",
   workload: "Workload",
   plan: "My Plan",
-  quotes: "Quotes",
 };
 
 // Schedule and Crew Board stay as buttons; everything else (including future
 // additions) lives behind the "More" dropdown so the bar doesn't overflow.
 const PRIMARY_TABS: CalTab[] = ["schedule", "crew"];
-const MORE_TABS: CalTab[] = ["availability", "workload", "plan", "quotes"];
+const MORE_TABS: CalTab[] = ["availability", "workload", "plan"];
 
-export default function AdminCalendar() {
+// Grayed-out, dashed look for quotes that aren't jobs yet
+const QUOTE_CHIP_STYLE = { backgroundColor: "#f1f5f9", border: "1px dashed #94a3b8", color: "#475569" };
+
+export default function AdminCalendar({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const router = useRouter();
+  // ?fromQuote=<id> (from a quote's "Schedule as job") opens Add Job filled in from it
+  const params = use(searchParams);
+  const fromQuoteParam = typeof params.fromQuote === "string" ? params.fromQuote : null;
+  const handledFromQuoteRef = useRef(false);
   const [calTab, setCalTab] = useState<CalTab>("schedule");
   const [moreTabsOpen, setMoreTabsOpen] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -650,10 +713,17 @@ export default function AdminCalendar() {
   const [draftEvents, setDraftEvents] = useState<JobEvent[]>([]);
   const [draftsExpanded, setDraftsExpanded] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [jobPlannedExpenses, setJobPlannedExpenses] = useState<PlannedJobExpense[]>([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<JobEvent | null>(null);
+  // The selected job's quote and invoices (from /api/invoices/source), keyed by job id
+  const [jobBilling, setJobBilling] = useState<{
+    eventId: string;
+    quote: { id: string; quote_number: string | null } | null;
+    invoices: { id: string; invoice_number: string }[];
+  } | null>(null);
   const [panelForm, setPanelForm] = useState(EMPTY_FORM);
   const [linkedLogs, setLinkedLogs] = useState<LinkedSubmission[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -672,7 +742,7 @@ export default function AdminCalendar() {
   const [filterStatus, setFilterStatus] = useState<"all" | "verified" | "unverified">("all");
   const [planEvents, setPlanEvents] = useState<PlanEvent[]>([]);
   const [visibleTypes, setVisibleTypes] = useState<Set<string>>(
-    new Set(["job", "draft-job", "meeting", "site-visit", "task", "reminder", "note"])
+    new Set(["job", "draft-job", "quote", "meeting", "site-visit", "task", "reminder", "note"])
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 768
@@ -680,6 +750,7 @@ export default function AdminCalendar() {
   const [planModalOpen, setPlanModalOpen] = useState(false);
   const [planModalType, setPlanModalType] = useState<string>("task");
   const [planModalDate, setPlanModalDate] = useState<string>("");
+  const [editPlanEvent, setEditPlanEvent] = useState<PlanEvent | null>(null);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [ongoingJobs, setOngoingJobs] = useState<OngoingJob[]>([]);
   const [newOngoingJobTitle, setNewOngoingJobTitle] = useState("");
@@ -756,8 +827,28 @@ export default function AdminCalendar() {
       start_time: ev.start_time ?? "",
       end_time: ev.end_time ?? "",
       description: ev.description,
+      isDone: ev.is_done,
     })),
+    // Quotes with a planned start that haven't become a job yet
+    ...quotes
+      .filter((q) => q.target_date && !q.converted_job_id && q.status !== "declined" && !isQuoteExpired(q))
+      .map((q): UnifiedEvent => ({
+        id: q.id,
+        source: "quote",
+        type: "quote",
+        date: q.target_date as string,
+        title: q.title,
+        start_time: "",
+        end_time: "",
+        client: q.client ?? undefined,
+        location: q.location ?? undefined,
+        paid: q.amount_paid ?? 0,
+      })),
   ].filter((ev) => visibleTypes.has(ev.type));
+
+  function openQuote(id: string) {
+    router.push(`/admin/quotes/${id}`);
+  }
 
   function goBack() {
     if (calView === "week" || calView === "list") setWeekOffset((o) => o - 1);
@@ -778,11 +869,14 @@ export default function AdminCalendar() {
   }
 
   function handleQuickAdd(type: string) {
-    if (type === "job") {
+    if (type === "quote") {
+      router.push("/admin/quotes/new");
+    } else if (type === "job") {
       openNew(calView === "day" ? fmt(dayDate) : "");
     } else {
       setPlanModalType(type);
       setPlanModalDate(calView === "day" ? fmt(dayDate) : fmt(new Date()));
+      setEditPlanEvent(null);
       setPlanModalOpen(true);
     }
   }
@@ -863,12 +957,6 @@ export default function AdminCalendar() {
       .then((data) => setOngoingJobs(Array.isArray(data) ? data : []));
   }, []);
 
-  function refreshQuotes() {
-    fetch("/api/quotes", { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setQuotes(Array.isArray(data) ? data : []));
-  }
-  useEffect(refreshQuotes, []);
 
   useEffect(() => {
     setExpandedLogs([]);
@@ -880,8 +968,26 @@ export default function AdminCalendar() {
       .catch(() => setLoadingLogs(false));
   }, [selectedEvent?.id]);
 
+  useEffect(() => {
+    const id = selectedEvent?.id;
+    if (!id) return;
+    fetch(`/api/invoices/source?eventId=${id}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((src) => { if (src) setJobBilling({ eventId: id, quote: src.quote, invoices: src.invoices ?? [] }); });
+  }, [selectedEvent?.id]);
+
   function toggleLog(id: string) {
     setExpandedLogs((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  }
+
+  function addPlannedJobExpense() {
+    setJobPlannedExpenses((prev) => [...prev, { id: crypto.randomUUID(), amount: "", category: "materials", note: "" }]);
+  }
+  function updatePlannedJobExpense(id: string, patch: Partial<PlannedJobExpense>) {
+    setJobPlannedExpenses((prev) => prev.map((pe) => (pe.id === id ? { ...pe, ...patch } : pe)));
+  }
+  function removePlannedJobExpense(id: string) {
+    setJobPlannedExpenses((prev) => prev.filter((pe) => pe.id !== id));
   }
 
   function openNew(date = "", startTime = "", assignedTo = "") {
@@ -889,6 +995,7 @@ export default function AdminCalendar() {
     setNewOngoingJobTitle("");
     setAddSourceMode("blank");
     setSourceQuoteId("");
+    setJobPlannedExpenses([]);
     setEditId(null);
     setShowForm(true);
   }
@@ -898,17 +1005,40 @@ export default function AdminCalendar() {
       ...EMPTY_FORM,
       title: quote.title,
       client: quote.client ?? "",
+      client_id: quote.client_id ?? "",
       location: quote.location ?? "",
       description: quote.description ?? "",
       date: quote.target_date ?? "",
+      quoted_price: quote.total ? String(quote.total) : "",
       is_verified: true,
     });
     setNewOngoingJobTitle("");
     setAddSourceMode("quote");
     setSourceQuoteId(quote.id);
+    setJobPlannedExpenses([]);
     setEditId(null);
     setShowForm(true);
   }
+
+  function refreshQuotes() {
+    fetch("/api/quotes", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        const list: Quote[] = Array.isArray(data) ? data : [];
+        setQuotes(list);
+        // Arrived from a quote's "Schedule as job" — open Add Job filled in from it, once
+        if (fromQuoteParam && !handledFromQuoteRef.current) {
+          const q = list.find((x) => x.id === fromQuoteParam);
+          if (q) {
+            handledFromQuoteRef.current = true;
+            openNewFromQuote(q);
+            router.replace("/admin/calendar");
+          }
+        }
+      });
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(refreshQuotes, []);
 
   // Switching tabs clears whatever was picked (and any fields it filled in)
   // so leftover data from one source doesn't leak into another — e.g.
@@ -928,6 +1058,7 @@ export default function AdminCalendar() {
       end_date: ev.end_date ?? "",
       title: ev.title,
       client: ev.client ?? "",
+      client_id: ev.client_id ?? "",
       location: ev.location ?? "",
       description: ev.description ?? "",
       start_time: ev.start_time ?? "",
@@ -944,6 +1075,11 @@ export default function AdminCalendar() {
   }
 
   async function selectEvent(ev: UnifiedEvent) {
+    if (ev.source === "plan") {
+      const plan = planEvents.find((p) => p.id === ev.id);
+      if (plan) { setEditPlanEvent(plan); setPlanModalOpen(true); }
+      return;
+    }
     if (ev.source !== "job") return;
     // UnifiedEvent only carries the fields the calendar grid renders — look
     // up the full row so the panel doesn't show stale/blank data for
@@ -955,6 +1091,56 @@ export default function AdminCalendar() {
     }
     setSelectedEvent(jobEv);
     setPanelForm(eventToForm(jobEv));
+  }
+
+  // Toggled by the small checkbox shown right on a task/meeting/etc. tile —
+  // same PUT the "Mark as completed" checkbox in the edit modal uses, just
+  // without opening it.
+  async function toggleTaskDone(ev: UnifiedEvent) {
+    const nextDone = !ev.isDone;
+    setPlanEvents((prev) => prev.map((p) => (p.id === ev.id ? { ...p, is_done: nextDone } : p)));
+    await fetch("/api/admin/plan-events", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id: ev.id, is_done: nextDone }),
+    });
+  }
+
+  // `onColor` = sitting on the event's own colored chip/bar (translucent
+  // white, since chip colors vary); `onWhite` = sitting on a plain white
+  // row (list view) where a gray outline reads better.
+  // `hitPad` grows the tappable area on top of the visible box (via a
+  // padding/negative-margin offset, so it doesn't push neighboring content)
+  // without making the checkbox itself look any bigger — only worth passing
+  // where the surrounding tile has no fixed height/overflow-hidden to clip
+  // against (list view); the tight calendar tiles stay visually sized only.
+  function renderDoneCheckbox(ev: UnifiedEvent, variant: "onColor" | "onWhite", size = 14, hitPad = 0) {
+    if (ev.source !== "plan") return null;
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); toggleTaskDone(ev); }}
+        title={ev.isDone ? "Mark as not done" : "Mark as done"}
+        className="shrink-0 flex items-center justify-center"
+        style={hitPad ? { margin: -hitPad, padding: hitPad } : undefined}
+      >
+        <span
+          className={`rounded border flex items-center justify-center transition-colors ${
+            ev.isDone
+              ? "bg-green-500 border-green-500"
+              : variant === "onColor" ? "bg-white/25 border-white/70 hover:bg-white/50" : "bg-white border-gray-300 hover:border-green-400"
+          }`}
+          style={{ width: size, height: size }}
+        >
+          {ev.isDone && (
+            <svg width={size * 0.6} height={size * 0.6} viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round">
+              <polyline points="1.5,5 4,7.5 8.5,2.5" />
+            </svg>
+          )}
+        </span>
+      </button>
+    );
   }
 
   async function selectDraftEvent(ev: JobEvent) {
@@ -1117,7 +1303,7 @@ export default function AdminCalendar() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ title: trimmed, client: f.client, location: f.location, description: f.description }),
+      body: JSON.stringify({ title: trimmed, client: f.client, client_id: f.client_id || null, location: f.location, description: f.description }),
     });
     if (!res.ok) return null;
     const created = await res.json();
@@ -1129,12 +1315,18 @@ export default function AdminCalendar() {
     if (!form.title || !form.date) return;
     setSaving(true);
 
-    const ongoingJobId = await resolveOngoingJobId(form, newOngoingJobTitle);
+    // A quote scheduled on repeat becomes one ongoing job, so hour logs from
+    // every day count toward the quote — not just the first day's entry.
+    const repeatingQuote = !editId && addSourceMode === "quote" && !!form.recurrence && !!form.repeat_until && !form.ongoing_job_id;
+    const ongoingJobId = repeatingQuote
+      ? await resolveOngoingJobId({ ...form, ongoing_job_id: "__new__" }, form.title)
+      : await resolveOngoingJobId(form, newOngoingJobTitle);
     const formToSave = { ...form, ongoing_job_id: ongoingJobId };
 
-    function clean<T extends { start_time: string; end_time: string; end_date: string; quoted_price: string }>(p: T) {
+    function clean<T extends { start_time: string; end_time: string; end_date: string; quoted_price: string; client_id: string }>(p: T) {
       return {
         ...p,
+        client_id: p.client_id || null,
         start_time: p.start_time || null,
         end_time: p.end_time || null,
         end_date: p.end_date || null,
@@ -1167,20 +1359,48 @@ export default function AdminCalendar() {
       if (!editId && sRes.ok) firstCreatedId = (await sRes.json()).id;
     }
 
+    // Scheduling a quote means the client said yes
     if (!editId && addSourceMode === "quote" && sourceQuoteId && firstCreatedId) {
-      await fetch("/api/quotes", {
+      await fetch(`/api/quotes/${sourceQuoteId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ id: sourceQuoteId, status: "converted", converted_job_id: firstCreatedId }),
+        body: JSON.stringify({ status: "approved", converted_job_id: firstCreatedId }),
       });
       refreshQuotes();
     }
 
+    // The job now has an id for the first time — write the expenses that
+    // were only being tracked locally while filling out the form into real rows.
+    if (!editId && firstCreatedId && jobPlannedExpenses.length) {
+      await Promise.all(
+        jobPlannedExpenses
+          .filter((pe) => parseFloat(pe.amount) > 0)
+          .map((pe) =>
+            fetch("/api/expenses", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ job_id: firstCreatedId, amount: pe.amount, category: pe.category, note: pe.note, incurred_on: form.date }),
+            }).catch(() => {})
+          )
+      );
+      setJobPlannedExpenses([]);
+    }
+
     const res = await fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`);
-    setEvents(await res.json());
+    const refreshed: JobEvent[] = await res.json();
+    setEvents(refreshed);
     setShowForm(false);
     setSaving(false);
+    // A brand-new job has no id until it's saved, so Checklist/Attachments/
+    // Expenses (all keyed by job id) can't appear on the create form —
+    // jump straight into its panel so they're one click away, not a
+    // search through the calendar for the tile you just made.
+    if (!editId && firstCreatedId) {
+      const created = refreshed.find((e) => e.id === firstCreatedId);
+      if (created) { setSelectedEvent(created); setPanelForm(eventToForm(created)); }
+    }
     setNewOngoingJobTitle("");
     setAddSourceMode("blank");
     setSourceQuoteId("");
@@ -1230,6 +1450,7 @@ export default function AdminCalendar() {
       start_time: payload.start_time || null,
       end_time: payload.end_time || null,
       end_date: payload.end_date || null,
+      client_id: payload.client_id || null,
       quoted_price: payload.quoted_price ? Number(payload.quoted_price) : null,
     };
     const body = { id: selectedEvent.id, ...cleanedPayload, ...(markVerified ? { is_verified: true } : {}) };
@@ -1326,6 +1547,7 @@ export default function AdminCalendar() {
           quoted_price: parsed.quoted_price != null ? String(parsed.quoted_price) : "",
           is_verified: false,
         });
+        setJobPlannedExpenses([]);
         setEditId(null);
         setShowForm(true);
       } catch (err) {
@@ -1409,15 +1631,17 @@ export default function AdminCalendar() {
                   {laneCount > 0 && <div style={{ height: laneCount * BAR_H }} />}
                   {planEvents.slice(0, 2).map((ev) => {
                     const { color } = getEventStyle(ev.type);
+                    const isQuote = ev.source === "quote";
                     return (
                       <div
                         key={ev.id}
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); if (isQuote) openQuote(ev.id); else selectEvent(ev); }}
                         className="flex items-center gap-0.5 text-[9px] leading-tight px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer"
-                        style={{ backgroundColor: color }}
-                        title={ev.title}
+                        style={isQuote ? QUOTE_CHIP_STYLE : { backgroundColor: color }}
+                        title={isQuote ? `Quote: ${ev.title}` : ev.title}
                       >
-                        <span className="truncate font-medium text-white">{ev.title}</span>
+                        {renderDoneCheckbox(ev, "onColor", 12)}
+                        <span className={`truncate font-medium ${isQuote ? "" : "text-white"} ${ev.isDone ? "line-through opacity-70" : ""}`}>{isQuote ? `Quote · ${ev.title}` : ev.title}</span>
                       </div>
                     );
                   })}
@@ -1516,25 +1740,39 @@ export default function AdminCalendar() {
                   {bars.map(({ ev, lane, startIdx, endIdx, clippedStart, clippedEnd }) => {
                     const { color } = getEventStyle(ev.type);
                     const isJob = ev.source === "job";
+                    const isQuote = ev.source === "quote";
                     const n = dates.length;
                     return (
                       <div
                         key={ev.id}
-                        className={`absolute text-[10px] font-semibold px-1.5 py-0.5 truncate leading-tight text-white ${clippedStart ? "" : "rounded-l"} ${clippedEnd ? "" : "rounded-r"} ${isJob ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                        className={`absolute text-[10px] font-semibold px-1.5 py-0.5 truncate leading-tight ${isQuote ? "" : "text-white"} ${clippedStart ? "" : "rounded-l"} ${clippedEnd ? "" : "rounded-r"} ${isJob ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                         style={{
                           left: `${(startIdx / n) * 100}%`,
                           width: `${((endIdx - startIdx + 1) / n) * 100}%`,
                           top: lane * BAR_H + 2,
                           height: BAR_H - 4,
-                          backgroundColor: color,
+                          ...(isQuote ? QUOTE_CHIP_STYLE : { backgroundColor: color }),
                         }}
                         draggable={isJob}
                         onDragStart={isJob ? (e) => handleWholeDayDragStart(e, ev.id, ev.date) : undefined}
                         onDragEnd={() => setDragOverKey(null)}
-                        onClick={() => { if (isJob) { const orig = events.find((j) => j.id === ev.id); if (orig) selectEvent(ev); } }}
-                        title={ev.title}
+                        onClick={() => {
+                          if (isQuote) openQuote(ev.id);
+                          else if (isJob) { const orig = events.find((j) => j.id === ev.id); if (orig) selectEvent(ev); }
+                          else selectEvent(ev);
+                        }}
+                        title={isQuote ? `Quote: ${ev.title}` : ev.title}
                       >
-                        {ev.title}
+                        {isQuote ? (
+                          `Quote · ${ev.title}${ev.paid ? ` · $${ev.paid.toFixed(0)} paid` : ""}`
+                        ) : isJob ? (
+                          ev.title
+                        ) : (
+                          <span className="flex items-center gap-1">
+                            {renderDoneCheckbox(ev, "onColor", 12)}
+                            <span className={`truncate ${ev.isDone ? "line-through opacity-70" : ""}`}>{ev.title}</span>
+                          </span>
+                        )}
                         {isJob && !clippedEnd && (
                           <div
                             draggable
@@ -1598,7 +1836,7 @@ export default function AdminCalendar() {
                       <div
                         key={ev.id}
                         draggable={ev.source === "job"}
-                        className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 transition-all ${ev.source === "job" ? "cursor-grab active:cursor-grabbing" : "cursor-default"} ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-95"}`}
+                        className={`absolute rounded-xl px-2 py-1.5 overflow-hidden z-10 transition-all ${ev.source === "job" ? "cursor-grab active:cursor-grabbing" : ev.source === "plan" ? "cursor-pointer" : "cursor-default"} ${isSelected ? "ring-2 ring-white ring-offset-1 brightness-90" : "hover:brightness-95"}`}
                         style={{
                           top: top + 2, height,
                           left: `calc(${leftPct}% + 2px)`,
@@ -1609,15 +1847,21 @@ export default function AdminCalendar() {
                         onDragEnd={() => setDragOverKey(null)}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (!isDraggingRef.current && ev.source === "job") {
+                          if (isDraggingRef.current) return;
+                          if (ev.source === "job") {
                             const original = events.find((j) => j.id === ev.id);
                             if (original) selectEvent(ev);
+                          } else if (ev.source === "plan") {
+                            selectEvent(ev);
                           }
                         }}
                       >
-                        <div className="flex items-center gap-1 mb-0.5">
+                        {ev.source === "plan" && (
+                          <div className="absolute top-0.5 right-0.5">{renderDoneCheckbox(ev, "onColor", 16)}</div>
+                        )}
+                        <div className="flex items-center gap-1 mb-0.5 pr-4">
                           <EventTypeIcon type={ev.type} color="#fff" />
-                          <p className="text-xs font-bold leading-tight truncate text-white">{ev.title}</p>
+                          <p className={`text-xs font-bold leading-tight truncate text-white ${ev.isDone ? "line-through opacity-70" : ""}`}>{ev.title}</p>
                         </div>
                         {ev.client && height > 38 && (
                           <p className="text-xs truncate text-white" style={{ opacity: 0.8 }}>{ev.client}</p>
@@ -1674,21 +1918,31 @@ export default function AdminCalendar() {
                     <div
                       key={ev.id}
                       onClick={() => {
-                        if (ev.source !== "job") return;
+                        if (ev.source === "quote") { openQuote(ev.id); return; }
+                        if (ev.source === "plan") { selectEvent(ev); return; }
                         const original = events.find((j) => j.id === ev.id);
                         if (original) isSelected ? closePanel() : selectEvent(ev);
                       }}
-                      className={`flex items-center gap-3 px-4 py-3 transition-colors ${ev.source === "job" ? "cursor-pointer" : "cursor-default"} ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"}`}
+                      className={`flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"} ${ev.source === "quote" ? "opacity-70" : ""}`}
                     >
-                      <div
-                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: getEventStyle(ev.type).color }}
-                      />
+                      {ev.source === "plan" ? (
+                        renderDoneCheckbox(ev, "onWhite", 18, 6)
+                      ) : (
+                        <div
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          style={ev.source === "quote" ? { border: "1.5px dashed #94a3b8" } : { backgroundColor: getEventStyle(ev.type).color }}
+                        />
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{ev.title}</p>
+                          <p className={`text-sm font-semibold text-gray-900 truncate ${ev.isDone ? "line-through text-gray-400" : ""}`}>{ev.title}</p>
                           {ev.type === "draft-job" && (
                             <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">Draft</span>
+                          )}
+                          {ev.source === "quote" && (
+                            <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-dashed border-slate-300 px-1.5 py-0.5 rounded-full shrink-0">
+                              Quote{ev.paid ? ` · $${ev.paid.toFixed(0)} paid` : ""}
+                            </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -1806,11 +2060,10 @@ export default function AdminCalendar() {
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Client</label>
-            <input
-              type="text"
-              value={panelForm.client}
-              onChange={(e) => setPanelForm({ ...panelForm, client: e.target.value })}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400"
+            <ClientPicker
+              name={panelForm.client}
+              clientId={panelForm.client_id || null}
+              onChange={({ name, clientId }) => setPanelForm({ ...panelForm, client: name, client_id: clientId ?? "" })}
             />
           </div>
           <div>
@@ -1994,12 +2247,16 @@ export default function AdminCalendar() {
                         <div className="px-3 pb-3 pt-2 space-y-1.5 border-t border-gray-200">
                           {items.map((item, ii) => (
                             <div key={ii} className="flex items-start gap-2">
-                              <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${item.slug === "standard" ? "bg-navy-100 text-navy-700" : "bg-indigo-100 text-indigo-700"}`}>
-                                {item.slug === "standard" ? "General" : slugLabel(item.slug)}
-                                {item.hrs ? ` · ${item.hrs}` : ""}
+                              <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                                item.isExpense ? "bg-red-100 text-red-700" : item.slug === "standard" ? "bg-navy-100 text-navy-700" : "bg-indigo-100 text-indigo-700"
+                              }`}>
+                                {item.isExpense ? "Expense" : item.slug === "standard" ? "General" : slugLabel(item.slug)}
+                                {item.isExpense ? ` · $${item.amount?.toFixed(2)}` : item.hrs ? ` · ${item.hrs}` : ""}
                               </span>
                               <span className="text-xs text-gray-600">
-                                {item.slug === "standard"
+                                {item.isExpense
+                                  ? [item.category, item.description].filter(Boolean).join(" — ")
+                                  : item.slug === "standard"
                                   ? [item.client, item.description].filter(Boolean).join(" — ")
                                   : (item.fields ?? []).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", ")}
                               </span>
@@ -2013,9 +2270,47 @@ export default function AdminCalendar() {
               </div>
             )}
           </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            <ExpensesCard jobId={selectedEvent.id} />
+          </div>
         </div>
 
-        <div className="flex gap-2 px-5 py-4 border-t border-gray-100">
+        {selectedEvent.is_verified !== false && (() => {
+          const billing = jobBilling?.eventId === selectedEvent.id ? jobBilling : null;
+          const go = async (href: string) => { await closePanel(); router.push(href); };
+          const btn = "flex-1 border border-navy-200 text-navy-600 hover:bg-navy-50 rounded-xl py-2 text-sm font-semibold transition-colors";
+          const invoice = billing?.invoices[0];
+          return (
+            <div className="px-5 pt-4 border-t border-gray-100">
+              <div className="flex gap-2">
+                {billing?.quote ? (
+                  <button onClick={() => go(`/admin/quotes/${billing.quote!.id}`)} className={btn}>
+                    View quote {billing.quote.quote_number ?? ""}
+                  </button>
+                ) : (
+                  <button onClick={() => go(`/admin/quotes/new?fromJob=${selectedEvent.id}`)} className={btn}>Create quote</button>
+                )}
+                {invoice ? (
+                  <button onClick={() => go(`/admin/invoices/${invoice.id}`)} className={btn}>
+                    View invoice {invoice.invoice_number}
+                  </button>
+                ) : (
+                  <button onClick={() => go(`/admin/invoices/new?fromJob=${selectedEvent.id}`)} className={btn}>Create invoice</button>
+                )}
+              </div>
+              {invoice && (
+                <button
+                  onClick={() => go(`/admin/invoices/new?fromJob=${selectedEvent.id}`)}
+                  className="mt-1.5 text-xs text-gray-400 hover:text-gray-600"
+                >
+                  Already invoiced — make another invoice anyway
+                </button>
+              )}
+            </div>
+          );
+        })()}
+        <div className={`flex gap-2 px-5 py-4 ${selectedEvent.is_verified !== false ? "pt-2" : "border-t border-gray-100"}`}>
           {selectedEvent.is_verified === false && (
             <button
               onClick={() => handleSavePanel(true)}
@@ -2383,11 +2678,6 @@ export default function AdminCalendar() {
       {/* ── MY PLAN TAB ── */}
       {calTab === "plan" && <MyPlanView />}
 
-      {/* ── QUOTES TAB ── */}
-      {calTab === "quotes" && (
-        <QuotesView quotes={quotes} onRefresh={refreshQuotes} onConvertToJob={openNewFromQuote} />
-      )}
-
       {/* Details modal for non-schedule tabs */}
       {selectedEvent && calTab !== "schedule" && (
         <div
@@ -2403,14 +2693,20 @@ export default function AdminCalendar() {
         </div>
       )}
 
-      {/* Plan event quick-add modal (for Schedule tab Quick Add) */}
+      {/* Plan event modal — Quick Add (new) and clicking an existing task/meeting/etc. (edit) */}
       <PlanEventModal
         open={planModalOpen}
-        onClose={() => setPlanModalOpen(false)}
+        onClose={() => { setPlanModalOpen(false); setEditPlanEvent(null); }}
         onSave={(saved) => {
-          setPlanEvents((prev) => [...prev, saved]);
+          setPlanEvents((prev) => (editPlanEvent ? prev.map((e) => (e.id === saved.id ? saved : e)) : [...prev, saved]));
           setPlanModalOpen(false);
+          setEditPlanEvent(null);
         }}
+        onDelete={(id) => {
+          setPlanEvents((prev) => prev.filter((e) => e.id !== id));
+          setEditPlanEvent(null);
+        }}
+        editEvent={editPlanEvent}
         initialType={planModalType as import("./constants/eventTypes").EventType}
         initialDate={planModalDate}
       />
@@ -2491,8 +2787,11 @@ export default function AdminCalendar() {
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Client</label>
-                <input type="text" value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400" />
+                <ClientPicker
+                  name={form.client}
+                  clientId={form.client_id || null}
+                  onChange={({ name, clientId }) => setForm({ ...form, client: name, client_id: clientId ?? "" })}
+                />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Location</label>
@@ -2587,6 +2886,56 @@ export default function AdminCalendar() {
                 </label>
                 <textarea rows={2} value={form.internal_notes} onChange={(e) => setForm({ ...form, internal_notes: e.target.value })}
                   className="w-full border border-amber-200 bg-amber-50/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none" />
+              </div>
+
+              {/* Expenses — tracked while creating the job, written in once it's saved */}
+              <div className="col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-navy-600 uppercase tracking-wide">Expenses</label>
+                  <button type="button" onClick={addPlannedJobExpense} className="text-sm font-semibold text-navy-600 hover:text-navy-800">+ Add expense</button>
+                </div>
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mb-2">
+                  Internal — not shown to employees. Track what you expect this job to cost so you know your real profit.
+                </p>
+                {jobPlannedExpenses.length > 0 && (
+                  <div className="space-y-2 mb-2">
+                    {jobPlannedExpenses.map((pe) => (
+                      <div key={pe.id} className="border border-gray-200 rounded-xl p-3 space-y-2">
+                        <div className="grid grid-cols-2 gap-2 [&>*]:min-w-0">
+                          <div>
+                            <label className="text-[10px] text-gray-400">Amount ($)</label>
+                            <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0.00" value={pe.amount}
+                              onChange={(e) => updatePlannedJobExpense(pe.id, { amount: e.target.value })}
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-navy-400" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-gray-400">Category</label>
+                            <select value={pe.category} onChange={(e) => updatePlannedJobExpense(pe.id, { category: e.target.value as ExpenseCategory })}
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-navy-400">
+                              {EXPENSE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 items-end">
+                          <div className="flex-1 min-w-0">
+                            <label className="text-[10px] text-gray-400">Note (optional)</label>
+                            <input value={pe.note} onChange={(e) => updatePlannedJobExpense(pe.id, { note: e.target.value })} placeholder="e.g. Estimated materials"
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-navy-400" />
+                          </div>
+                          <button type="button" onClick={() => removePlannedJobExpense(pe.id)} className="shrink-0 text-red-400 hover:text-red-600 p-1">
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between pt-1">
+                      <p className="text-sm font-semibold text-gray-700">Total expected</p>
+                      <p className="text-sm font-bold text-red-600">
+                        -${jobPlannedExpenses.reduce((s, pe) => s + (parseFloat(pe.amount) || 0), 0).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Recurring options (new jobs only) */}

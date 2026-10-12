@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import JobEventPicker, { type JobEvent } from "@/components/JobEventPicker";
 import { Skeleton, SkeletonCard } from "@/components/Skeleton";
 import { timeRangeHours, carveOutGeneral, formatHoursLabel } from "@/lib/billableHours";
+import { categoryLabel, type ExpenseLine } from "@/types/expense";
 
 interface DashJobEvent extends JobEvent {
   location?: string;
@@ -37,6 +38,7 @@ interface BillableEntry {
   manualHours?: number;
   customFields?: Record<string, string>;
   subEntries?: BillableSubEntry[];
+  expenses?: ExpenseLine[];
   photos?: string[];
   linkedEventId?: string;
   linkedEventTitle?: string;
@@ -78,6 +80,17 @@ interface WorkItem {
   client?: string;
   description?: string;
   customFields?: Record<string, string>;
+  isExpense?: boolean;
+  amount?: number;
+  category?: string;
+}
+
+// Expenses the employee logged on this entry (see src/types/expense.ts) —
+// shown alongside the hour-log work items, not counted as one.
+function getExpenseItems(entry: BillableEntry): WorkItem[] {
+  return (entry.expenses ?? [])
+    .filter((e) => e.amount != null && e.amount > 0)
+    .map((e) => ({ slug: "expense", isExpense: true, amount: e.amount, category: categoryLabel(e.category), description: e.note }));
 }
 
 function hoursFromData(start?: string, end?: string, manual?: number): string | undefined {
@@ -107,7 +120,7 @@ function getWorkItems(entry: BillableEntry): WorkItem[] {
     entry.subEntries.forEach((sub, i) => {
       items.push({ slug: sub.slug, hours: formatHoursLabel(subHoursList[i]) || undefined, customFields: sub.customFields });
     });
-    return items;
+    return [...items, ...getExpenseItems(entry)];
   }
 
   // Old format: entryType + _typeData
@@ -132,7 +145,7 @@ function getWorkItems(entry: BillableEntry): WorkItem[] {
     }
   }
 
-  return items;
+  return [...items, ...getExpenseItems(entry)];
 }
 
 function formatTime(t: string) {
@@ -156,6 +169,27 @@ function calcWorkedHours(start?: string, end?: string, manualHours?: number): st
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function fmtHoursMins(hours: number): string {
+  const total = Math.round(hours * 60);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+// Time worked for the day: clock in → out when they clocked in,
+// otherwise their job + non-billable time (a whole day on one site is often
+// logged as just the job's hours). Same rule as the employee's own dashboard.
+function workedTime(s: Submission): { label: string; fromJobs: boolean } | null {
+  if (s.day_start_time && s.day_end_time) {
+    const [sh, sm] = s.day_start_time.split(":").map(Number);
+    const [eh, em] = s.day_end_time.split(":").map(Number);
+    const mins = eh * 60 + em - (sh * 60 + sm);
+    if (mins > 0) return { label: fmtHoursMins(mins / 60), fromJobs: false };
+  }
+  const jobHours = (Number(s.total_billable_hours) || 0) + (Number(s.total_non_billable_hours) || 0);
+  return jobHours > 0 ? { label: fmtHoursMins(jobHours), fromJobs: true } : null;
 }
 
 function formatDateLabel(dateStr: string): string {
@@ -391,6 +425,20 @@ export default function Dashboard() {
     setLinkingTarget(null);
   }
 
+  async function handleAdminUnlink(submissionId: string, entryIndex: number) {
+    await fetch("/api/submissions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id: submissionId, entryIndex, linkedEventId: null, linkedEventTitle: null }),
+    });
+    setSubmissions((prev) => prev.map((s) =>
+      s.id === submissionId
+        ? { ...s, billable_entries: s.billable_entries.map((e, i) => i === entryIndex ? { ...e, linkedEventId: undefined, linkedEventTitle: undefined } : e) }
+        : s
+    ));
+  }
+
   const filterJobEvent = events.find((e) => e.id === filterJobId);
 
   const filtered = submissions.filter((s) => {
@@ -582,7 +630,7 @@ export default function Dashboard() {
           {filtered.map((s, i) => {
             const prevDate = i > 0 ? filtered[i - 1].date : null;
             const showSeparator = prevDate !== null && prevDate !== s.date;
-            const workedHours = calcWorkedHours(s.day_start_time, s.day_end_time);
+            const worked = workedTime(s);
             const hasUnlinkedJob = s.billable_entries?.some((e) => getWorkItems(e).length > 0 && !e.linkedEventTitle);
             return (
               <div key={s.id}>
@@ -609,7 +657,12 @@ export default function Dashboard() {
                         </span>
                       )}
                       <div className="text-right text-sm">
-                        {workedHours && <div className="text-gray-700 font-semibold">{workedHours} worked</div>}
+                        {worked && (
+                          <div className="text-gray-700 font-semibold">
+                            {worked.label} worked
+                            {worked.fromJobs && <span className="block text-[10px] font-normal text-gray-400">no clock in · from job time</span>}
+                          </div>
+                        )}
                         <div className="text-navy-600 font-medium">{s.total_billable_hours}h billable</div>
                         {s.total_non_billable_hours > 0 && <div className="text-orange-500">{s.total_non_billable_hours}h non-bill.</div>}
                       </div>
@@ -624,8 +677,8 @@ export default function Dashboard() {
                           <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Workday</span>
                           <span className="mx-1 text-gray-300">|</span>
                           <span>{formatTime(s.day_start_time)} – {formatTime(s.day_end_time)}</span>
-                          {workedHours && (
-                            <span className="ml-auto font-semibold text-gray-700">{workedHours}</span>
+                          {worked && !worked.fromJobs && (
+                            <span className="ml-auto font-semibold text-gray-700">{worked.label}</span>
                           )}
                         </div>
                       )}
@@ -671,7 +724,28 @@ export default function Dashboard() {
                                       >
                                         <svg className="inline w-3 h-3 mr-1" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.5-1.5a3.5 3.5 0 0 0-4.95-4.95l-.87.87"/><path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0l-1.5 1.5a3.5 3.5 0 0 0 4.95 4.95l.87-.87"/></svg>{entry.linkedEventTitle}
                                       </button>
-                                    ) : (
+                                    ) : null}
+                                    {entry.linkedEventTitle && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => { setLinkingTarget({ submissionId: s.id, entryIndex: ji, date: s.date }); setLinkWeekOffset(0); }}
+                                          className="text-xs text-navy-600 hover:text-navy-800 font-semibold px-1"
+                                          title="Link this entry to a different job"
+                                        >
+                                          Change
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleAdminUnlink(s.id, ji)}
+                                          className="text-xs text-gray-400 hover:text-red-500 px-1"
+                                          title="Remove the link to this job"
+                                        >
+                                          Unlink
+                                        </button>
+                                      </>
+                                    )}
+                                    {!entry.linkedEventTitle && (
                                       <button
                                         type="button"
                                         onClick={() => { setLinkingTarget({ submissionId: s.id, entryIndex: ji, date: s.date }); setLinkWeekOffset(0); }}
@@ -686,17 +760,27 @@ export default function Dashboard() {
                                     {workItems.map((item, wi) => (
                                       <div key={wi} className="flex gap-2 items-start">
                                         <span className={`mt-0.5 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1 ${
-                                          item.slug === "standard"
+                                          item.isExpense
+                                            ? "bg-red-100 text-red-700"
+                                            : item.slug === "standard"
                                             ? "bg-navy-100 text-navy-700"
                                             : "bg-indigo-100 text-indigo-700"
                                         }`}>
-                                          {item.slug === "standard" ? "General" : slugToLabel(item.slug)}
-                                          {item.hours && (
+                                          {item.isExpense ? "Expense" : item.slug === "standard" ? "General" : slugToLabel(item.slug)}
+                                          {item.isExpense ? (
+                                            <span className="font-bold opacity-70">· ${item.amount?.toFixed(2)}</span>
+                                          ) : item.hours && (
                                             <span className="font-bold opacity-70">· {item.hours}</span>
                                           )}
                                         </span>
                                         <div className="text-sm text-gray-700 space-y-0.5">
-                                          {item.slug === "standard" && (
+                                          {item.isExpense && (
+                                            <>
+                                              <span className="font-medium">{item.category}</span>
+                                              {item.description && <span className="text-gray-400"> — {item.description}</span>}
+                                            </>
+                                          )}
+                                          {!item.isExpense && item.slug === "standard" && (
                                             <>
                                               {item.client && <span className="font-medium">{item.client}</span>}
                                               {item.client && item.description && <span className="text-gray-400"> — </span>}

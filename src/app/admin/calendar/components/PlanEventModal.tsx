@@ -19,18 +19,21 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSave: (saved: PlanEvent) => void;
+  onDelete?: (id: string) => void;
   initialType?: EventType;
   initialDate?: string;
   editEvent?: PlanEvent | null;
 }
 
-export default function PlanEventModal({ open, onClose, onSave, initialType, initialDate, editEvent }: Props) {
+export default function PlanEventModal({ open, onClose, onSave, onDelete, initialType, initialDate, editEvent }: Props) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setSaving(false);
+    setConfirmDelete(false);
     if (editEvent) {
       setForm({
         title: editEvent.title,
@@ -71,6 +74,20 @@ export default function PlanEventModal({ open, onClose, onSave, initialType, ini
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleDelete() {
+    if (!editEvent) return;
+    setSaving(true);
+    await fetch("/api/admin/plan-events", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id: editEvent.id }),
+    });
+    setSaving(false);
+    onDelete?.(editEvent.id);
+    onClose();
   }
 
   const typeConfig = EVENT_TYPES[form.event_type];
@@ -159,9 +176,34 @@ export default function PlanEventModal({ open, onClose, onSave, initialType, ini
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-400 resize-none"
             />
           </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.is_done}
+              onChange={(e) => setForm({ ...form, is_done: e.target.checked })}
+              className="w-4 h-4 rounded border-gray-300 text-navy-600 focus:ring-navy-400"
+            />
+            <span className="text-sm text-gray-700">Mark as completed</span>
+          </label>
         </div>
 
         <div className="flex gap-3 pt-1">
+          {editEvent && (
+            confirmDelete ? (
+              <span className="flex items-center gap-2 text-xs font-semibold shrink-0 px-1">
+                <button onClick={handleDelete} disabled={saving} className="text-red-600 hover:text-red-700">Delete</button>
+                <button onClick={() => setConfirmDelete(false)} className="text-gray-400 font-normal">Cancel</button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="border border-red-200 text-red-500 hover:bg-red-50 rounded-xl py-2.5 px-4 text-sm font-semibold"
+              >
+                Delete
+              </button>
+            )
+          )}
           <button onClick={onClose} className="flex-1 border border-gray-300 rounded-xl py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
             Cancel
           </button>

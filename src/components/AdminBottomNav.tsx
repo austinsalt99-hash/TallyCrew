@@ -80,8 +80,21 @@ const moreItems = [
     ),
   },
   {
+    href: "/admin/clients",
+    label: "Clients",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <circle cx="9" cy="11" r="2.5" />
+        <path d="M5.5 17c.6-1.8 2-2.8 3.5-2.8s2.9 1 3.5 2.8" />
+        <line x1="15" y1="10" x2="19" y2="10" />
+        <line x1="15" y1="14" x2="19" y2="14" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/invoices",
-    label: "Invoices",
+    label: "Quotes & Invoices",
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />

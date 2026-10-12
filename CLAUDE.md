@@ -75,6 +75,13 @@ Admins configure types (e.g. "Trucking", "Machine Operating") with typed fields.
 
 The employee form fetches `GET /api/log-config` on mount and passes the result to each `BillableEntry`. Field values are stored in `customFields: Record<string, string>`.
 
+### Expenses — two sources, always summed together
+Materials, equipment, subcontractors, etc. (as distinct from labor/`profiles.pay_rate`) live in two places, not one:
+- **`expenses` table** — admin-entered, from the private notes section at the bottom of a quote, a job's panel on the admin calendar, or the bottom of an invoice. Optionally tagged with `job_id` / `quote_id` / `invoice_id`.
+- **Embedded on the timesheet** — an employee's own "+ Expense" pill on `BillableEntry` (`BillableEntryData.expenses: ExpenseLine[]`), stored in `submissions.billable_entries` the same way hours are. Soft-deleting/restoring/re-linking a submission carries its expenses along for free.
+
+`src/components/ExpensesCard.tsx` and `src/lib/expenseSummary.ts` combine both sources everywhere expenses are shown or totalled (Financials, a job's calendar panel, an invoice's rollup of its linked jobs).
+
 ### Data flow on submission
 Employee submits → `POST /api/submit` → inserts into `submissions` → fetches log type config to resolve field labels → sends HTML email via Resend.
 

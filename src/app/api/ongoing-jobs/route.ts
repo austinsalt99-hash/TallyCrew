@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
+import { resolveClientId } from "@/lib/billing";
 
 export async function GET() {
   const supabase = await createSupabaseServer();
@@ -9,7 +10,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("ongoing_jobs")
-    .select("id, title, client, location, description")
+    .select("id, title, client, client_id, location, description")
     .eq("company_id", profile.company_id)
     .eq("is_active", true)
     .order("title");
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   if (!user || !profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (profile.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { title, client, location, description } = await request.json();
+  const { title, client, client_id, location, description } = await request.json();
   if (!title?.trim()) return NextResponse.json({ error: "Title required" }, { status: 400 });
 
   const { data, error } = await supabase
@@ -33,10 +34,11 @@ export async function POST(request: Request) {
       company_id: profile.company_id,
       title: title.trim(),
       client: client || null,
+      client_id: await resolveClientId(supabase, client_id, client, profile.company_id),
       location: location || null,
       description: description || null,
     })
-    .select("id, title, client, location, description")
+    .select("id, title, client, client_id, location, description")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

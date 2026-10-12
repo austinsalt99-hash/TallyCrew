@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import type { LogEntryType } from "@/types/logConfig";
 import LogFieldInputs from "@/components/LogFieldInputs";
+import { EXPENSE_CATEGORIES, type ExpenseCategory, type ExpenseLine } from "@/types/expense";
 
 function uuid(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -43,6 +44,12 @@ export interface BillableEntryData {
   manualHours?: number;
   customFields?: Record<string, string>;
   subEntries?: SubEntry[];
+  // Costs the employee is logging against this job (materials, fuel, a
+  // subcontractor paid in cash, etc.) — kept separate from hours so they
+  // don't get counted as time worked. Rolls into Financials and, once this
+  // entry is linked to a job, into that job's expenses too (see
+  // supabase-schema.sql section 28).
+  expenses?: ExpenseLine[];
   photos?: string[];
   linkedEventId?: string;
   linkedEventTitle?: string;
@@ -86,19 +93,26 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [activeSubId, setActiveSubId] = useState<string | null>(null);
+  const [activeExpenseId, setActiveExpenseId] = useState<string | null>(null);
 
   const subEntries = entry.subEntries ?? [];
+  const expenses = entry.expenses ?? [];
   const standardType = entryTypes.find((t) => t.slug === "standard");
   const customTypes = entryTypes.filter((t) => t.slug !== "standard");
   const hasCustomTypes = customTypes.length > 0;
 
   const activeSub = activeSubId ? (subEntries.find((s) => s.id === activeSubId) ?? null) : null;
   const activeCustomType = activeSub ? entryTypes.find((t) => t.slug === activeSub.slug) : null;
+  const activeExpense = activeExpenseId ? (expenses.find((e) => e.id === activeExpenseId) ?? null) : null;
 
   const effectiveTimeMode = activeSub
     ? (activeCustomType?.time_mode ?? (activeCustomType?.is_timed !== false ? "job" : "none"))
     : "job";
-  const showTime = effectiveTimeMode !== "none";
+  const showTime = effectiveTimeMode !== "none" && !activeExpense;
+
+  function selectGeneral() { setActiveSubId(null); setActiveExpenseId(null); }
+  function selectSub(id: string) { setActiveSubId(id); setActiveExpenseId(null); }
+  function selectExpense(id: string) { setActiveExpenseId(id); setActiveSubId(null); }
 
   const generalHours = hoursDisplay(entry.startTime, entry.endTime, entry.manualHours);
   const generalName = standardType?.name ?? "General";
@@ -141,12 +155,26 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
       ...entry,
       subEntries: [...subEntries, { id, slug, customFields: {}, startTime: "", endTime: "" }],
     });
-    setActiveSubId(id);
+    selectSub(id);
   };
 
   const removeSubEntry = (id: string) => {
     onChange({ ...entry, subEntries: subEntries.filter((s) => s.id !== id) });
     if (activeSubId === id) setActiveSubId(null);
+  };
+
+  const addExpense = () => {
+    const id = uuid();
+    onChange({ ...entry, expenses: [...expenses, { id, category: "materials", note: "" }] });
+    selectExpense(id);
+  };
+
+  const updateExpense = (id: string, patch: Partial<ExpenseLine>) =>
+    onChange({ ...entry, expenses: expenses.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
+
+  const removeExpense = (id: string) => {
+    onChange({ ...entry, expenses: expenses.filter((e) => e.id !== id) });
+    if (activeExpenseId === id) setActiveExpenseId(null);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -227,22 +255,22 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
         </div>
       )}
 
-      {/* Tab strip — General + added sub-entries */}
-      {(hasCustomTypes || subEntries.length > 0) && (
+      {/* Tab strip — General + added sub-entries + added expenses */}
+      {(hasCustomTypes || subEntries.length > 0 || expenses.length > 0) && (
         <div className="flex flex-wrap gap-2">
           {/* General tab */}
           <button
             type="button"
-            onClick={() => setActiveSubId(null)}
+            onClick={selectGeneral}
             className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-colors flex items-center gap-1.5 ${
-              activeSubId === null
+              activeSubId === null && !activeExpense
                 ? "bg-navy-600 text-white border-navy-600"
                 : "bg-white text-gray-600 border-gray-200 hover:border-navy-300"
             }`}
           >
             <span>{generalName}</span>
             {generalHours && (
-              <span className={`text-xs font-bold ${activeSubId === null ? "opacity-80" : "text-navy-600"}`}>
+              <span className={`text-xs font-bold ${activeSubId === null && !activeExpense ? "opacity-80" : "text-navy-600"}`}>
                 {generalHours}
               </span>
             )}
@@ -262,7 +290,7 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
               >
                 <button
                   type="button"
-                  onClick={() => setActiveSubId(sub.id)}
+                  onClick={() => selectSub(sub.id)}
                   className={`pl-3 pr-1.5 py-2 text-sm font-semibold flex items-center gap-1.5 ${
                     isActive ? "text-white" : "text-gray-600"
                   }`}
@@ -287,11 +315,47 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
               </div>
             );
           })}
+
+          {/* Added expense tabs — red, distinct from the blue hour-log tabs */}
+          {expenses.map((exp) => {
+            const isActive = activeExpenseId === exp.id;
+            return (
+              <div
+                key={exp.id}
+                className={`flex items-center rounded-xl border-2 transition-colors ${
+                  isActive ? "bg-red-600 border-red-600" : "bg-red-50 border-red-200"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => selectExpense(exp.id)}
+                  className={`pl-3 pr-1.5 py-2 text-sm font-semibold flex items-center gap-1.5 ${
+                    isActive ? "text-white" : "text-red-700"
+                  }`}
+                >
+                  <span>Expense</span>
+                  <span className={`text-xs font-bold ${isActive ? "opacity-80" : "text-red-600"}`}>
+                    {exp.amount != null ? `$${exp.amount.toFixed(2)}` : "—"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeExpense(exp.id)}
+                  aria-label="Remove"
+                  className={`pr-2.5 py-2 leading-none flex items-center ${
+                    isActive ? "text-white/60 hover:text-white" : "text-red-300 hover:text-red-600"
+                  }`}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
       {/* Form fields — General tab */}
-      {activeSubId === null && (
+      {activeSubId === null && !activeExpense && (
         <>
           <input
             type="text"
@@ -328,6 +392,45 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
         </div>
       )}
 
+      {/* Form fields — Expense tab */}
+      {activeExpense && (
+        <div className="space-y-3 bg-red-50 border border-red-200 rounded-xl p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-red-700 mb-1">Amount ($)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                placeholder="0.00"
+                value={activeExpense.amount ?? ""}
+                onChange={(e) => updateExpense(activeExpense.id, { amount: e.target.value !== "" ? parseFloat(e.target.value) : undefined })}
+                className="w-full border border-red-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-400"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-red-700 mb-1">Category</label>
+              <select
+                value={activeExpense.category}
+                onChange={(e) => updateExpense(activeExpense.id, { category: e.target.value as ExpenseCategory })}
+                className="w-full border border-red-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-400"
+              >
+                {EXPENSE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <input
+            type="text"
+            placeholder="Note (e.g. receipt, what it was for)"
+            value={activeExpense.note ?? ""}
+            onChange={(e) => updateExpense(activeExpense.id, { note: e.target.value })}
+            className="w-full border border-red-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-400"
+          />
+        </div>
+      )}
+
       {/* Time row */}
       {showTime && (
         <div className="space-y-2">
@@ -358,7 +461,12 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
             </div>
           </div>
           <div className="w-28">
-            <label className="block text-xs text-gray-500 mb-1">Hours{computedHours != null ? "" : " (manual)"}</label>
+            {/* General's hours are the whole job, start to finish — not just labour */}
+            {activeSub ? (
+              <label className="block text-xs text-gray-500 mb-1">Hours{computedHours != null ? "" : " (manual)"}</label>
+            ) : (
+              <label className="block text-xs font-bold text-gray-900 mb-1 whitespace-nowrap">Total job hours</label>
+            )}
             <input
               type="number"
               min="0"
@@ -389,22 +497,27 @@ export default function BillableEntry({ entry, onChange, onRemove, showRemove, e
         </div>
       )}
 
-      {/* Add sub-type pills */}
-      {hasCustomTypes && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-400 font-medium shrink-0">Add:</span>
-          {customTypes.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => addSubEntry(t.slug)}
-              className="text-xs text-gray-500 border border-dashed border-gray-300 rounded-full px-2.5 py-0.5 hover:border-navy-400 hover:text-navy-600 transition-colors"
-            >
-              + {t.name}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Add sub-type / expense pills */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-400 font-medium shrink-0">Add:</span>
+        {customTypes.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => addSubEntry(t.slug)}
+            className="text-xs text-gray-500 border border-dashed border-gray-300 rounded-full px-2.5 py-0.5 hover:border-navy-400 hover:text-navy-600 transition-colors"
+          >
+            + {t.name}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={addExpense}
+          className="text-xs text-red-500 border border-dashed border-red-300 rounded-full px-2.5 py-0.5 hover:border-red-500 hover:bg-red-50 transition-colors"
+        >
+          + Expense
+        </button>
+      </div>
 
       {/* Photos */}
       <div>

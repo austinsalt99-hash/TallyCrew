@@ -24,6 +24,8 @@ interface TypeInfo {
   name: string;
   timeMode: "job" | "day" | "none";
   dropdownFieldKeys: string[];
+  // Free-text fields (e.g. "Machine": "135") — shown in the line title
+  textFieldKeys: string[];
   fieldRates: Record<string, { rate_type: string; rate_amount: number; label: string }>;
   typeRateType?: string | null;
   typeRateAmount?: number | null;
@@ -99,6 +101,16 @@ function calcAmountDetailed(
   }
 
   return { amount: total > 0 ? total.toFixed(2) : "", priceBasis, rate };
+}
+
+// "Machine Operating – 135": the log type plus whatever was picked or typed.
+// Shown as the line's title on invoices.
+function buildTitle(typeName: string, customFields: Record<string, string>, typeInfo: TypeInfo | undefined): string {
+  if (!typeInfo) return typeName;
+  const parts = [...typeInfo.dropdownFieldKeys, ...typeInfo.textFieldKeys]
+    .map((fk) => customFields[fk]?.trim())
+    .filter((v): v is string => !!v);
+  return parts.length > 0 ? `${typeName} – ${parts.join(", ")}` : typeName;
 }
 
 function buildDescription(typeName: string, customFields: Record<string, string>, typeInfo: TypeInfo | undefined, allFieldLabels: Record<string, string>): string {
@@ -210,6 +222,10 @@ export async function GET(req: NextRequest) {
       .filter((f) => f.type_id === t.id && f.field_type === "dropdown")
       .map((f) => f.field_key)
       .sort();
+    const textFieldKeys = allFields
+      .filter((f) => f.type_id === t.id && f.field_type === "text")
+      .map((f) => f.field_key)
+      .sort();
     for (const f of allFields.filter((f) => f.type_id === t.id)) {
       allFieldLabels[f.field_key] = f.label;
     }
@@ -218,6 +234,7 @@ export async function GET(req: NextRequest) {
       name: t.name,
       timeMode: (t.time_mode as "job" | "day" | "none") ?? "job",
       dropdownFieldKeys,
+      textFieldKeys,
       fieldRates,
       typeRateType: t.rate_type ?? null,
       typeRateAmount: t.rate_amount ?? null,
@@ -239,11 +256,13 @@ export async function GET(req: NextRequest) {
     slug: string;
     typeInfo: TypeInfo | undefined;
     dropdownFields: Record<string, string>;
+    textFields: Record<string, string>;
     entries: { employee: string; workerId: string; date: string; hours: number; numberFields: Record<string, number>; units: Record<string, number> }[];
   }
 
   interface LineItemResponse {
     id: string;
+    title: string;
     description: string;
     employee: string;
     date: string;
@@ -262,6 +281,7 @@ export async function GET(req: NextRequest) {
     slug: string;
     typeName: string;
     hours: string;
+    title: string;
     description: string;
   }
 
@@ -334,7 +354,10 @@ export async function GET(req: NextRequest) {
       const typeInfo = slugToType[re.slug];
       const ddKeys = typeInfo?.dropdownFieldKeys ?? [];
       const ddParts = ddKeys.map((k) => `${k}=${re.customFields[k] ?? ""}`);
-      const gk = [re.slug, ...ddParts].join("||");
+      // Typed values split lines too, so machine 135 and machine 250 aren't merged
+      const textKeys = typeInfo?.textFieldKeys ?? [];
+      const textParts = textKeys.map((k) => `${k}=${(re.customFields[k] ?? "").trim().toLowerCase()}`);
+      const gk = [re.slug, ...ddParts, ...textParts].join("||");
 
       const numberFields: Record<string, number> = {};
       if (typeInfo?.fieldRates) {
@@ -364,7 +387,9 @@ export async function GET(req: NextRequest) {
       if (!groups.has(gk)) {
         const ddFields: Record<string, string> = {};
         for (const k of ddKeys) { if (re.customFields[k]) ddFields[k] = re.customFields[k]; }
-        groups.set(gk, { slug: re.slug, typeInfo, dropdownFields: ddFields, entries: [] });
+        const txtFields: Record<string, string> = {};
+        for (const k of textKeys) { if (re.customFields[k]?.trim()) txtFields[k] = re.customFields[k].trim(); }
+        groups.set(gk, { slug: re.slug, typeInfo, dropdownFields: ddFields, textFields: txtFields, entries: [] });
       }
       groups.get(gk)!.entries.push({ employee: re.employee, workerId: re.workerId, date: re.date, hours: re.hours, numberFields, units });
     }
@@ -372,8 +397,9 @@ export async function GET(req: NextRequest) {
     const lineItems: LineItemResponse[] = [];
 
     for (const group of groups.values()) {
-      const { slug, typeInfo, dropdownFields, entries } = group;
+      const { slug, typeInfo, dropdownFields, textFields, entries } = group;
       const typeName = typeInfo?.name ?? slug;
+      const title = buildTitle(typeName, { ...dropdownFields, ...textFields }, typeInfo);
       const description = buildDescription(
         typeName,
         { ...dropdownFields, ...Object.fromEntries(entries.flatMap(e => Object.entries(e.numberFields).map(([k, v]) => [k, String(v)]))) },
@@ -428,6 +454,7 @@ export async function GET(req: NextRequest) {
 
       lineItems.push({
         id: crypto.randomUUID(),
+        title,
         description,
         employee: employeeLabel,
         date: sortedEntries[0].date,
@@ -443,7 +470,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    lineItems.sort((a, b) => a.description.localeCompare(b.description) || a.date.localeCompare(b.date));
+    lineItems.sort((a, b) => a.title.localeCompare(b.title) || a.description.localeCompare(b.description) || a.date.localeCompare(b.date));
     return lineItems;
   }
 
@@ -476,6 +503,7 @@ export async function GET(req: NextRequest) {
         slug: re.slug,
         typeName,
         hours: formatHoursStr(re.hours),
+        title: buildTitle(typeName, re.customFields, typeInfo),
         description: buildDescription(typeName, re.customFields, typeInfo, allFieldLabels),
       };
     });

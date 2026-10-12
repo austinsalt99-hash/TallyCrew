@@ -75,6 +75,10 @@ export async function parseVoiceEventText(text: string, crewNames: string[] = []
     max_tokens: 1500,
     system: SYSTEM_PROMPT,
     tools: [RECORD_JOB_TOOL],
+    // Without this the model sometimes answers a short or unclear note in plain
+    // text (e.g. asking for the date) instead of filling in the job. Forcing the
+    // tool means the admin always gets a record back, with blanks to fill in.
+    tool_choice: { type: "tool", name: RECORD_JOB_TOOL.name },
     messages: [
       {
         role: "user",
@@ -85,6 +89,7 @@ export async function parseVoiceEventText(text: string, crewNames: string[] = []
 
   const toolUse = message.content.find((block) => block.type === "tool_use");
   if (!toolUse || toolUse.type !== "tool_use") {
+    console.error("parseVoiceEvent: no tool call", message.stop_reason, JSON.stringify(message.content).slice(0, 500));
     throw new Error("Unexpected response from AI");
   }
 

@@ -722,6 +722,10 @@ CREATE POLICY "admins manage own plan events"
           setShowForm(false);
           setEditId(null);
         }}
+        onDelete={(id) => {
+          setPlanEvents((prev) => prev.filter((e) => e.id !== id));
+          setEditId(null);
+        }}
         initialType={form.event_type}
         initialDate={form.date}
         editEvent={editId ? planEvents.find((e) => e.id === editId) ?? null : null}

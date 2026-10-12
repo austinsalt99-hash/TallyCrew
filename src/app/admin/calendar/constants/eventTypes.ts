@@ -15,11 +15,13 @@ export const JOB_TYPE_CONFIG = {
   "draft-job":{ label: "Draft Jobs", color: "#9ca3af", bg: "#f3f4f6" },
 } as const;
 
-export type UnifiedEventType = EventType | "job" | "draft-job";
+// "quote" = a quote that isn't a job yet, shown grayed out on its planned start date
+export type UnifiedEventType = EventType | "job" | "draft-job" | "quote";
 
 export const ALL_TYPE_CONFIGS: Record<string, { label: string; color: string; bg: string }> = {
   job:          { label: "Jobs",       color: "#F4A823", bg: "#FFF8EC" },
   "draft-job":  { label: "Draft Jobs", color: "#9ca3af", bg: "#f3f4f6" },
+  quote:        { label: "Quotes",     color: "#94a3b8", bg: "#f1f5f9" },
   ...Object.fromEntries(
     Object.entries(EVENT_TYPES).map(([k, v]) => [k, { label: v.label, color: v.color, bg: v.bg }])
   ),

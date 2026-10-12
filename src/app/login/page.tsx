@@ -27,44 +27,54 @@ function LoginForm() {
     setError("");
     setLoading(true);
 
-    const guardRes = await fetch("/api/auth/login-guard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    if (!guardRes.ok) {
-      const { error: guardError } = await guardRes.json().catch(() => ({ error: "Too many login attempts. Please try again later." }));
-      setError(guardError);
+    try {
+      const guardRes = await fetch("/api/auth/login-guard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!guardRes.ok) {
+        const { error: guardError } = await guardRes.json().catch(() => ({ error: "Too many login attempts. Please try again later." }));
+        setError(guardError);
+        setLoading(false);
+        return;
+      }
+
+      const supabase = createSupabaseBrowser();
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (authError) {
+        setError("Invalid email or password.");
+        setLoading(false);
+        return;
+      }
+
+      // Get role to decide where to redirect
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setError("Something went wrong."); setLoading(false); return; }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, company_id")
+        .eq("id", user.id)
+        .single();
+
+      const redirectTo = safeRedirectTarget(searchParams.get("redirectTo"));
+      router.push(redirectTo ?? (profile?.role === "admin" ? "/admin/dashboard" : "/"));
+      router.refresh();
+
+      if (profile?.company_id) {
+        const { identifyUser } = await import("@/lib/notifications");
+        identifyUser(user.id, profile.company_id).catch(console.error);
+      }
+    } catch (err) {
+      console.error("Login failed:", err);
+      setError(
+        err instanceof TypeError
+          ? "Couldn't reach the server. Check your connection and try again."
+          : "Something went wrong signing in. Please try again."
+      );
       setLoading(false);
-      return;
-    }
-
-    const supabase = createSupabaseBrowser();
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (authError) {
-      setError("Invalid email or password.");
-      setLoading(false);
-      return;
-    }
-
-    // Get role to decide where to redirect
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setError("Something went wrong."); setLoading(false); return; }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role, company_id")
-      .eq("id", user.id)
-      .single();
-
-    const redirectTo = safeRedirectTarget(searchParams.get("redirectTo"));
-    router.push(redirectTo ?? (profile?.role === "admin" ? "/admin/dashboard" : "/"));
-    router.refresh();
-
-    if (profile?.company_id) {
-      const { identifyUser } = await import("@/lib/notifications");
-      identifyUser(user.id, profile.company_id).catch(console.error);
     }
   };
 

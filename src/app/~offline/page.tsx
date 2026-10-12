@@ -18,6 +18,8 @@ const SECTION_NAMES: Record<string, string> = {
   "/admin/log-config": "Log config",
   "/admin/workers": "Workers",
   "/admin/invoices": "Invoices",
+  "/admin/quotes": "Quotes",
+  "/admin/clients": "Clients",
   "/admin/payroll": "Payroll",
   "/admin/financials": "Financials",
   "/admin/settings": "Settings",

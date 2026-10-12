@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer, getSessionUser } from "@/lib/supabase-server";
+import { resolveClientId } from "@/lib/billing";
 
 async function adminGuard(supabase: Awaited<ReturnType<typeof createSupabaseServer>>) {
   const { user, profile } = await getSessionUser(supabase);
@@ -13,6 +14,7 @@ async function adminGuard(supabase: Awaited<ReturnType<typeof createSupabaseServ
 const EVENT_FIELDS = [
   "title",
   "client",
+  "client_id",
   "location",
   "description",
   "date",
@@ -114,6 +116,7 @@ export async function POST(request: Request) {
   cleanBody.start_time = cleanBody.start_time || null;
   cleanBody.end_time = cleanBody.end_time || null;
   cleanBody.end_date = cleanBody.end_date || null;
+  cleanBody.client_id = await resolveClientId(supabase, cleanBody.client_id, cleanBody.client, profile.company_id);
   const { data, error } = await supabase
     .from("job_events")
     .insert({ ...cleanBody, company_id: profile.company_id })
@@ -149,6 +152,9 @@ export async function PUT(request: Request) {
   if ("start_time" in updates) cleanUpdates.start_time = updates.start_time || null;
   if ("end_time" in updates) cleanUpdates.end_time = updates.end_time || null;
   if ("end_date" in updates) cleanUpdates.end_date = updates.end_date || null;
+  if ("client_id" in updates || "client" in updates) {
+    cleanUpdates.client_id = await resolveClientId(supabase, updates.client_id, updates.client, profile.company_id);
+  }
 
   let data: Record<string, unknown> | null;
   if (Object.keys(cleanUpdates).length > 0) {

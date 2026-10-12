@@ -5,6 +5,7 @@ import { useState } from "react";
 export interface JobEvent {
   id: string;
   date: string;
+  end_date?: string;
   title: string;
   client?: string;
   start_time?: string;
@@ -71,6 +72,11 @@ function shortHour(h: number): string {
   return h < 12 ? `${h}a` : `${h - 12}p`;
 }
 
+// Multi-day jobs (end_date set) span a range, not just their start date.
+function spansDay(e: JobEvent, dateStr: string): boolean {
+  return e.date <= dateStr && dateStr <= (e.end_date || e.date);
+}
+
 export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, onNext, onSelect, onClose, title = "Link to schedule" }: Props) {
   const [view, setView] = useState<"list" | "calendar">("list");
 
@@ -78,7 +84,9 @@ export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, o
   const fromISO = toISO(from);
   const toISO_ = toISO(to);
 
-  const weekEvents = events.filter((e) => e.date >= fromISO && e.date <= toISO_);
+  // A multi-day job that started before this week but spans into it (end_date
+  // falls inside the range) still belongs on screen, not just one that starts here.
+  const weekEvents = events.filter((e) => (e.end_date || e.date) >= fromISO && e.date <= toISO_);
 
   // Week days array (Mon → Sun)
   const weekDays: Date[] = [];
@@ -216,6 +224,34 @@ export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, o
                 ))}
               </div>
 
+              {/* All-day jobs (no start time, e.g. a whole-day or multi-day job) —
+                  the grid below is a time axis, so there's no slot to place these
+                  in; without this row they'd simply never appear in this view. */}
+              {weekDays.some((d) => weekEvents.some((e) => !e.start_time && spansDay(e, toISO(d)))) && (
+                <div className="flex border-b border-gray-100" style={{ paddingLeft: 36 }}>
+                  {weekDays.map((d, colIdx) => {
+                    const dateStr = toISO(d);
+                    const dayAllDay = weekEvents.filter((e) => !e.start_time && spansDay(e, dateStr));
+                    return (
+                      <div key={colIdx} className="flex-1 border-l border-gray-100 first:border-l-0 px-0.5 py-1 space-y-0.5">
+                        {dayAllDay.map((ev) => (
+                          <button
+                            key={ev.id}
+                            type="button"
+                            onClick={() => onSelect(ev)}
+                            className="w-full rounded px-1 py-0.5 bg-navy-500 hover:bg-navy-600 text-left transition-colors"
+                          >
+                            <p className="text-white font-semibold leading-tight truncate" style={{ fontSize: 9 }}>
+                              {ev.title}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Time grid */}
               <div className="flex" style={{ height: totalHeight }}>
                 {/* Hour labels */}
@@ -234,7 +270,7 @@ export default function JobEventPicker({ events, baseDate, weekOffset, onPrev, o
                 {/* Day columns */}
                 {weekDays.map((date, colIdx) => {
                   const dateStr = toISO(date);
-                  const dayEvs = weekEvents.filter((e) => e.date === dateStr && e.start_time);
+                  const dayEvs = weekEvents.filter((e) => spansDay(e, dateStr) && e.start_time);
                   return (
                     <div
                       key={colIdx}

@@ -1,24 +1,15 @@
 "use client";
 
-import { Fragment, useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import type { ColumnDef } from "../_components/invoiceFormat";
-import { DEFAULT_INVOICE_COLUMNS, formatInvoiceCell, formatInvoiceDate, invoiceColHeaderClass } from "../_components/invoiceFormat";
-import { buildInvoicePdf } from "@/lib/invoicePdf";
-import { canShareWeb, savePdf, sharePdfWeb } from "@/lib/sharePdf";
-
-interface LineItem {
-  description: string;
-  employee: string;
-  date: string;
-  hours: number | string;
-  amount: number | string;
-  rate?: string;
-  rateBasis?: "hour" | "unit";
-  units?: number;
-  customValues?: Record<string, string>;
-}
+import type { ColumnDef, InvoiceLineItemLike } from "../_components/invoiceFormat";
+import { computeTotals } from "../_components/invoiceFormat";
+import { invoiceToDocument } from "../_components/documentModel";
+import DocumentSheet from "../_components/DocumentSheet";
+import PdfButtons, { MarkSentPrompt } from "../_components/PdfButtons";
+import PaymentsCard from "@/components/PaymentsCard";
+import ExpensesCard from "@/components/ExpensesCard";
 
 interface Invoice {
   id: string;
@@ -29,26 +20,32 @@ interface Invoice {
   invoice_date: string;
   company_name?: string;
   company_address?: string;
-  line_items: LineItem[];
+  line_items: (InvoiceLineItemLike & { sourceJobId?: string })[];
   column_config?: ColumnDef[];
   total: number;
   notes?: string;
-  status: "draft" | "sent" | "paid";
+  tax_label?: string | null;
+  tax_rate?: number | null;
+  status: "draft" | "sent" | "partial" | "paid";
   paid_at?: string | null;
-}
-
-// Device file-share support never changes mid-session, so a no-op subscribe is fine —
-// this only exists to read it without a server/client hydration mismatch (the server
-// always reports false, since it has no navigator).
-function subscribeNever() {
-  return () => {};
+  source_quote_id?: string | null;
+  amount_paid: number;
 }
 
 const statusBadge: Record<string, string> = {
   draft: "bg-gray-100 text-gray-600",
   sent: "bg-navy-100 text-navy-700",
+  partial: "bg-amber-100 text-amber-700",
   paid: "bg-green-100 text-green-700",
 };
+
+const statusLabel: Record<string, string> = { draft: "Draft", sent: "Sent", partial: "Partly paid", paid: "Paid" };
+
+function todayStr() {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -57,15 +54,17 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [pdfBusy, setPdfBusy] = useState(false);
-  const [pdfError, setPdfError] = useState("");
-  const canShare = useSyncExternalStore(subscribeNever, canShareWeb, () => false);
+  const [askMarkSent, setAskMarkSent] = useState(false);
+  const [paymentsKey, setPaymentsKey] = useState(0);
+  const [sourceQuote, setSourceQuote] = useState<{ id: string; quote_number: string | null } | null>(null);
 
-  useEffect(() => {
-    fetch(`/api/invoices/${id}`)
-      .then((r) => r.json())
+  function reload() {
+    return fetch(`/api/invoices/${id}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
       .then((data) => { setInvoice(data); setLoading(false); });
-  }, [id]);
+  }
+
+  useEffect(() => { reload(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetch("/api/company", { credentials: "include" })
@@ -74,15 +73,37 @@ export default function InvoiceDetailPage() {
       .catch(() => {});
   }, []);
 
-  async function setStatus(status: "draft" | "sent" | "paid") {
-    const paid_at = status === "paid" ? new Date().toISOString() : null;
+  useEffect(() => {
+    if (!invoice?.source_quote_id) return;
+    fetch(`/api/quotes/${invoice.source_quote_id}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((q) => setSourceQuote(q ? { id: q.id, quote_number: q.quote_number } : null));
+  }, [invoice?.source_quote_id]);
+
+  async function setStatus(status: "draft" | "sent") {
     await fetch(`/api/invoices/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ status, paid_at }),
+      body: JSON.stringify({ status }),
     });
-    setInvoice((prev) => prev ? { ...prev, status, paid_at } : prev);
+    setAskMarkSent(false);
+    await reload();
+  }
+
+  // "Mark as Paid" records one payment for whatever is still owed
+  async function markPaid() {
+    if (!invoice) return;
+    const balance = Math.round((computeTotals(invoice.line_items, invoice.tax_rate).total - invoice.amount_paid) * 100) / 100;
+    if (balance <= 0) return;
+    await fetch("/api/payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ invoice_id: id, amount: balance, paid_on: todayStr(), method: "other", note: "Marked as paid" }),
+    });
+    setPaymentsKey((k) => k + 1);
+    await reload();
   }
 
   async function deleteInvoice() {
@@ -96,45 +117,17 @@ export default function InvoiceDetailPage() {
   if (loading) return <p className="text-gray-500">Loading invoice...</p>;
   if (!invoice) return <p className="text-red-500">Invoice not found.</p>;
 
-  const total = invoice.line_items.reduce((sum, item) => sum + (parseFloat(String(item.amount)) || 0), 0);
-  const columns = invoice.column_config && invoice.column_config.length > 0 ? invoice.column_config : DEFAULT_INVOICE_COLUMNS;
-  const visibleCols = columns.filter((c) => c.visible);
-  // Description runs full-width below each row instead of squeezing into its own
-  // narrow column — matches the live preview, and keeps long text from overflowing.
-  const tableCols = visibleCols.filter((c) => c.type !== "description");
-  const showDescription = visibleCols.some((c) => c.type === "description");
-  const colCount = Math.max(1, tableCols.length);
-
-  // window.print() does nothing inside the iOS app or Safari, so build the PDF ourselves.
-  async function withPdf(action: (bytes: Uint8Array, filename: string) => Promise<void>) {
-    if (!invoice) return;
-    setPdfBusy(true);
-    setPdfError("");
-    try {
-      const bytes = await buildInvoicePdf(invoice, columns, logoUrl);
-      const safeNumber = (invoice.invoice_number || "invoice").replace(/[^A-Za-z0-9_-]+/g, "-");
-      await action(bytes, `Invoice-${safeNumber}.pdf`);
-    } catch (err) {
-      // Closing the share sheet rejects with an abort/cancel error. That isn't a failure.
-      const message = err instanceof Error ? `${err.name} ${err.message}` : "";
-      if (/abort|cancel/i.test(message)) return;
-      console.error("Save PDF failed:", err);
-      setPdfError("Couldn't create the PDF. If this keeps happening, update the TallyCrew app and try again.");
-    } finally {
-      setPdfBusy(false);
-    }
-  }
-
-  const handleSavePdf = () => withPdf(savePdf);
-  const handleSharePdf = () => withPdf(sharePdfWeb);
+  const doc = invoiceToDocument(invoice);
+  const total = computeTotals(invoice.line_items, invoice.tax_rate).total;
+  const linkedJobIds = [...new Set(invoice.line_items.map((li) => li.sourceJobId).filter(Boolean))] as string[];
 
   return (
     <div className="max-w-4xl">
       {/* Admin controls — hidden when printing */}
       <div className="print:hidden flex items-center gap-3 mb-6 flex-wrap">
         <Link href="/admin/invoices" className="text-gray-400 hover:text-gray-600 text-sm">← Invoices</Link>
-        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${statusBadge[invoice.status]}`}>
-          {invoice.status}
+        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusBadge[invoice.status] ?? statusBadge.draft}`}>
+          {statusLabel[invoice.status] ?? invoice.status}
         </span>
         <div className="flex-1" />
         <Link
@@ -143,7 +136,7 @@ export default function InvoiceDetailPage() {
         >
           ✏ Edit Invoice
         </Link>
-        {invoice.status !== "draft" && (
+        {invoice.status === "sent" && (
           <button
             onClick={() => setStatus("draft")}
             className="text-sm border border-gray-300 text-gray-500 hover:bg-gray-50 rounded-lg px-3 py-1.5 font-medium"
@@ -151,7 +144,7 @@ export default function InvoiceDetailPage() {
             Revert to Draft
           </button>
         )}
-        {invoice.status !== "sent" && (
+        {invoice.status === "draft" && (
           <button
             onClick={() => setStatus("sent")}
             className="text-sm border border-navy-300 text-navy-600 hover:bg-navy-50 rounded-lg px-3 py-1.5 font-medium"
@@ -159,34 +152,20 @@ export default function InvoiceDetailPage() {
             Mark as Sent
           </button>
         )}
-        {invoice.status !== "paid" && (
+        {invoice.status !== "paid" && total > 0 && (
           <button
-            onClick={() => setStatus("paid")}
+            onClick={markPaid}
             className="text-sm border border-green-300 text-green-600 hover:bg-green-50 rounded-lg px-3 py-1.5 font-medium"
           >
             Mark as Paid
           </button>
         )}
-        <button
-          onClick={handleSavePdf}
-          disabled={pdfBusy}
-          className="bg-navy-600 hover:bg-navy-700 disabled:opacity-60 text-white font-semibold rounded-xl px-4 py-2 text-sm"
-        >
-          {pdfBusy ? "Preparing PDF…" : "Save PDF"}
-        </button>
-        {canShare && (
-          <button
-            onClick={handleSharePdf}
-            disabled={pdfBusy}
-            title="Share without saving — AirDrop, Mail, Messages, etc."
-            className="border border-navy-300 text-navy-600 hover:bg-navy-50 disabled:opacity-60 font-semibold rounded-xl px-4 py-2 text-sm"
-          >
-            Share
-          </button>
-        )}
+        <PdfButtons doc={doc} logoUrl={logoUrl} onExported={() => { if (invoice.status === "draft") setAskMarkSent(true); }} />
         {confirmDelete ? (
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-gray-600">Delete this invoice?</span>
+            <span className="text-gray-600">
+              Delete this invoice?{invoice.amount_paid > 0 ? " Payments recorded only on it are removed too." : ""}
+            </span>
             <button onClick={deleteInvoice} className="text-red-600 font-semibold hover:text-red-700">Yes, delete</button>
             <button onClick={() => setConfirmDelete(false)} className="text-gray-400">Cancel</button>
           </div>
@@ -196,129 +175,24 @@ export default function InvoiceDetailPage() {
           </button>
         )}
       </div>
-      {pdfError && <p className="print:hidden -mt-3 mb-6 text-sm text-red-600">{pdfError}</p>}
 
-      {/* Printable invoice */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 sm:p-8 print:border-0 print:rounded-none print:shadow-none">
-        {/* Header */}
-        <div className="flex justify-between items-start gap-4 mb-6 sm:mb-8">
-          <div>
-            {logoUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoUrl} alt="" className="max-h-14 max-w-[220px] object-contain mb-2" />
-            )}
-            {invoice.company_name && (
-              <div className="text-xl font-bold text-gray-900 mb-1">{invoice.company_name}</div>
-            )}
-            {invoice.company_address && (
-              <div className="text-sm text-gray-500 whitespace-pre-line">{invoice.company_address}</div>
-            )}
-          </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold text-navy-600 mb-1">INVOICE</div>
-            <div className="text-sm text-gray-600">
-              <div><span className="font-medium">Invoice #:</span> {invoice.invoice_number}</div>
-              <div><span className="font-medium">Date:</span> {formatInvoiceDate(invoice.invoice_date)}</div>
-            </div>
-          </div>
-        </div>
+      {askMarkSent && invoice.status === "draft" && (
+        <MarkSentPrompt label="invoice" onYes={() => setStatus("sent")} onNo={() => setAskMarkSent(false)} />
+      )}
 
-        {/* Bill To */}
-        <div className="mb-8">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Bill To</div>
-          <div className="text-lg font-semibold text-gray-900">{invoice.client_name}</div>
-          <div className="text-sm text-gray-500">
-            Work performed: {formatInvoiceDate(invoice.date_from)} – {formatInvoiceDate(invoice.date_to)}
-          </div>
-        </div>
+      {sourceQuote && (
+        <p className="print:hidden -mt-2 mb-4 text-sm text-gray-500">
+          Made from <Link href={`/admin/quotes/${sourceQuote.id}`} className="text-navy-600 font-semibold hover:underline">
+            quote {sourceQuote.quote_number ?? ""}
+          </Link>
+        </p>
+      )}
 
-        {/* Phone: each line as a stacked card so nothing needs sideways scrolling */}
-        <div className="sm:hidden print:hidden mb-8">
-          {invoice.line_items.map((item, i) => {
-            const colOf = (type: string) => tableCols.find((c) => c.type === type);
-            const dateCol = colOf("date");
-            const employeeCol = colOf("employee");
-            const amountCol = colOf("amount");
-            const detailCols = tableCols.filter((c) => !["date", "employee", "amount", "description"].includes(c.type));
-            return (
-              <div key={i} className="py-3 space-y-1 border-b border-gray-100">
-                <div className="flex justify-between items-start gap-3">
-                  <div className="min-w-0 text-xs text-gray-600">
-                    {dateCol && <div>{formatInvoiceCell(dateCol, item)}</div>}
-                    {employeeCol && <div className="text-sm text-gray-700">{formatInvoiceCell(employeeCol, item)}</div>}
-                  </div>
-                  {amountCol && <div className="shrink-0 text-sm font-semibold text-gray-900">{formatInvoiceCell(amountCol, item)}</div>}
-                </div>
-                {showDescription && <div className="text-sm text-gray-700">{item.description || "—"}</div>}
-                {detailCols.map((col) => (
-                  <div key={col.id} className="flex justify-between items-baseline gap-3 text-xs text-gray-500">
-                    <span>{col.label}</span>
-                    <span className="text-right text-sm text-gray-700">{formatInvoiceCell(col, item)}</span>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-          <div className="flex justify-between pt-3 font-bold">
-            <span className="text-base text-gray-700">Total</span>
-            <span className="text-base text-navy-600">${total.toFixed(2)}</span>
-          </div>
-        </div>
+      <DocumentSheet doc={doc} logoUrl={logoUrl} />
 
-        {/* Line items — table from 640px up, and always when printing */}
-        <div className="hidden sm:block print:block overflow-x-auto mb-8">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="border-b-2 border-gray-200">
-              {tableCols.map((col) => <th key={col.id} className={invoiceColHeaderClass(col)}>{col.label}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {invoice.line_items.map((item, i) => (
-              <Fragment key={i}>
-                <tr className={showDescription ? "" : "border-b border-gray-100"}>
-                  {tableCols.map((col) => (
-                    <td
-                      key={col.id}
-                      className={`py-2 pr-4 last:pr-0 text-gray-700 ${
-                        col.type === "amount" ? "text-right font-medium text-gray-900" : col.type === "hours" || col.type === "rate" ? "text-right text-gray-500" : ""
-                      }`}
-                    >
-                      {formatInvoiceCell(col, item)}
-                    </td>
-                  ))}
-                </tr>
-                {showDescription && (
-                  <tr className="border-b border-gray-100">
-                    <td colSpan={colCount} className="pb-2 pr-4 pt-0 text-gray-700">{item.description || "—"}</td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={Math.max(1, colCount - 1)} className="text-right py-3 pr-4 font-bold text-gray-700 text-base">Total</td>
-              <td className="py-3 text-right font-bold text-navy-600 text-base">${total.toFixed(2)}</td>
-            </tr>
-          </tfoot>
-        </table>
-        </div>
-
-        {/* Notes */}
-        {invoice.notes && (
-          <div className="border-t border-gray-100 pt-4">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
-            <p className="text-sm text-gray-600 whitespace-pre-line">{invoice.notes}</p>
-          </div>
-        )}
-
-        {/* Draft watermark */}
-        {invoice.status === "draft" && (
-          <div className="print:hidden mt-6 text-center text-xs text-gray-300 uppercase tracking-widest">
-            — Draft —
-          </div>
-        )}
+      <div className="mt-6 space-y-4">
+        <PaymentsCard kind="invoice" docId={id} total={total} refreshKey={paymentsKey} onChange={() => reload()} />
+        <ExpensesCard invoiceId={id} jobIds={linkedJobIds} />
       </div>
     </div>
   );

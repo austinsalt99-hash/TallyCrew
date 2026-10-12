@@ -1,19 +1,7 @@
 import type { PDFDocument, PDFFont, PDFImage, PDFPage } from "pdf-lib";
-import type { ColumnDef, InvoiceLineItemLike } from "@/app/admin/invoices/_components/invoiceFormat";
-import { formatInvoiceCell, formatInvoiceDate } from "@/app/admin/invoices/_components/invoiceFormat";
-
-export interface PdfInvoice {
-  invoice_number: string;
-  client_name: string;
-  date_from: string;
-  date_to: string;
-  invoice_date: string;
-  company_name?: string;
-  company_address?: string;
-  notes?: string;
-  status: string;
-  line_items: InvoiceLineItemLike[];
-}
+import type { ColumnDef } from "@/app/admin/invoices/_components/invoiceFormat";
+import { computeTotals, formatInvoiceCell, formatInvoiceDate, formatMoney, lineDescription } from "@/app/admin/invoices/_components/invoiceFormat";
+import type { DocumentModel } from "@/app/admin/invoices/_components/documentModel";
 
 // US Letter, in PDF points
 const PAGE_W = 612;
@@ -126,11 +114,9 @@ async function loadLogo(doc: PDFDocument, url: string): Promise<PDFImage | null>
   }
 }
 
-export async function buildInvoicePdf(
-  invoice: PdfInvoice,
-  columns: ColumnDef[],
-  logoUrl: string | null,
-): Promise<Uint8Array> {
+// Builds the PDF for a quote or an invoice (see documentModel.ts).
+export async function buildDocumentPdf(doc0: DocumentModel, logoUrl: string | null): Promise<Uint8Array> {
+  const columns = doc0.columns;
   const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -167,31 +153,34 @@ export async function buildInvoicePdf(
   }
 
   let leftY = y - logoHeight;
-  if (invoice.company_name) {
-    text(invoice.company_name, MARGIN, leftY - 14, 15, bold, INK);
+  if (doc0.companyName) {
+    text(doc0.companyName, MARGIN, leftY - 14, 15, bold, INK);
     leftY -= 22;
   }
-  for (const line of (invoice.company_address ?? "").split("\n").filter(Boolean)) {
+  for (const line of (doc0.companyAddress ?? "").split("\n").filter(Boolean)) {
     text(line, MARGIN, leftY - 10, 9, font, MUTED);
     leftY -= 13;
   }
 
   const right = PAGE_W - MARGIN;
-  rightText("INVOICE", right, y - 24, 26, bold, NAVY);
-  rightText(`Invoice #: ${invoice.invoice_number || "—"}`, right, y - 42, 9.5);
-  rightText(`Date: ${invoice.invoice_date ? formatInvoiceDate(invoice.invoice_date) : "—"}`, right, y - 55, 9.5);
+  rightText(doc0.heading, right, y - 24, 26, bold, NAVY);
+  rightText(`${doc0.numberLabel}: ${doc0.number || "—"}`, right, y - 42, 9.5);
+  rightText(`Date: ${doc0.date ? formatInvoiceDate(doc0.date) : "—"}`, right, y - 55, 9.5);
+  let rightY = y - 55;
+  for (const line of doc0.extraHeaderLines) {
+    rightY -= 13;
+    rightText(line, right, rightY, 9.5);
+  }
 
-  let cursor = Math.min(leftY, y - 60) - 22;
+  let cursor = Math.min(leftY, rightY - 5) - 22;
 
-  // ── Bill to ─────────────────────────────────────────────────────────────
-  text("BILL TO", MARGIN, cursor, 7.5, bold, MUTED);
+  // ── Bill to / Prepared for ──────────────────────────────────────────────
+  text(doc0.partyLabel.toUpperCase(), MARGIN, cursor, 7.5, bold, MUTED);
   cursor -= 16;
-  text(invoice.client_name || "—", MARGIN, cursor, 12, bold, INK);
+  text(doc0.clientName || "—", MARGIN, cursor, 12, bold, INK);
   cursor -= 16;
-  if (invoice.date_from || invoice.date_to) {
-    const from = invoice.date_from ? formatInvoiceDate(invoice.date_from) : "—";
-    const to = invoice.date_to ? formatInvoiceDate(invoice.date_to) : "—";
-    text(`Work performed: ${from} – ${to}`, MARGIN, cursor, 9, font, MUTED);
+  for (const line of doc0.clientLines) {
+    text(line, MARGIN, cursor, 9, font, MUTED);
     cursor -= 12;
   }
   y = cursor - 22;
@@ -223,20 +212,35 @@ export async function buildInvoicePdf(
   };
 
   drawHeader();
-  for (const item of invoice.line_items) {
+  for (const item of doc0.lineItems) {
     const cellLines = tableCols.map((c, i) =>
       wrap(formatInvoiceCell(c, item), cellFont(c), 9, widths[i] - CELL_PAD * 2),
     );
     const mainLines = Math.max(1, ...cellLines.map((l) => l.length));
-    const descLines = showDescription ? wrap(item.description || "—", font, 8.5, CONTENT_W - CELL_PAD * 2) : [];
-    const rowHeight = mainLines * 11 + 4 + descLines.length * 10.5 + 10;
+    // Title (bold) and description run full-width above the numbers, as on screen
+    const titleLines = item.title?.trim() ? wrap(item.title, bold, 9.5, CONTENT_W - CELL_PAD * 2) : [];
+    const desc = lineDescription(item);
+    const descLines = showDescription && desc ? wrap(desc, font, 8.5, CONTENT_W - CELL_PAD * 2) : [];
+    const headHeight = titleLines.length * 12 + descLines.length * 10.5;
+    const rowHeight = headHeight + (headHeight > 0 ? 3 : 0) + mainLines * 11 + 14;
 
     if (y - rowHeight < MARGIN) {
       newPage();
       drawHeader();
     }
 
-    const top = y;
+    let rowY = y;
+    titleLines.forEach((line) => {
+      text(line, MARGIN + CELL_PAD, rowY - 10, 9.5, bold, INK);
+      rowY -= 12;
+    });
+    descLines.forEach((line) => {
+      text(line, MARGIN + CELL_PAD, rowY - 9, 8.5, font, MUTED);
+      rowY -= 10.5;
+    });
+    if (headHeight > 0) rowY -= 3;
+
+    const top = rowY;
     tableCols.forEach((c, i) => {
       cellLines[i].forEach((line, li) => {
         const baseline = top - 9 - li * 11;
@@ -244,47 +248,67 @@ export async function buildInvoicePdf(
         else text(line, xs[i] + CELL_PAD, baseline, 9, cellFont(c));
       });
     });
-
-    let rowY = top - mainLines * 11 - 2;
-    descLines.forEach((line, li) => {
-      text(line, MARGIN + CELL_PAD, rowY - 9 - li * 10.5, 8.5, font, MUTED);
-    });
-    rowY -= descLines.length * 10.5 + 2;
+    rowY = top - mainLines * 11 - 2;
 
     y = rowY - 6;
     page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 0.5, color: RULE });
     y -= 4;
   }
 
-  // ── Total ───────────────────────────────────────────────────────────────
-  const total = invoice.line_items.reduce((s, it) => s + (parseFloat(String(it.amount)) || 0), 0);
-  if (y - 60 < MARGIN) newPage();
+  // ── Totals ──────────────────────────────────────────────────────────────
+  const totals = computeTotals(doc0.lineItems, doc0.taxRate);
+  const balance = Math.max(0, Math.round((totals.total - doc0.amountPaid) * 100) / 100);
+  const LABEL_RIGHT = PAGE_W - MARGIN - 90;
+  const sideRow = (label: string, value: string, f: PDFFont = font, color = INK) => {
+    rightText(value, PAGE_W - MARGIN, y, 10, f, color);
+    rightText(label, LABEL_RIGHT, y, 10, f, color);
+    y -= 15;
+  };
+  if (y - 110 < MARGIN) newPage();
   y -= 8;
   rule(1.5, HEAVY);
   y -= 18;
-  const totalText = `$${total.toFixed(2)}`;
+  if (totals.taxRate > 0) {
+    sideRow("Subtotal", formatMoney(totals.subtotal));
+    sideRow(`${doc0.taxLabel?.trim() || "Tax"} (${totals.taxRate}%)`, formatMoney(totals.taxAmount));
+    y -= 3;
+  }
+  const totalText = formatMoney(totals.total);
   rightText(totalText, PAGE_W - MARGIN, y, 13, bold, NAVY);
-  rightText("Total", PAGE_W - MARGIN - bold.widthOfTextAtSize(clean(totalText), 13) - 16, y, 11, bold);
-  y -= 30;
+  rightText("Total", LABEL_RIGHT, y, 11, bold);
+  y -= 18;
+  if (doc0.amountPaid > 0) {
+    sideRow("Paid to date", `-${formatMoney(doc0.amountPaid)}`, font, MUTED);
+    sideRow("Balance due", formatMoney(balance), bold, INK);
+  }
+  if (doc0.depositNote) {
+    rightText(doc0.depositNote, PAGE_W - MARGIN, y, 9.5, bold, INK);
+    y -= 15;
+  }
+  y -= 12;
 
-  // ── Notes ───────────────────────────────────────────────────────────────
-  if (invoice.notes?.trim()) {
-    const noteLines = wrap(invoice.notes, font, 9, CONTENT_W);
+  // ── Notes / terms ───────────────────────────────────────────────────────
+  const section = (heading: string, body: string | null | undefined) => {
+    if (!body?.trim()) return;
+    const lines = wrap(body, font, 9, CONTENT_W);
     if (y - 30 < MARGIN) newPage();
     rule(0.5, RULE);
     y -= 14;
-    text("NOTES", MARGIN, y, 7.5, bold, MUTED);
+    text(heading, MARGIN, y, 7.5, bold, MUTED);
     y -= 14;
-    for (const line of noteLines) {
+    for (const line of lines) {
       if (y - 12 < MARGIN) newPage();
       text(line, MARGIN, y, 9, font, INK);
       y -= 12;
     }
-  }
+    y -= 6;
+  };
+  section("NOTES", doc0.notes);
+  section("TERMS", doc0.terms);
 
   // ── Draft marker (drafts only, matching the on-screen view) ─────────────
   // Drawn as a footer on the last page so it never starts a page of its own.
-  if (invoice.status === "draft") {
+  if (doc0.isDraft) {
     const label = "— Draft —";
     text(label, (PAGE_W - font.widthOfTextAtSize(clean(label), 8)) / 2, 28, 8, font, MUTED);
   }

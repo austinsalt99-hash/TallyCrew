@@ -4,6 +4,9 @@
 // vs. a calendar year). Kept here once so the old-format/new-format
 // billable entry handling (see BillableEntry's dual format in CLAUDE.md)
 // only needs to be right in one place.
+//
+// Paid time per day: clock in → clock out when the employee clocked in; when they didn't (common when the whole day was on one site),
+// their job + non-billable hours for that day instead.
 import { SupabaseClient } from "@supabase/supabase-js";
 import { collectEntryHours, timeRangeHours, type RawHourEntry } from "@/lib/billableHours";
 
@@ -29,6 +32,7 @@ export interface EmployeeHoursSummary {
   employeeName: string;
   billableHours: number;
   nonBillableHours: number;
+  // Paid hours (see the rule at the top of this file)
   totalHours: number;
   byType: TypeBucket[];
   byJob: JobBucket[];
@@ -39,6 +43,7 @@ interface EmployeeAgg {
   employeeName: string;
   billableHours: number;
   nonBillableHours: number;
+  paidHours: number;
   byType: Map<string, TypeBucket>;
   byJob: Map<string, JobBucket>;
 }
@@ -90,7 +95,7 @@ export async function aggregateEmployeeHours(
 ): Promise<EmployeeHoursSummary[]> {
   const { data: submissions } = await supabase
     .from("submissions")
-    .select("id, user_id, employee_name, date, billable_entries, non_billable_entries")
+    .select("id, user_id, employee_name, date, day_start_time, day_end_time, billable_entries, non_billable_entries")
     .eq("company_id", companyId)
     .is("deleted_at", null)
     .gte("date", start)
@@ -118,10 +123,12 @@ export async function aggregateEmployeeHours(
       employeeName: sub.employee_name as string,
       billableHours: 0,
       nonBillableHours: 0,
+      paidHours: 0,
       byType: new Map(),
       byJob: new Map(),
     };
     employees.set(userId, agg);
+    const jobHoursBefore = agg.billableHours + agg.nonBillableHours;
 
     const billableEntries = (sub.billable_entries as Record<string, unknown>[]) ?? [];
     for (const entry of billableEntries) {
@@ -155,15 +162,27 @@ export async function aggregateEmployeeHours(
     const nonBillableEntries = (sub.non_billable_entries as { description: string; hours: string }[]) ?? [];
     const nbHours = nonBillableEntries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0);
     agg.nonBillableHours += nbHours;
+
+    const dayJobHours = agg.billableHours + agg.nonBillableHours - jobHoursBefore;
+    const clockedHours = timeRangeHours(sub.day_start_time as string | undefined, sub.day_end_time as string | undefined);
+    agg.paidHours += clockedHours > 0 ? clockedHours : dayJobHours;
   }
 
   return [...employees.values()]
     .map((agg) => {
-      const totalHours = Math.round((agg.billableHours + agg.nonBillableHours) * 100) / 100;
+      const totalHours = Math.round(agg.paidHours * 100) / 100;
       const byType = [...agg.byType.values()].sort((a, b) => b.hours - a.hours);
       if (agg.nonBillableHours > 0) byType.push({ slug: "non-billable", typeName: "Non-billable", hours: agg.nonBillableHours });
       const byJob = [...agg.byJob.values()].sort((a, b) => b.hours - a.hours);
       if (agg.nonBillableHours > 0) byJob.push({ jobKey: "non-billable", title: "Non-billable", hours: agg.nonBillableHours });
+      // Clocked time that doesn't match the logged job time, so each breakdown
+      // still adds up to the paid total
+      const diff = Math.round((totalHours - agg.billableHours - agg.nonBillableHours) * 100) / 100;
+      if (Math.abs(diff) >= 0.01) {
+        const label = diff > 0 ? "Clocked time not logged to a job" : "Job time beyond clock in/out (not paid)";
+        byType.push({ slug: "clock-difference", typeName: label, hours: diff });
+        byJob.push({ jobKey: "clock-difference", title: label, hours: diff });
+      }
 
       return {
         userId: agg.userId,
