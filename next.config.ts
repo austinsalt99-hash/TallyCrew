@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 import withSerwistInit from "@serwist/next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Keep pages you've visited in the in-app router cache for a minute, so
+    // switching back to a bottom-nav tab doesn't wait on the server again. Each
+    // tab's data still refreshes on its own (see src/lib/pageCache.ts).
+    staleTimes: { dynamic: 60 },
+  },
   async headers() {
     return [
       {

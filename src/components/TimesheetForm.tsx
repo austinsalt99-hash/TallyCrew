@@ -10,6 +10,8 @@ import { SkeletonJobCard } from "./Skeleton";
 import type { LogEntryType } from "@/types/logConfig";
 import { findBillableOverflow, timeRangeHours, carveOutGeneral } from "@/lib/billableHours";
 import { enqueueSubmission } from "@/lib/offlineQueue";
+import { loadCached } from "@/lib/pageCache";
+import { LOG_CONFIG_URL, weekSubmissionsUrl } from "@/lib/mainTabUrls";
 
 interface DayEntry {
   id: string;
@@ -126,10 +128,9 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
     setClockInTimestamp(null);
   }
 
-  useEffect(() => {
-    fetch("/api/log-config")
-      .then((r) => r.json())
-      .then((data: LogEntryType[]) => {
+  useEffect(
+    () =>
+      loadCached([LOG_CONFIG_URL], ([data]: [LogEntryType[]]) => {
         if (!Array.isArray(data)) return;
         setEntryTypes(data);
         const dayTypes = data.filter((t) => t.time_mode === "day");
@@ -143,9 +144,9 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
             (t) => existingBySlug.get(t.slug) ?? { id: t.id, typeSlug: t.slug, typeName: t.name, customFields: {} }
           );
         });
-      })
-      .catch(() => {});
-  }, []);
+      }),
+    []
+  );
 
   useEffect(() => {
     if (!linkingEntryId) return;
@@ -164,23 +165,16 @@ export default function TimesheetForm({ previewMode = false, userName = "", user
       .catch(() => {});
   }, [linkingEntryId, calendarWeekOffset, date]);
 
-  useEffect(() => {
-    const [y, mo, d] = date.split("-").map(Number);
-    const base = new Date(y, mo - 1, d);
-    const monday = new Date(base);
-    monday.setDate(base.getDate() - ((base.getDay() + 6) % 7) + weekStripOffset * 7);
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    fetch(`/api/submissions/employee?from=${fmtDate(monday)}&to=${fmtDate(sunday)}`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => {
+  useEffect(
+    () =>
+      loadCached([weekSubmissionsUrl(date, weekStripOffset)], ([data]: [any]) => {
         if (!Array.isArray(data)) return;
         const map: Record<string, { billable: number; nonBillable: number }> = {};
         for (const s of data) map[s.date] = { billable: s.total_billable_hours || 0, nonBillable: s.total_non_billable_hours || 0 };
         setWeekSummaries(map);
-      })
-      .catch(() => {});
-  }, [date, weekStripOffset]);
+      }),
+    [date, weekStripOffset]
+  );
 
   // Load draft on mount
   useEffect(() => {

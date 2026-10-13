@@ -35,6 +35,8 @@ export default function BillingClient({ planTier, subscriptionStatus }: Props) {
   // user straight back here via proxy.ts's redirect-home-if-logged-in rule.
   async function signOutAndGoTo(path: string) {
     const supabase = createSupabaseBrowser();
+    const { clearOfflineCache } = await import("@/lib/offlinePreload");
+    await clearOfflineCache().catch(console.error);
     await supabase.auth.signOut();
     router.push(path);
     router.refresh();

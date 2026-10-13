@@ -1,4 +1,5 @@
 import { fmt, getMonthDays, mondayOf } from "@/lib/calendarRanges";
+import { clearPageCache } from "@/lib/pageCache";
 
 // Each request goes through the service worker, which stores the response in the
 // api-cache. Offline, the screens read from that cache. Responses are overwritten
@@ -72,6 +73,7 @@ export async function preloadOfflineData(): Promise<void> {
 
 // Call on sign-out, so the next person to sign in on this device can't see the previous person's cached data.
 export async function clearOfflineCache(): Promise<void> {
+  clearPageCache();
   try {
     localStorage.removeItem(LAST_RUN_KEY);
   } catch {

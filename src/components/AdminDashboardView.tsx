@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { loadCached } from "@/lib/pageCache";
+import { ADMIN_HOME_URLS } from "@/lib/mainTabUrls";
 
 const NAVY = "#0A1172";
 const NAVY_DARK = "#060b47";
@@ -114,22 +116,21 @@ export default function AdminDashboardView({ userName }: { userName: string }) {
     weekday: "long", month: "long", day: "numeric",
   });
 
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/announcements").then((r) => r.json()),
-      fetch("/api/reminders").then((r) => r.json()),
-      fetch("/api/admin/workers").then((r) => r.json()),
-      fetch("/api/company", { credentials: "include" }).then((r) => r.json()),
-    ])
-      .then(([annData, remData, wrkData, companyData]) => {
-        setAnnouncements(Array.isArray(annData) ? annData : []);
-        setReminders(Array.isArray(remData) ? remData : []);
-        setWorkers(Array.isArray(wrkData) ? wrkData.filter((w: Worker & { role: string }) => w.role === "worker") : []);
-        setBannerUrl(companyData?.banner_url ?? null);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  useEffect(
+    () =>
+      loadCached(
+        ADMIN_HOME_URLS,
+        ([annData, remData, wrkData, companyData]: [any, any, any, any]) => {
+          setAnnouncements(Array.isArray(annData) ? annData : []);
+          setReminders(Array.isArray(remData) ? remData : []);
+          setWorkers(Array.isArray(wrkData) ? wrkData.filter((w: Worker & { role: string }) => w.role === "worker") : []);
+          setBannerUrl(companyData?.banner_url ?? null);
+          setLoading(false);
+        },
+        () => setLoading(false)
+      ),
+    []
+  );
 
   // --- Announcement handlers ---
   async function handlePostAnn() {

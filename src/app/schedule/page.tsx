@@ -6,6 +6,8 @@ import DesktopHeader from "@/components/DesktopHeader";
 import JobChecklist from "@/components/JobChecklist";
 import JobAttachments, { JobAttachment } from "@/components/JobAttachments";
 import { fmt, getMonthDays } from "@/lib/calendarRanges";
+import { loadCached } from "@/lib/pageCache";
+import { eventsUrl, scheduleWideEventsUrl } from "@/lib/mainTabUrls";
 
 type JobStatus = "scheduled" | "in_progress" | "completed" | "invoiced" | "cancelled";
 
@@ -211,11 +213,13 @@ export default function SchedulePage() {
     return `${MONTHS[weekDates[0].getMonth()]} ${weekDates[0].getFullYear()}`;
   }
 
-  useEffect(() => {
-    fetch("/api/me")
-      .then(r => r.json())
-      .then(d => { if (d?.full_name) setMyName(d.full_name); });
-  }, []);
+  useEffect(
+    () =>
+      loadCached(["/api/me"], ([d]: [any]) => {
+        if (d?.full_name) setMyName(d.full_name);
+      }),
+    []
+  );
 
   // Wide prefetch (previous/current/next month, once on load) so offline
   // browsing isn't limited to whatever single week/day happened to be on
@@ -223,24 +227,20 @@ export default function SchedulePage() {
   useEffect(() => {
     const from = fmt(getMonthDays(-1)[0]);
     const to = fmt(getMonthDays(1)[getMonthDays(1).length - 1]);
-    fetch(`/api/events?from=${from}&to=${to}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!Array.isArray(data)) return;
-        setEvents((prev) => mergeEventsForRange(prev, from, to, data));
-      })
-      .catch(() => {});
+    return loadCached([scheduleWideEventsUrl()], ([data]: [unknown]) => {
+      if (!Array.isArray(data)) return;
+      setEvents((prev) => mergeEventsForRange(prev, from, to, data));
+    });
   }, []);
 
-  useEffect(() => {
-    fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`)
-      .then((r) => r.json())
-      .then((data) => {
+  useEffect(
+    () =>
+      loadCached([eventsUrl(fetchFrom, fetchTo)], ([data]: [unknown]) => {
         if (!Array.isArray(data)) return;
         setEvents((prev) => mergeEventsForRange(prev, fetchFrom, fetchTo, data));
-      })
-      .catch(() => {});
-  }, [fetchFrom, fetchTo]);
+      }),
+    [fetchFrom, fetchTo]
+  );
 
   function renderTimeGrid(dates: Date[]) {
     // Compute all-day events per date (no start_time, may span multiple days)

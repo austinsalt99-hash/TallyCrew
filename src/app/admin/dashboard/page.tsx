@@ -5,6 +5,8 @@ import JobEventPicker, { type JobEvent } from "@/components/JobEventPicker";
 import { Skeleton, SkeletonCard } from "@/components/Skeleton";
 import { timeRangeHours, carveOutGeneral, formatHoursLabel } from "@/lib/billableHours";
 import { categoryLabel, type ExpenseLine } from "@/types/expense";
+import { loadCached } from "@/lib/pageCache";
+import { ADMIN_LOGS_INITIAL_DAYS, adminSubmissionsUrl } from "@/lib/mainTabUrls";
 
 interface DashJobEvent extends JobEvent {
   location?: string;
@@ -319,9 +321,19 @@ export default function Dashboard() {
     if (Array.isArray(data)) setSubmissions(data);
   }
 
-  useEffect(() => {
-    loadRange(30).finally(() => setLoading(false));
-  }, []);
+  useEffect(
+    () =>
+      loadCached(
+        [adminSubmissionsUrl(ADMIN_LOGS_INITIAL_DAYS)],
+        ([data]: [unknown]) => {
+          if (!Array.isArray(data)) return;
+          setSubmissions(data);
+          setLoading(false);
+        },
+        () => setLoading(false)
+      ),
+    []
+  );
 
   // The date filter lets an admin jump to any date, not just what's been
   // loaded via the time range — fetch it on demand if it's outside that range.
@@ -374,25 +386,29 @@ export default function Dashboard() {
     }
   }
 
-  useEffect(() => {
-    fetch("/api/events", { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setEvents(Array.isArray(data) ? data : []));
-  }, []);
+  useEffect(
+    () =>
+      loadCached(["/api/events"], ([data]: [unknown]) => {
+        setEvents(Array.isArray(data) ? data : []);
+      }),
+    []
+  );
 
-  useEffect(() => {
-    fetch("/api/availability", { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data) => setPendingTimeOff(Array.isArray(data) ? data.filter((r: AvailabilityRequest) => r.status === "pending") : []))
-      .catch(() => {});
-  }, []);
+  useEffect(
+    () =>
+      loadCached(["/api/availability"], ([data]: [unknown]) => {
+        setPendingTimeOff(Array.isArray(data) ? data.filter((r: AvailabilityRequest) => r.status === "pending") : []);
+      }),
+    []
+  );
 
-  useEffect(() => {
-    fetch("/api/admin/workers", { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setWorkers(data); })
-      .catch(() => {});
-  }, []);
+  useEffect(
+    () =>
+      loadCached(["/api/admin/workers"], ([data]: [unknown]) => {
+        if (Array.isArray(data)) setWorkers(data);
+      }),
+    []
+  );
 
   async function handleTimeOffDecision(id: string, status: "approved" | "denied") {
     setTimeOffActionLoading(id);

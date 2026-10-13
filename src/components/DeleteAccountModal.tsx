@@ -42,6 +42,8 @@ export default function DeleteAccountModal({
     }
 
     const supabase = createSupabaseBrowser();
+    const { clearOfflineCache } = await import("@/lib/offlinePreload");
+    await clearOfflineCache().catch(console.error);
     await supabase.auth.signOut();
     router.replace("/login");
   }

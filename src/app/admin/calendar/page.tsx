@@ -19,6 +19,8 @@ import { carveOutGeneral } from "@/lib/billableHours";
 import JobChecklist from "@/components/JobChecklist";
 import JobAttachments, { JobAttachment } from "@/components/JobAttachments";
 import ExpensesCard from "@/components/ExpensesCard";
+import { loadCached } from "@/lib/pageCache";
+import { eventsUrl, planEventsUrl } from "@/lib/mainTabUrls";
 import { categoryLabel, EXPENSE_CATEGORIES, type ExpenseCategory, type ExpenseLine } from "@/types/expense";
 
 type JobStatus = "scheduled" | "in_progress" | "completed" | "invoiced" | "cancelled";
@@ -909,9 +911,9 @@ export default function AdminCalendar({
 
   useEffect(() => {
     if (calTab !== "schedule") return;
-    fetch(`/api/events?from=${fetchFrom}&to=${fetchTo}`)
-      .then((r) => r.json())
-      .then((data) => setEvents(Array.isArray(data) ? data : []));
+    return loadCached([eventsUrl(fetchFrom, fetchTo)], ([data]: [unknown]) => {
+      setEvents(Array.isArray(data) ? data : []);
+    });
   }, [fetchFrom, fetchTo, calTab]);
 
   function refreshDrafts() {
@@ -920,9 +922,13 @@ export default function AdminCalendar({
       .then((data) => setDraftEvents(Array.isArray(data) ? data : []));
   }
 
-  useEffect(() => {
-    refreshDrafts();
-  }, []);
+  useEffect(
+    () =>
+      loadCached(["/api/events?unverified=1"], ([data]: [unknown]) => {
+        setDraftEvents(Array.isArray(data) ? data : []);
+      }),
+    []
+  );
 
   // Siri adds jobs through a background native request that the already-open
   // WebView has no way to know about — refetch when the app regains focus,
@@ -940,22 +946,26 @@ export default function AdminCalendar({
 
   useEffect(() => {
     if (calTab !== "schedule") return;
-    fetch(`/api/admin/plan-events?from=${fetchFrom}&to=${fetchTo}`, { credentials: "include" })
-      .then((r) => { if (!r.ok) return []; return r.json(); })
-      .then((data) => setPlanEvents(Array.isArray(data) ? data : []));
+    return loadCached([planEventsUrl(fetchFrom, fetchTo)], ([data]: [unknown]) => {
+      setPlanEvents(Array.isArray(data) ? data : []);
+    });
   }, [fetchFrom, fetchTo, calTab]);
 
-  useEffect(() => {
-    fetch("/api/admin/workers", { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setWorkers(Array.isArray(data) ? data : []));
-  }, []);
+  useEffect(
+    () =>
+      loadCached(["/api/admin/workers"], ([data]: [unknown]) => {
+        setWorkers(Array.isArray(data) ? data : []);
+      }),
+    []
+  );
 
-  useEffect(() => {
-    fetch("/api/ongoing-jobs", { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setOngoingJobs(Array.isArray(data) ? data : []));
-  }, []);
+  useEffect(
+    () =>
+      loadCached(["/api/ongoing-jobs"], ([data]: [unknown]) => {
+        setOngoingJobs(Array.isArray(data) ? data : []);
+      }),
+    []
+  );
 
 
   useEffect(() => {

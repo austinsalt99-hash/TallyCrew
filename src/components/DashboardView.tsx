@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { loadCached } from "@/lib/pageCache";
+import { employeeDashboardUrls } from "@/lib/mainTabUrls";
 
 const NAVY = "#0A1172";
 const NAVY_DARK = "#060b47";
@@ -134,24 +136,22 @@ export default function DashboardView({ userName }: { userName: string }) {
   const weekFrom = fmtDate(weekDays[0]);
   const weekTo = fmtDate(weekDays[6]);
 
-  useEffect(() => {
-    Promise.all([
-      fetch(`/api/events?from=${todayStr}&to=${todayStr}`).then((r) => r.json()),
-      fetch(`/api/submissions/employee?from=${weekFrom}&to=${weekTo}`, { credentials: "include" }).then((r) => r.json()),
-      fetch("/api/announcements").then((r) => r.json()),
-      fetch("/api/reminders").then((r) => r.json()),
-      fetch("/api/company", { credentials: "include" }).then((r) => r.json()),
-    ])
-      .then(([evData, subData, annData, remData, companyData]) => {
-        setEvents(Array.isArray(evData) ? evData : []);
-        setSubmissions(Array.isArray(subData) ? subData : []);
-        setAnnouncements(Array.isArray(annData) ? annData : []);
-        setReminders(Array.isArray(remData) ? remData : []);
-        setBannerUrl(companyData?.banner_url ?? null);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [todayStr, weekFrom, weekTo]);
+  useEffect(
+    () =>
+      loadCached(
+        employeeDashboardUrls(),
+        ([evData, subData, annData, remData, companyData]: [any, any, any, any, any]) => {
+          setEvents(Array.isArray(evData) ? evData : []);
+          setSubmissions(Array.isArray(subData) ? subData : []);
+          setAnnouncements(Array.isArray(annData) ? annData : []);
+          setReminders(Array.isArray(remData) ? remData : []);
+          setBannerUrl(companyData?.banner_url ?? null);
+          setLoading(false);
+        },
+        () => setLoading(false)
+      ),
+    [todayStr, weekFrom, weekTo]
+  );
 
   const totalWorked = Math.round(submissions.reduce((s, d) => s + calcWorked(d), 0) * 10) / 10;
   const totalBillable = Math.round(submissions.reduce((s, d) => s + (d.total_billable_hours || 0), 0) * 10) / 10;
