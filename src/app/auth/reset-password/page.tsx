@@ -5,10 +5,45 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 
-// Landing page for the "reset password" email link.
-// Supabase redirects here with #access_token=...&refresh_token=...&type=recovery
-// in the hash. We extract the tokens, set the session, then let the user pick
-// a new password.
+// Landing page for the "reset password" email link. The link can arrive in three shapes:
+// - ?token_hash=...&type=recovery: the email template links here directly. Works in any
+//   browser, including when the reset was requested in the app but opened from Mail.
+// - ?code=...: Supabase's default PKCE redirect. Only works in the same browser that
+//   requested the reset, because the matching verifier is stored there.
+// - #access_token=...&refresh_token=...: the older implicit-flow redirect.
+// Each one signs the user in, then they pick a new password.
+async function startRecoverySession(): Promise<boolean> {
+  const supabase = createSupabaseBrowser();
+  const query = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.slice(1));
+
+  if (query.get("error") || hash.get("error")) return false;
+
+  const tokenHash = query.get("token_hash");
+  if (tokenHash) {
+    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
+    return !error;
+  }
+
+  const code = query.get("code");
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error) return true;
+    // The client may already have exchanged the code itself while starting up.
+    const { data } = await supabase.auth.getSession();
+    return !!data.session;
+  }
+
+  const access_token = hash.get("access_token");
+  const refresh_token = hash.get("refresh_token");
+  if (access_token && refresh_token) {
+    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+    return !error;
+  }
+
+  return false;
+}
+
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -20,23 +55,14 @@ export default function ResetPasswordPage() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    const hash = window.location.hash.slice(1);
-    const params = new URLSearchParams(hash);
-    const access_token = params.get("access_token");
-    const refresh_token = params.get("refresh_token");
-
-    if (access_token && refresh_token) {
-      const supabase = createSupabaseBrowser();
-      supabase.auth.setSession({ access_token, refresh_token }).then(({ error: sessionError }) => {
-        if (sessionError) {
-          setInvalid(true);
-        } else {
-          setReady(true);
-        }
+    startRecoverySession()
+      .catch(() => false)
+      .then((ok) => {
+        if (ok) setReady(true);
+        else setInvalid(true);
+        // Drop the one-time token from the address bar so a refresh or shared URL can't reuse it.
+        window.history.replaceState(null, "", window.location.pathname);
       });
-    } else {
-      setInvalid(true);
-    }
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
